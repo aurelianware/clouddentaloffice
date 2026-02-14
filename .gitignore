@@ -1,0 +1,36 @@
+# Build outputs
+bin/
+obj/
+
+# Test results
+TestResults/
+
+# Visual Studio
+.vs/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# VS Code
+.vscode/
+
+# Rider / IntelliJ
+.idea/
+
+# OS-specific
+.DS_Store
+
+# Logs
+*.log
+
+# NuGet
+*.nupkg
+# Uncomment if you use local packages
+# packages/
+
+# ASP.NET Core
+wwwroot/lib/
+
+# Publish outputs
+**/publish/

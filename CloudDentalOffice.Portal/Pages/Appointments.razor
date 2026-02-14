@@ -1,0 +1,262 @@
+@page "/appointments"
+@page "/appointments/{PatientId:int}"
+@using CloudDentalOffice.Portal.Models
+@using MudBlazor
+@inject IAppointmentService AppointmentService
+@inject IPatientService PatientService
+@inject NavigationManager Navigation
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+
+<PageTitle>Appointments - Cloud Dental Office</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-4">
+    <MudPaper Class="pa-4" Style="background: #0a0a0a; border: 1px solid #00ffff;">
+        <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center">
+            <div>
+                <MudText Typo="Typo.h4" Style="color: #00ffff; font-weight: bold;">
+                    <MudIcon Icon="@Icons.Material.Filled.Event" Class="mr-2" />
+                    Appointments @(_selectedPatient != null ? $"- {_selectedPatient.FullName}" : "")
+                </MudText>
+                <MudText Typo="Typo.body2" Style="color: #b0b0b0;">
+                    @(_selectedPatient != null ? $"Viewing appointments for {_selectedPatient.FullName}" : "Schedule and manage patient appointments")
+                </MudText>
+                @if (_selectedPatient != null)
+                {
+                    <MudButton Variant="Variant.Text" Color="Color.Default" Size="Size.Small" 
+                               OnClick="@(() => Navigation.NavigateTo("/appointments"))" Class="mt-1">
+                        View All Appointments
+                    </MudButton>
+                }
+            </div>
+            <MudStack Row="true" Spacing="2">
+                <MudDatePicker Date="_selectedDate" Label="Select Date" 
+                               Color="Color.Primary" Variant="Variant.Outlined"
+                               DateChanged="@OnDateChanged" />
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="OpenAddAppointmentDialog"
+                           StartIcon="@Icons.Material.Filled.Add">
+                    New Appointment
+                </MudButton>
+            </MudStack>
+        </MudStack>
+    </MudPaper>
+
+    @if (!string.IsNullOrEmpty(_errorMessage))
+    {
+        <MudAlert Severity="Severity.Error" Class="mt-4">
+            <MudText Typo="Typo.body1" Style="font-family: monospace; white-space: pre-wrap;">@_errorMessage</MudText>
+        </MudAlert>
+    }
+
+    <MudPaper Class="pa-4 mt-4" Style="background: #0a0a0a; border: 1px solid rgba(0, 255, 255, 0.3);">
+        @if (_loading)
+        {
+            <MudProgressLinear Color="Color.Primary" Indeterminate="true" />
+        }
+        else
+        {
+            <MudTable Items="@_appointments" Hover="true" Striped="true" Dense="true">
+                <ToolBarContent>
+                    <MudText Typo="Typo.h6" Style="color: #00ffff;">
+                        Appointments for @_selectedDate?.ToString("MMMM dd, yyyy")
+                    </MudText>
+                    <MudSpacer />
+                    <MudChip T="string" Color="Color.Info" Size="Size.Small">Total: @_appointments.Count</MudChip>
+                </ToolBarContent>
+                <HeaderContent>
+                    <MudTh Style="color: #00ffff;">Time</MudTh>
+                    <MudTh Style="color: #00ffff;">Patient</MudTh>
+                    <MudTh Style="color: #00ffff;">Provider</MudTh>
+                    <MudTh Style="color: #00ffff;">Type</MudTh>
+                    <MudTh Style="color: #00ffff;">Duration</MudTh>
+                    <MudTh Style="color: #00ffff;">Reason</MudTh>
+                    <MudTh Style="color: #00ffff;">Status</MudTh>
+                    <MudTh Style="color: #00ffff;">Actions</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd DataLabel="Time">
+                        <MudText Typo="Typo.body2" Style="color: #00ff88; font-weight: bold;">
+                            @context.AppointmentDateTime.ToLocalTime().ToString("hh:mm tt")
+                        </MudText>
+                    </MudTd>
+                    <MudTd DataLabel="Patient">
+                        <MudText Typo="Typo.body2">@context.Patient?.FullName</MudText>
+                    </MudTd>
+                    <MudTd DataLabel="Provider">
+                        <MudText Typo="Typo.body2">@context.Provider?.FullName</MudText>
+                    </MudTd>
+                    <MudTd DataLabel="Type">
+                        <MudText Typo="Typo.body2">@context.AppointmentType</MudText>
+                    </MudTd>
+                    <MudTd DataLabel="Duration">
+                        <MudText Typo="Typo.body2">@context.DurationMinutes min</MudText>
+                    </MudTd>
+                    <MudTd DataLabel="Reason">
+                        <MudText Typo="Typo.body2">@(context.ReasonForVisit ?? "-")</MudText>
+                    </MudTd>
+                    <MudTd DataLabel="Status">
+                        @{
+                            var statusColor = context.Status switch
+                            {
+                                "Scheduled" => Color.Default,
+                                "Confirmed" => Color.Info,
+                                "Checked-In" => Color.Primary,
+                                "InProgress" => Color.Warning,
+                                "Completed" => Color.Success,
+                                "Cancelled" => Color.Error,
+                                "NoShow" => Color.Dark,
+                                _ => Color.Default
+                            };
+                        }
+                        <MudChip T="string" Color="statusColor" Size="Size.Small">@context.Status</MudChip>
+                    </MudTd>
+                    <MudTd DataLabel="Actions">
+                        <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" Color="Color.Primary"
+                                       OnClick="@(() => EditAppointment(context))" />
+                        <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error"
+                                       OnClick="@(() => DeleteAppointment(context))" />
+                    </MudTd>
+                </RowTemplate>
+                <NoRecordsContent>
+                    <MudText Style="color: #b0b0b0;">No appointments scheduled for this date</MudText>
+                </NoRecordsContent>
+            </MudTable>
+        }
+    </MudPaper>
+</MudContainer>
+
+@code {
+    [Parameter]
+    public int? PatientId { get; set; }
+    
+    private List<Appointment> _appointments = new();
+    private Patient? _selectedPatient = null;
+    private bool _loading = true;
+    private DateTime? _selectedDate = DateTime.Today;
+    private string? _errorMessage = null;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (PatientId.HasValue)
+        {
+            try
+            {
+                _selectedPatient = await PatientService.GetPatientByIdAsync(PatientId.Value.ToString());
+            }
+            catch (Exception ex)
+            {
+                Snackbar.Add($"Error loading patient: {ex.Message}", Severity.Error);
+            }
+        }
+        await LoadAppointments();
+    }
+
+    private async Task LoadAppointments()
+    {
+        try
+        {
+            _loading = true;
+            _errorMessage = null;
+            
+            if (_selectedDate.HasValue)
+            {
+                var allAppointments = await AppointmentService.GetAppointmentsAsync(_selectedDate.Value);
+                
+                // Filter by patient if specified
+                if (PatientId.HasValue)
+                {
+                    _appointments = allAppointments.Where(a => a.PatientId == PatientId.Value).ToList();
+                }
+                else
+                {
+                    _appointments = allAppointments;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Error loading appointments: {ex.Message}";
+            Snackbar.Add(_errorMessage, Severity.Error);
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task OnDateChanged(DateTime? date)
+    {
+        _selectedDate = date;
+        await LoadAppointments();
+    }
+
+    private async Task OpenAddAppointmentDialog()
+    {
+        var parameters = new DialogParameters<AddEditAppointmentDialog>();
+        
+        if (PatientId.HasValue)
+        {
+            parameters.Add(x => x.PreselectedPatientId, PatientId.Value);
+        }
+
+        var options = new DialogOptions 
+        { 
+            MaxWidth = MaxWidth.Medium, 
+            FullWidth = true,
+            CloseButton = true
+        };
+
+        var dialog = await DialogService.ShowAsync<AddEditAppointmentDialog>("Schedule New Appointment", parameters, options);
+        var result = await dialog.Result;
+
+        if (!result.Canceled)
+        {
+            await LoadAppointments();
+        }
+    }
+
+    private async Task EditAppointment(Appointment appointment)
+    {
+        var parameters = new DialogParameters<AddEditAppointmentDialog>
+        {
+            { x => x.ExistingAppointment, appointment }
+        };
+
+        var options = new DialogOptions 
+        { 
+            MaxWidth = MaxWidth.Medium, 
+            FullWidth = true,
+            CloseButton = true
+        };
+
+        var dialog = await DialogService.ShowAsync<AddEditAppointmentDialog>("Edit Appointment", parameters, options);
+        var result = await dialog.Result;
+
+        if (!result.Canceled)
+        {
+            await LoadAppointments();
+        }
+    }
+
+    private async Task DeleteAppointment(Appointment appointment)
+    {
+        var result = await DialogService.ShowMessageBox(
+            "Delete Appointment",
+            $"Are you sure you want to delete the appointment for {appointment.Patient?.FullName}?",
+            yesText: "Delete", cancelText: "Cancel");
+
+        if (result == true)
+        {
+            try
+            {
+                await AppointmentService.DeleteAppointmentAsync(appointment.AppointmentId.ToString());
+                Snackbar.Add("Appointment deleted successfully", Severity.Success);
+                await LoadAppointments();
+            }
+            catch (Exception ex)
+            {
+                Snackbar.Add($"Error deleting appointment: {ex.Message}", Severity.Error);
+            }
+        }
+    }
+}
