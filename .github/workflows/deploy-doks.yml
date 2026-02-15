@@ -12,7 +12,7 @@ jobs:
     env:
       REGISTRY: registry.digitalocean.com/clouddental
       NAMESPACE: clouddental
-      CLUSTER_NAME: cloudentaloffice
+      CLUSTER_ID: bf91c5dd-22ae-4778-9e06-5cb2227cd1b4
       IMAGE_TAG: ${{ github.sha }}
     steps:
       - name: Checkout
@@ -62,7 +62,7 @@ jobs:
           docker push $REGISTRY/auth-service:latest
 
       - name: Fetch kubeconfig
-        run: doctl kubernetes cluster kubeconfig save $CLUSTER_NAME
+        run: doctl kubernetes cluster kubeconfig save $CLUSTER_ID
 
       - name: Preflight checks
         run: |
