@@ -4,7 +4,21 @@ using CloudDentalOffice.Contracts.Scheduling;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddDbContext<SchedulingDbContext>(options =>
-    options.UseSqlite(builder.Configuration.GetConnectionString("SchedulingDb") ?? "Data Source=scheduling.db"));
+{
+    var provider = builder.Configuration.GetValue("DatabaseProvider", "Sqlite");
+    switch (provider)
+    {
+        case "SqlServer":
+            options.UseSqlServer(builder.Configuration.GetConnectionString("SchedulingDb"));
+            break;
+        case "PostgreSQL":
+            options.UseNpgsql(builder.Configuration.GetConnectionString("SchedulingDb"));
+            break;
+        default:
+            options.UseSqlite(builder.Configuration.GetConnectionString("SchedulingDb") ?? "Data Source=scheduling.db");
+            break;
+    }
+});
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c => c.SwaggerDoc("v1", new() { Title = "Scheduling Service", Version = "v1" }));
 builder.Services.AddHealthChecks();

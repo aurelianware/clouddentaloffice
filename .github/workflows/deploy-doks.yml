@@ -1,0 +1,97 @@
+name: Deploy to DOKS
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build-push-deploy:
+    runs-on: ubuntu-latest
+    env:
+      REGISTRY: registry.digitalocean.com/clouddental
+      NAMESPACE: clouddental
+      CLUSTER_NAME: cloudentaloffice
+      IMAGE_TAG: ${{ github.sha }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install doctl
+        uses: digitalocean/action-doctl@v2
+        with:
+          token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+
+      - name: Login to DOCR
+        run: doctl registry login --expiry-seconds 600
+
+      - name: Build and push images
+        run: |
+          set -euo pipefail
+          docker build -f infrastructure/docker/Portal.Dockerfile -t $REGISTRY/portal:$IMAGE_TAG -t $REGISTRY/portal:latest .
+          docker push $REGISTRY/portal:$IMAGE_TAG
+          docker push $REGISTRY/portal:latest
+
+          docker build -f infrastructure/docker/ApiGateway.Dockerfile -t $REGISTRY/api-gateway:$IMAGE_TAG -t $REGISTRY/api-gateway:latest .
+          docker push $REGISTRY/api-gateway:$IMAGE_TAG
+          docker push $REGISTRY/api-gateway:latest
+
+          docker build -f infrastructure/docker/PatientService.Dockerfile -t $REGISTRY/patient-service:$IMAGE_TAG -t $REGISTRY/patient-service:latest .
+          docker push $REGISTRY/patient-service:$IMAGE_TAG
+          docker push $REGISTRY/patient-service:latest
+
+          docker build -f infrastructure/docker/SchedulingService.Dockerfile -t $REGISTRY/scheduling-service:$IMAGE_TAG -t $REGISTRY/scheduling-service:latest .
+          docker push $REGISTRY/scheduling-service:$IMAGE_TAG
+          docker push $REGISTRY/scheduling-service:latest
+
+          docker build -f infrastructure/docker/ClaimsService.Dockerfile -t $REGISTRY/claims-service:$IMAGE_TAG -t $REGISTRY/claims-service:latest .
+          docker push $REGISTRY/claims-service:$IMAGE_TAG
+          docker push $REGISTRY/claims-service:latest
+
+          docker build -f infrastructure/docker/EligibilityService.Dockerfile -t $REGISTRY/eligibility-service:$IMAGE_TAG -t $REGISTRY/eligibility-service:latest .
+          docker push $REGISTRY/eligibility-service:$IMAGE_TAG
+          docker push $REGISTRY/eligibility-service:latest
+
+          docker build -f infrastructure/docker/EraService.Dockerfile -t $REGISTRY/era-service:$IMAGE_TAG -t $REGISTRY/era-service:latest .
+          docker push $REGISTRY/era-service:$IMAGE_TAG
+          docker push $REGISTRY/era-service:latest
+
+          docker build -f infrastructure/docker/AuthService.Dockerfile -t $REGISTRY/auth-service:$IMAGE_TAG -t $REGISTRY/auth-service:latest .
+          docker push $REGISTRY/auth-service:$IMAGE_TAG
+          docker push $REGISTRY/auth-service:latest
+
+      - name: Fetch kubeconfig
+        run: doctl kubernetes cluster kubeconfig save $CLUSTER_NAME
+
+      - name: Preflight checks
+        run: |
+          set -euo pipefail
+          kubectl get namespace $NAMESPACE
+          kubectl -n $NAMESPACE get secret cdo-app-secrets
+
+      - name: Apply manifests
+        run: kubectl apply -k infrastructure/k8s/clouddental
+
+      - name: Update images
+        run: |
+          set -euo pipefail
+          kubectl -n $NAMESPACE set image deployment/portal portal=$REGISTRY/portal:$IMAGE_TAG
+          kubectl -n $NAMESPACE set image deployment/api-gateway api-gateway=$REGISTRY/api-gateway:$IMAGE_TAG
+          kubectl -n $NAMESPACE set image deployment/patient-service patient-service=$REGISTRY/patient-service:$IMAGE_TAG
+          kubectl -n $NAMESPACE set image deployment/scheduling-service scheduling-service=$REGISTRY/scheduling-service:$IMAGE_TAG
+          kubectl -n $NAMESPACE set image deployment/claims-service claims-service=$REGISTRY/claims-service:$IMAGE_TAG
+          kubectl -n $NAMESPACE set image deployment/eligibility-service eligibility-service=$REGISTRY/eligibility-service:$IMAGE_TAG
+          kubectl -n $NAMESPACE set image deployment/era-service era-service=$REGISTRY/era-service:$IMAGE_TAG
+          kubectl -n $NAMESPACE set image deployment/auth-service auth-service=$REGISTRY/auth-service:$IMAGE_TAG
+
+      - name: Rollout status
+        run: |
+          set -euo pipefail
+          kubectl -n $NAMESPACE rollout status deployment/portal
+          kubectl -n $NAMESPACE rollout status deployment/api-gateway
+          kubectl -n $NAMESPACE rollout status deployment/patient-service
+          kubectl -n $NAMESPACE rollout status deployment/scheduling-service
+          kubectl -n $NAMESPACE rollout status deployment/claims-service
+          kubectl -n $NAMESPACE rollout status deployment/eligibility-service
+          kubectl -n $NAMESPACE rollout status deployment/era-service
+          kubectl -n $NAMESPACE rollout status deployment/auth-service

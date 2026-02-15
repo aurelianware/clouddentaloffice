@@ -1,0 +1,367 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: portal
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: portal
+  template:
+    metadata:
+      labels:
+        app: portal
+    spec:
+      containers:
+        - name: portal
+          image: registry.digitalocean.com/clouddental/portal:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 5000
+          env:
+            - name: ASPNETCORE_ENVIRONMENT
+              value: Production
+            - name: ApiGateway__BaseUrl
+              value: http://api-gateway:5200
+            - name: Microservices__Patient__Enabled
+              value: "true"
+            - name: ConnectionStrings__DefaultConnection
+              valueFrom:
+                secretKeyRef:
+                  name: cdo-app-secrets
+                  key: ConnectionStrings__DefaultConnection
+            - name: Jwt__Key
+              valueFrom:
+                secretKeyRef:
+                  name: cdo-app-secrets
+                  key: Jwt__Key
+            - name: Jwt__Issuer
+              valueFrom:
+                secretKeyRef:
+                  name: cdo-app-secrets
+                  key: Jwt__Issuer
+            - name: Jwt__Audience
+              valueFrom:
+                secretKeyRef:
+                  name: cdo-app-secrets
+                  key: Jwt__Audience
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: portal
+spec:
+  type: ClusterIP
+  selector:
+    app: portal
+  ports:
+    - name: http
+      port: 5000
+      targetPort: 5000
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api-gateway
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: api-gateway
+  template:
+    metadata:
+      labels:
+        app: api-gateway
+    spec:
+      containers:
+        - name: api-gateway
+          image: registry.digitalocean.com/clouddental/api-gateway:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 5200
+          env:
+            - name: ASPNETCORE_ENVIRONMENT
+              value: Production
+            - name: ReverseProxy__Clusters__patient-cluster__Destinations__primary__Address
+              value: http://patient-service:5101
+            - name: ReverseProxy__Clusters__scheduling-cluster__Destinations__primary__Address
+              value: http://scheduling-service:5102
+            - name: ReverseProxy__Clusters__claims-cluster__Destinations__primary__Address
+              value: http://claims-service:5103
+            - name: ReverseProxy__Clusters__eligibility-cluster__Destinations__primary__Address
+              value: http://eligibility-service:5104
+            - name: ReverseProxy__Clusters__era-cluster__Destinations__primary__Address
+              value: http://era-service:5105
+            - name: ReverseProxy__Clusters__auth-cluster__Destinations__primary__Address
+              value: http://auth-service:5106
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: api-gateway
+spec:
+  type: ClusterIP
+  selector:
+    app: api-gateway
+  ports:
+    - name: http
+      port: 5200
+      targetPort: 5200
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: patient-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: patient-service
+  template:
+    metadata:
+      labels:
+        app: patient-service
+    spec:
+      containers:
+        - name: patient-service
+          image: registry.digitalocean.com/clouddental/patient-service:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 5101
+          env:
+            - name: ASPNETCORE_ENVIRONMENT
+              value: Production
+            - name: DatabaseProvider
+              value: PostgreSQL
+            - name: ConnectionStrings__PatientDb
+              valueFrom:
+                secretKeyRef:
+                  name: cdo-app-secrets
+                  key: ConnectionStrings__PatientDb
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: patient-service
+spec:
+  type: ClusterIP
+  selector:
+    app: patient-service
+  ports:
+    - name: http
+      port: 5101
+      targetPort: 5101
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: scheduling-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: scheduling-service
+  template:
+    metadata:
+      labels:
+        app: scheduling-service
+    spec:
+      containers:
+        - name: scheduling-service
+          image: registry.digitalocean.com/clouddental/scheduling-service:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 5102
+          env:
+            - name: ASPNETCORE_ENVIRONMENT
+              value: Production
+            - name: DatabaseProvider
+              value: PostgreSQL
+            - name: ConnectionStrings__SchedulingDb
+              valueFrom:
+                secretKeyRef:
+                  name: cdo-app-secrets
+                  key: ConnectionStrings__SchedulingDb
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: scheduling-service
+spec:
+  type: ClusterIP
+  selector:
+    app: scheduling-service
+  ports:
+    - name: http
+      port: 5102
+      targetPort: 5102
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: claims-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: claims-service
+  template:
+    metadata:
+      labels:
+        app: claims-service
+    spec:
+      containers:
+        - name: claims-service
+          image: registry.digitalocean.com/clouddental/claims-service:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 5103
+          env:
+            - name: ASPNETCORE_ENVIRONMENT
+              value: Production
+            - name: DatabaseProvider
+              value: PostgreSQL
+            - name: ConnectionStrings__ClaimsDb
+              valueFrom:
+                secretKeyRef:
+                  name: cdo-app-secrets
+                  key: ConnectionStrings__ClaimsDb
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: claims-service
+spec:
+  type: ClusterIP
+  selector:
+    app: claims-service
+  ports:
+    - name: http
+      port: 5103
+      targetPort: 5103
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: eligibility-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: eligibility-service
+  template:
+    metadata:
+      labels:
+        app: eligibility-service
+    spec:
+      containers:
+        - name: eligibility-service
+          image: registry.digitalocean.com/clouddental/eligibility-service:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 5104
+          env:
+            - name: ASPNETCORE_ENVIRONMENT
+              value: Production
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: eligibility-service
+spec:
+  type: ClusterIP
+  selector:
+    app: eligibility-service
+  ports:
+    - name: http
+      port: 5104
+      targetPort: 5104
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: era-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: era-service
+  template:
+    metadata:
+      labels:
+        app: era-service
+    spec:
+      containers:
+        - name: era-service
+          image: registry.digitalocean.com/clouddental/era-service:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 5105
+          env:
+            - name: ASPNETCORE_ENVIRONMENT
+              value: Production
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: era-service
+spec:
+  type: ClusterIP
+  selector:
+    app: era-service
+  ports:
+    - name: http
+      port: 5105
+      targetPort: 5105
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: auth-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: auth-service
+  template:
+    metadata:
+      labels:
+        app: auth-service
+    spec:
+      containers:
+        - name: auth-service
+          image: registry.digitalocean.com/clouddental/auth-service:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 5106
+          env:
+            - name: ASPNETCORE_ENVIRONMENT
+              value: Production
+            - name: Jwt__Key
+              valueFrom:
+                secretKeyRef:
+                  name: cdo-app-secrets
+                  key: Jwt__Key
+            - name: Jwt__Issuer
+              valueFrom:
+                secretKeyRef:
+                  name: cdo-app-secrets
+                  key: Jwt__Issuer
+            - name: Jwt__Audience
+              valueFrom:
+                secretKeyRef:
+                  name: cdo-app-secrets
+                  key: Jwt__Audience
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: auth-service
+spec:
+  type: ClusterIP
+  selector:
+    app: auth-service
+  ports:
+    - name: http
+      port: 5106
+      targetPort: 5106

@@ -4,7 +4,21 @@ using CloudDentalOffice.Contracts.Claims;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddDbContext<ClaimsDbContext>(options =>
-    options.UseSqlite(builder.Configuration.GetConnectionString("ClaimsDb") ?? "Data Source=claims.db"));
+{
+    var provider = builder.Configuration.GetValue("DatabaseProvider", "Sqlite");
+    switch (provider)
+    {
+        case "SqlServer":
+            options.UseSqlServer(builder.Configuration.GetConnectionString("ClaimsDb"));
+            break;
+        case "PostgreSQL":
+            options.UseNpgsql(builder.Configuration.GetConnectionString("ClaimsDb"));
+            break;
+        default:
+            options.UseSqlite(builder.Configuration.GetConnectionString("ClaimsDb") ?? "Data Source=claims.db");
+            break;
+    }
+});
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c => c.SwaggerDoc("v1", new() { Title = "Claims Service", Version = "v1" }));
 builder.Services.AddHealthChecks();
