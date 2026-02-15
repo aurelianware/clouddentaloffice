@@ -31,14 +31,14 @@
 
 @code {
     bool success;
-    MudForm form;
-    string email;
-    string password;
-    string error;
+    MudForm form = null!;
+    string email = string.Empty;
+    string password = string.Empty;
+    string error = string.Empty;
 
     private async Task DoLogin()
     {
-        error = null;
+        error = string.Empty;
         try
         {
             var token = await AuthService.LoginAsync(email, password);

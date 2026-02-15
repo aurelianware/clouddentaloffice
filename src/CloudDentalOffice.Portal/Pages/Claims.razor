@@ -102,15 +102,15 @@
                     <MudTd DataLabel="Actions">
                         <MudIconButton Icon="@Icons.Material.Filled.Visibility" Color="Color.Primary" 
                                        Size="Size.Small" OnClick="@(() => ViewClaim(context))" 
-                                       Title="View Details" />
+                                       title="View Details" />
                         <MudIconButton Icon="@Icons.Material.Filled.Edit" Color="Color.Info" 
                                        Size="Size.Small" OnClick="@(() => EditClaim(context))" 
-                                       Title="Edit Claim" />
+                                       title="Edit Claim" />
                         @if (context.Status == "Draft" || context.Status == "Ready")
                         {
                             <MudIconButton Icon="@Icons.Material.Filled.Send" Color="Color.Success" 
                                            Size="Size.Small" OnClick="@(() => SubmitClaim(context))" 
-                                           Title="Submit to EDI" />
+                                           title="Submit to EDI" />
                         }
                     </MudTd>
                 </RowTemplate>
@@ -186,7 +186,7 @@
             { x => x.Claim, claim }
         };
 
-        var dialog = DialogService.Show<ViewClaimDialog>($"Claim {claim.ClaimNumber}",
+        var dialog = DialogService.Show<ViewClaimDialog>($"Claim {claim.ClaimNumber ?? "Unknown"}",
             parameters,
             new DialogOptions { MaxWidth = MaxWidth.Large, FullWidth = true });
 
@@ -221,7 +221,7 @@
         try
         {
             await ClaimService.SubmitClaimAsync(claim.ClaimId.ToString());
-            Snackbar.Add($"Claim {claim.ClaimNumber} submitted successfully!", Severity.Success);
+            Snackbar.Add($"Claim {claim.ClaimNumber ?? "Unknown"} submitted successfully!", Severity.Success);
             await LoadClaims();
         }
         catch (Exception ex)

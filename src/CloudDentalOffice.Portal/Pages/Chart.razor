@@ -42,7 +42,7 @@
                 </MudText>
                 <MudAutocomplete T="Patient" Value="_selectedPatient" Label="Search Patient"
                                  SearchFunc="@SearchPatients" ToStringFunc="@(p => p?.FullName ?? "")"
-                                 Variant="Variant.Outlined" Color="Color.Primary"
+                                 Variant="Variant.Outlined" color="Color.Primary"
                                  AdornmentIcon="@Icons.Material.Filled.Search"
                                  ValueChanged="@OnPatientSelected" />
             </MudStack>
@@ -222,7 +222,7 @@
                             <MudToggleIconButton @bind-Toggled="@_showPlannedProcedures"
                                                  Icon="@Icons.Material.Filled.CalendarToday" ToggledIcon="@Icons.Material.Filled.CalendarToday"
                                                  Color="@Color.Default" ToggledColor="@Color.Primary"
-                                                 Title="Include Planned Procedures" ToggledTitle="Showing Planned Procedures" />
+                                                 title="Include Planned Procedures" ToggledTitle="Showing Planned Procedures" />
                         </MudStack>
                     </MudStack>
                     
@@ -532,7 +532,7 @@
         if (!result.Canceled)
         {
             // Reload chart data to show the new procedure
-            await LoadPatientChartData(_selectedPatient.PatientId);
+            await LoadPatientChartData(_selectedPatient!.PatientId);
             Snackbar.Add("Procedure recorded successfully!", Severity.Success);
             StateHasChanged();
         }

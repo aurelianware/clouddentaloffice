@@ -1,4 +1,8 @@
 @page "/settings"
+@using MudBlazor
+@using MudBlazor.Components
+@using Microsoft.AspNetCore.Components.Web
+@using Microsoft.AspNetCore.Components
 @inject ISnackbar Snackbar
 
 <PageTitle>Settings - Cloud Dental Office</PageTitle>
@@ -58,7 +62,7 @@
                     <MudTextField Label="API Endpoint" Variant="Variant.Outlined" 
                                   Value="@("https://edi.cloudhealthoffice.com/api")" ReadOnly="@true" />
                     <MudSwitch T="bool" Label="Enable Electronic Claims Submission" 
-                               Color="Color.Primary" Checked="true" Disabled="@true" />
+                               Color="Color.Primary" Value="true" Disabled="@true" />
                     <MudButton Variant="Variant.Filled" Color="Color.Primary"
                                OnClick="OnConfigureEdi">
                         Configure EDI
@@ -87,9 +91,9 @@
                         <MudSelectItem Value='"America/Los_Angeles"'>Pacific Time</MudSelectItem>
                     </MudSelect>
                     <MudSwitch T="bool" Label="Enable Email Notifications" 
-                               Color="Color.Primary" Checked="true" />
+                               Color="Color.Primary" Value="true" />
                     <MudSwitch T="bool" Label="Enable SMS Reminders" 
-                               Color="Color.Primary" Checked="false" />
+                               Color="Color.Primary" Value="false" />
                     <MudButton Variant="Variant.Filled" Color="Color.Primary"
                                OnClick="OnSavePreferences">
                         Save Preferences
@@ -107,13 +111,13 @@
                 </MudText>
                 <MudStack Spacing="3">
                     <MudSwitch T="bool" Label="Require Strong Passwords" 
-                               Color="Color.Primary" Checked="true" Disabled="@true" />
+                               Color="Color.Primary" Value="true" Disabled="@true" />
                     <MudSwitch T="bool" Label="Enable Two-Factor Authentication" 
-                               Color="Color.Primary" Checked="false" />
+                               Color="Color.Primary" Value="false" />
                     <MudSwitch T="bool" Label="Session Timeout (30 minutes)" 
-                               Color="Color.Primary" Checked="true" Disabled="@true" />
+                               Color="Color.Primary" Value="true" Disabled="@true" />
                     <MudSwitch T="bool" Label="Audit Logging Enabled" 
-                               Color="Color.Primary" Checked="true" Disabled="@true" />
+                               Color="Color.Primary" Value="true" Disabled="@true" />
                     <MudButton Variant="Variant.Outlined" Color="Color.Warning"
                                OnClick="OnChangePassword">
                         Change Password
@@ -131,9 +135,9 @@
                 </MudText>
                 <MudStack Spacing="3">
                     <MudTextField Label="Default Appointment Duration (minutes)" 
-                                  Variant="Variant.Outlined" Value="60" Type="number" />
+                                  Variant="Variant.Outlined" Value="60" InputType="InputType.Number" />
                     <MudTextField Label="Appointment Reminder (hours before)" 
-                                  Variant="Variant.Outlined" Value="24" Type="number" />
+                                  Variant="Variant.Outlined" Value="24" InputType="InputType.Number" />
                     <MudButton Variant="Variant.Filled" Color="Color.Primary"
                                OnClick="OnSaveAppointmentSettings">
                         Save Settings
@@ -153,11 +157,11 @@
                     <MudTextField Label="Tax ID (EIN)" Variant="Variant.Outlined" 
                                   Value="@("12-3456789")" ReadOnly="@true" />
                     <MudTextField Label="Default Payment Terms (days)" 
-                                  Variant="Variant.Outlined" Value="@("30")" Type="number" />
+                                  Variant="Variant.Outlined" Value="@("30")" InputType="InputType.Number" />
                     <MudSwitch T="bool" Label="Accept Credit Cards" 
-                               Color="Color.Primary" Checked="true" />
+                               Color="Color.Primary" Value="true" />
                     <MudSwitch T="bool" Label="Accept ACH Payments" 
-                               Color="Color.Primary" Checked="true" />
+                               Color="Color.Primary" Value="true" />
                     <MudButton Variant="Variant.Filled" Color="Color.Primary"
                                OnClick="OnSaveBillingSettings">
                         Save Settings

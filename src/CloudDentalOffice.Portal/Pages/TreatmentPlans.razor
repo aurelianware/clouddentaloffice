@@ -49,7 +49,7 @@
                 </MudText>
                 <MudAutocomplete T="Patient" Value="_selectedPatient" Label="Search Patient"
                                  SearchFunc="@SearchPatients" ToStringFunc="@(p => p?.FullName ?? "")"
-                                 Variant="Variant.Outlined" Color="Color.Primary"
+                                 Variant="Variant.Outlined" color="Color.Primary"
                                  AdornmentIcon="@Icons.Material.Filled.Search"
                                  ValueChanged="@OnPatientSelected" />
             </MudStack>
@@ -212,7 +212,7 @@
         {
             _loading = true;
             _errorMessage = null;
-            _treatmentPlans = await TreatmentPlanService.GetTreatmentPlansAsync(_selectedPatient.PatientId.ToString());
+            _treatmentPlans = await TreatmentPlanService.GetTreatmentPlansAsync(_selectedPatient!.PatientId.ToString());
         }
         catch (Exception ex)
         {
@@ -241,8 +241,8 @@
 
         var parameters = new DialogParameters<AddEditTreatmentPlanDialog>
         {
-            { x => x.PatientId, _selectedPatient.PatientId },
-            { x => x.PatientName, _selectedPatient.FullName }
+            { x => x.PatientId, _selectedPatient!.PatientId },
+            { x => x.PatientName, _selectedPatient!.FullName }
         };
 
         var options = new DialogOptions 

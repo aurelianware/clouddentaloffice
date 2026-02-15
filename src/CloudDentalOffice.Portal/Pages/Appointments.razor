@@ -242,7 +242,7 @@
     {
         var result = await DialogService.ShowMessageBox(
             "Delete Appointment",
-            $"Are you sure you want to delete the appointment for {appointment.Patient?.FullName}?",
+            $"Are you sure you want to delete the appointment for {appointment.Patient?.FullName ?? "this patient"}?",
             yesText: "Delete", cancelText: "Cancel");
 
         if (result == true)

@@ -50,13 +50,13 @@
 </MudContainer>
 
 @code {
-    MudForm form;
+    MudForm form = null!;
     RegistrationRequest registerRequest = new RegistrationRequest();
-    string error;
+    string error = string.Empty;
 
     private async Task DoRegister()
     {
-        error = null;
+        error = string.Empty;
         try
         {
             await form.Validate();
