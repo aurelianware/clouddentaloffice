@@ -111,7 +111,24 @@ if (!builder.Environment.IsDevelopment())
 }
 
 // Add application services
-builder.Services.AddScoped<IPatientService, PatientServiceImpl>();
+// Patient service: configurable between monolith (DbContext) and microservice (HTTP) mode
+var usePatientMicroservice = builder.Configuration.GetValue("Microservices:Patient:Enabled", false);
+if (usePatientMicroservice)
+{
+    var gatewayUrl = builder.Configuration.GetValue<string>("ApiGateway:BaseUrl") ?? "http://localhost:5200";
+    builder.Services.AddHttpClient<IPatientService, PatientServiceHttpClient>(client =>
+    {
+        client.BaseAddress = new Uri(gatewayUrl);
+        client.DefaultRequestHeaders.Add("Accept", "application/json");
+        client.Timeout = TimeSpan.FromSeconds(30);
+    });
+}
+else
+{
+    builder.Services.AddScoped<IPatientService, PatientServiceImpl>();
+}
+
+// Remaining services still use monolith mode (migrate one at a time)
 builder.Services.AddScoped<IClaimService, ClaimServiceImpl>();
 builder.Services.AddScoped<IAppointmentService, AppointmentServiceImpl>();
 builder.Services.AddScoped<ITreatmentPlanService, TreatmentPlanService>();
