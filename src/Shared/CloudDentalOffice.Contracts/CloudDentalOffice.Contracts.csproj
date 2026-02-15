@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <Description>Shared DTOs, events, and contracts for Cloud Dental Office microservices</Description>
+  </PropertyGroup>
+
+</Project>

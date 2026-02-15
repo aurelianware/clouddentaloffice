@@ -1,0 +1,135 @@
+version: '3.8'
+
+services:
+
+  # ── API Gateway ──
+  api-gateway:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/ApiGateway.Dockerfile
+    ports:
+      - "5200:5200"
+    depends_on:
+      - patient-service
+      - scheduling-service
+      - claims-service
+      - eligibility-service
+      - era-service
+      - auth-service
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+    networks:
+      - cdo-network
+
+  # ── Portal (Blazor UI) ──
+  portal:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/Portal.Dockerfile
+    ports:
+      - "5000:5000"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - ApiGateway__BaseUrl=http://api-gateway:5200
+    depends_on:
+      - api-gateway
+    networks:
+      - cdo-network
+
+  # ── Microservices ──
+  patient-service:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/PatientService.Dockerfile
+    ports:
+      - "5101:5101"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - DatabaseProvider=PostgreSQL
+      - ConnectionStrings__PatientDb=Host=postgres;Database=cdo_patients;Username=cdo;Password=cdo_dev_password
+    depends_on:
+      - postgres
+    networks:
+      - cdo-network
+
+  scheduling-service:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/SchedulingService.Dockerfile
+    ports:
+      - "5102:5102"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - ConnectionStrings__SchedulingDb=Host=postgres;Database=cdo_scheduling;Username=cdo;Password=cdo_dev_password
+    depends_on:
+      - postgres
+    networks:
+      - cdo-network
+
+  claims-service:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/ClaimsService.Dockerfile
+    ports:
+      - "5103:5103"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - ConnectionStrings__ClaimsDb=Host=postgres;Database=cdo_claims;Username=cdo;Password=cdo_dev_password
+    depends_on:
+      - postgres
+    networks:
+      - cdo-network
+
+  eligibility-service:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/EligibilityService.Dockerfile
+    ports:
+      - "5104:5104"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+    networks:
+      - cdo-network
+
+  era-service:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/EraService.Dockerfile
+    ports:
+      - "5105:5105"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+    networks:
+      - cdo-network
+
+  auth-service:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/AuthService.Dockerfile
+    ports:
+      - "5106:5106"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+    networks:
+      - cdo-network
+
+  # ── Infrastructure ──
+  postgres:
+    image: postgres:16-alpine
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: cdo
+      POSTGRES_PASSWORD: cdo_dev_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/seeds/init-databases.sql:/docker-entrypoint-initdb.d/01-init.sql
+    networks:
+      - cdo-network
+
+volumes:
+  postgres_data:
+
+networks:
+  cdo-network:
+    driver: bridge

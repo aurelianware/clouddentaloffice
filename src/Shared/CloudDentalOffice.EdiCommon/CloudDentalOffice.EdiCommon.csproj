@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <Description>X12 EDI parsing and generation utilities for dental transactions (837D, 270/271, 835, 276/277, 278)</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\CloudDentalOffice.Contracts\CloudDentalOffice.Contracts.csproj" />
+  </ItemGroup>
+
+</Project>
