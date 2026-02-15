@@ -3,267 +3,7 @@ using CloudDentalOffice.Contracts.Patients;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
-var builder = WebApplication.CreateBuilder(args);
-
-// Database
-builder.Services.AddDbContext<PatientDbContext>(options =>
-{
-    var provider = builder.Configuration.GetValue("DatabaseProvider", "Sqlite");
-    switch (provider)
-    {
-        case "SqlServer":
-            options.UseSqlServer(builder.Configuration.GetConnectionString("PatientDb"));
-            break;
-        case "PostgreSQL":
-            options.UseNpgsql(builder.Configuration.GetConnectionString("PatientDb"));
-            break;
-        default:
-            options.UseSqlite(builder.Configuration.GetConnectionString("PatientDb") ?? "Data Source=patient.db");
-            break;
-    }
-});
-
-builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen(c => c.SwaggerDoc("v1", new() { Title = "Patient Service", Version = "v1" }));
-builder.Services.AddHealthChecks();
-
-var app = builder.Build();
-
-if (app.Environment.IsDevelopment())
-{
-    app.UseSwagger();
-    app.UseSwaggerUI();
-}
-
-app.MapHealthChecks("/health");
-
-// ── Patient Endpoints ──
-
-app.MapGet("/api/patients", async (PatientDbContext db, string? tenantId) =>
-{
-    var query = db.Patients
-        .Include(p => p.Insurances)
-            .ThenInclude(pi => pi.InsurancePlan)
-        .Where(p => p.Status != "Archived");
-
-    if (!string.IsNullOrEmpty(tenantId))
-        query = query.Where(p => p.TenantId == tenantId);
-
-    var patients = await query
-        .OrderBy(p => p.LastName).ThenBy(p => p.FirstName)
-        .Select(p => p.ToDto())
-        .ToListAsync();
-    return Results.Ok(patients);
-})
-.WithName("GetPatients")
-.WithTags("Patients");
-
-app.MapGet("/api/patients/{id:int}", async (int id, PatientDbContext db) =>
-{
-    var patient = await db.Patients
-        .Include(p => p.Insurances)
-            .ThenInclude(pi => pi.InsurancePlan)
-        .FirstOrDefaultAsync(p => p.PatientId == id);
-    return patient is not null ? Results.Ok(patient.ToDto()) : Results.NotFound();
-})
-.WithName("GetPatient")
-.WithTags("Patients");
-
-app.MapPost("/api/patients", async (CreatePatientRequest request, PatientDbContext db, string? tenantId) =>
-{
-    var patient = new PatientEntity
-    {
-        TenantId = tenantId ?? "default",
-        FirstName = request.FirstName,
-        LastName = request.LastName,
-        MiddleName = request.MiddleName,
-        PreferredName = request.PreferredName,
-        DateOfBirth = NormalizeToUtc(request.DateOfBirth),
-        Gender = request.Gender,
-        Email = request.Email,
-        PrimaryPhone = request.PrimaryPhone,
-        SecondaryPhone = request.SecondaryPhone,
-        Address1 = request.Address1,
-        Address2 = request.Address2,
-        City = request.City,
-        State = request.State,
-        ZipCode = request.ZipCode,
-        Status = "Active",
-        CreatedDate = DateTime.UtcNow,
-    };
-
-    db.Patients.Add(patient);
-    await db.SaveChangesAsync();
-    return Results.Created($"/api/patients/{patient.PatientId}", patient.ToDto());
-})
-.WithName("CreatePatient")
-.WithTags("Patients");
-
-app.MapPut("/api/patients/{id:int}", async (int id, UpdatePatientRequest request, PatientDbContext db) =>
-{
-    var patient = await db.Patients.FindAsync(id);
-    if (patient is null) return Results.NotFound();
-
-    if (request.FirstName is not null) patient.FirstName = request.FirstName;
-    if (request.LastName is not null) patient.LastName = request.LastName;
-    if (request.MiddleName is not null) patient.MiddleName = request.MiddleName;
-    if (request.PreferredName is not null) patient.PreferredName = request.PreferredName;
-    if (request.DateOfBirth.HasValue) patient.DateOfBirth = NormalizeToUtc(request.DateOfBirth.Value);
-    if (request.Gender is not null) patient.Gender = request.Gender;
-    if (request.Email is not null) patient.Email = request.Email;
-    if (request.PrimaryPhone is not null) patient.PrimaryPhone = request.PrimaryPhone;
-    if (request.SecondaryPhone is not null) patient.SecondaryPhone = request.SecondaryPhone;
-    if (request.Address1 is not null) patient.Address1 = request.Address1;
-    if (request.Address2 is not null) patient.Address2 = request.Address2;
-    if (request.City is not null) patient.City = request.City;
-    if (request.State is not null) patient.State = request.State;
-    if (request.ZipCode is not null) patient.ZipCode = request.ZipCode;
-    if (request.Status is not null) patient.Status = request.Status;
-    patient.ModifiedDate = DateTime.UtcNow;
-
-    await db.SaveChangesAsync();
-
-    // Reload with insurance
-    var updated = await db.Patients
-        .Include(p => p.Insurances).ThenInclude(pi => pi.InsurancePlan)
-        .FirstAsync(p => p.PatientId == id);
-    return Results.Ok(updated.ToDto());
-})
-.WithName("UpdatePatient")
-.WithTags("Patients");
-
-app.MapDelete("/api/patients/{id:int}", async (int id, PatientDbContext db) =>
-{
-    var patient = await db.Patients.FindAsync(id);
-    if (patient is null) return Results.NotFound();
-
-    // Soft delete
-    patient.Status = "Archived";
-    patient.ModifiedDate = DateTime.UtcNow;
-    await db.SaveChangesAsync();
-    return Results.NoContent();
-})
-.WithName("DeletePatient")
-.WithTags("Patients");
-
-app.MapGet("/api/patients/search", async (string q, PatientDbContext db, string? tenantId) =>
-{
-    var query = db.Patients
-        .Include(p => p.Insurances).ThenInclude(pi => pi.InsurancePlan)
-        .Where(p => p.Status != "Archived")
-        .Where(p => p.LastName.Contains(q) || p.FirstName.Contains(q) ||
-                    (p.Email != null && p.Email.Contains(q)));
-
-    if (!string.IsNullOrEmpty(tenantId))
-        query = query.Where(p => p.TenantId == tenantId);
-
-    var patients = await query.Take(50).Select(p => p.ToDto()).ToListAsync();
-    return Results.Ok(patients);
-})
-.WithName("SearchPatients")
-.WithTags("Patients");
-
-// ── Insurance Plan Endpoints ──
-
-app.MapGet("/api/insurance-plans", async (PatientDbContext db, string? tenantId) =>
-{
-    var query = db.InsurancePlans.AsQueryable();
-    if (!string.IsNullOrEmpty(tenantId))
-        query = query.Where(p => p.TenantId == tenantId);
-
-    var plans = await query.OrderBy(p => p.PayerName)
-        .Select(p => p.ToDto()).ToListAsync();
-    return Results.Ok(plans);
-})
-.WithName("GetInsurancePlans")
-.WithTags("Insurance");
-
-app.MapGet("/api/insurance-plans/{id:int}", async (int id, PatientDbContext db) =>
-{
-    var plan = await db.InsurancePlans.FindAsync(id);
-    return plan is not null ? Results.Ok(plan.ToDto()) : Results.NotFound();
-})
-.WithName("GetInsurancePlan")
-.WithTags("Insurance");
-
-app.MapPost("/api/insurance-plans", async (CreateInsurancePlanRequest request, PatientDbContext db, string? tenantId) =>
-{
-    var plan = new InsurancePlanEntity
-    {
-        TenantId = tenantId ?? "default",
-        PayerId = request.PayerId,
-        PayerName = request.PayerName,
-        PlanName = request.PlanName,
-        PlanType = request.PlanType,
-        Phone = request.Phone,
-        Address1 = request.Address1,
-        Address2 = request.Address2,
-        City = request.City,
-        State = request.State,
-        ZipCode = request.ZipCode,
-        EdiPayerId = request.EdiPayerId,
-        EdiEnabled = request.EdiEnabled,
-        EdiSubmissionType = request.EdiSubmissionType,
-        IsActive = true,
-        CreatedDate = DateTime.UtcNow,
-    };
-
-    db.InsurancePlans.Add(plan);
-    await db.SaveChangesAsync();
-    return Results.Created($"/api/insurance-plans/{plan.InsurancePlanId}", plan.ToDto());
-})
-.WithName("CreateInsurancePlan")
-.WithTags("Insurance");
-
-// ── Patient Insurance Endpoints ──
-
-app.MapPost("/api/patients/{patientId:int}/insurances", async (
-    int patientId, CreatePatientInsuranceRequest request, PatientDbContext db) =>
-{
-    var patient = await db.Patients.FindAsync(patientId);
-    if (patient is null) return Results.NotFound("Patient not found");
-
-    var insurance = new PatientInsuranceEntity
-    {
-        TenantId = patient.TenantId,
-        PatientId = patientId,
-        InsurancePlanId = request.InsurancePlanId,
-        MemberId = request.MemberId,
-        GroupNumber = request.GroupNumber,
-        SequenceNumber = request.SequenceNumber,
-        EffectiveDate = request.EffectiveDate,
-        TerminationDate = request.TerminationDate,
-        IsActive = true,
-        RelationshipToSubscriber = request.RelationshipToSubscriber,
-        SubscriberFirstName = request.SubscriberFirstName,
-        SubscriberLastName = request.SubscriberLastName,
-        SubscriberDateOfBirth = request.SubscriberDateOfBirth,
-        CreatedDate = DateTime.UtcNow,
-    };
-
-    db.PatientInsurances.Add(insurance);
-    await db.SaveChangesAsync();
-
-    // Reload with plan
-    var saved = await db.PatientInsurances
-        .Include(pi => pi.InsurancePlan)
-        .FirstAsync(pi => pi.PatientInsuranceId == insurance.PatientInsuranceId);
-    return Results.Created(
-        $"/api/patients/{patientId}/insurances/{saved.PatientInsuranceId}",
-        saved.ToDto());
-})
-.WithName("CreatePatientInsurance")
-.WithTags("Insurance");
-
-// Auto-migrate in development
-using (var scope = app.Services.CreateScope())
-{
-    var db = scope.ServiceProvider.GetRequiredService<PatientDbContext>();
-    if (app.Environment.IsDevelopment())
-        await db.Database.EnsureCreatedAsync();
-}
-
-app.Run();
+namespace PatientService;
 
 // ── Entities ──
 
@@ -551,3 +291,267 @@ static DateTime NormalizeToUtc(DateTime dateTime) => dateTime.Kind switch
     DateTimeKind.Unspecified => DateTime.SpecifyKind(dateTime, DateTimeKind.Local).ToUniversalTime(),
     _ => dateTime
 };
+
+var builder = WebApplication.CreateBuilder(args);
+
+// Database
+builder.Services.AddDbContext<PatientDbContext>(options =>
+{
+    var provider = builder.Configuration.GetValue("DatabaseProvider", "Sqlite");
+    switch (provider)
+    {
+        case "SqlServer":
+            options.UseSqlServer(builder.Configuration.GetConnectionString("PatientDb"));
+            break;
+        case "PostgreSQL":
+            options.UseNpgsql(builder.Configuration.GetConnectionString("PatientDb"));
+            break;
+        default:
+            options.UseSqlite(builder.Configuration.GetConnectionString("PatientDb") ?? "Data Source=patient.db");
+            break;
+    }
+});
+
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen(c => c.SwaggerDoc("v1", new() { Title = "Patient Service", Version = "v1" }));
+builder.Services.AddHealthChecks();
+
+var app = builder.Build();
+
+if (app.Environment.IsDevelopment())
+{
+    app.UseSwagger();
+    app.UseSwaggerUI();
+}
+
+app.MapHealthChecks("/health");
+
+// ── Patient Endpoints ──
+
+app.MapGet("/api/patients", async (PatientDbContext db, string? tenantId) =>
+{
+    var query = db.Patients
+        .Include(p => p.Insurances)
+            .ThenInclude(pi => pi.InsurancePlan)
+        .Where(p => p.Status != "Archived");
+
+    if (!string.IsNullOrEmpty(tenantId))
+        query = query.Where(p => p.TenantId == tenantId);
+
+    var patients = await query
+        .OrderBy(p => p.LastName).ThenBy(p => p.FirstName)
+        .Select(p => p.ToDto())
+        .ToListAsync();
+    return Results.Ok(patients);
+})
+.WithName("GetPatients")
+.WithTags("Patients");
+
+app.MapGet("/api/patients/{id:int}", async (int id, PatientDbContext db) =>
+{
+    var patient = await db.Patients
+        .Include(p => p.Insurances)
+            .ThenInclude(pi => pi.InsurancePlan)
+        .FirstOrDefaultAsync(p => p.PatientId == id);
+    return patient is not null ? Results.Ok(patient.ToDto()) : Results.NotFound();
+})
+.WithName("GetPatient")
+.WithTags("Patients");
+
+app.MapPost("/api/patients", async (CreatePatientRequest request, PatientDbContext db, string? tenantId) =>
+{
+    var patient = new PatientEntity
+    {
+        TenantId = tenantId ?? "default",
+        FirstName = request.FirstName,
+        LastName = request.LastName,
+        MiddleName = request.MiddleName,
+        PreferredName = request.PreferredName,
+        DateOfBirth = NormalizeToUtc(request.DateOfBirth),
+        Gender = request.Gender,
+        Email = request.Email,
+        PrimaryPhone = request.PrimaryPhone,
+        SecondaryPhone = request.SecondaryPhone,
+        Address1 = request.Address1,
+        Address2 = request.Address2,
+        City = request.City,
+        State = request.State,
+        ZipCode = request.ZipCode,
+        Status = "Active",
+        CreatedDate = DateTime.UtcNow,
+    };
+
+    db.Patients.Add(patient);
+    await db.SaveChangesAsync();
+    return Results.Created($"/api/patients/{patient.PatientId}", patient.ToDto());
+})
+.WithName("CreatePatient")
+.WithTags("Patients");
+
+app.MapPut("/api/patients/{id:int}", async (int id, UpdatePatientRequest request, PatientDbContext db) =>
+{
+    var patient = await db.Patients.FindAsync(id);
+    if (patient is null) return Results.NotFound();
+
+    if (request.FirstName is not null) patient.FirstName = request.FirstName;
+    if (request.LastName is not null) patient.LastName = request.LastName;
+    if (request.MiddleName is not null) patient.MiddleName = request.MiddleName;
+    if (request.PreferredName is not null) patient.PreferredName = request.PreferredName;
+    if (request.DateOfBirth.HasValue) patient.DateOfBirth = NormalizeToUtc(request.DateOfBirth.Value);
+    if (request.Gender is not null) patient.Gender = request.Gender;
+    if (request.Email is not null) patient.Email = request.Email;
+    if (request.PrimaryPhone is not null) patient.PrimaryPhone = request.PrimaryPhone;
+    if (request.SecondaryPhone is not null) patient.SecondaryPhone = request.SecondaryPhone;
+    if (request.Address1 is not null) patient.Address1 = request.Address1;
+    if (request.Address2 is not null) patient.Address2 = request.Address2;
+    if (request.City is not null) patient.City = request.City;
+    if (request.State is not null) patient.State = request.State;
+    if (request.ZipCode is not null) patient.ZipCode = request.ZipCode;
+    if (request.Status is not null) patient.Status = request.Status;
+    patient.ModifiedDate = DateTime.UtcNow;
+
+    await db.SaveChangesAsync();
+
+    // Reload with insurance
+    var updated = await db.Patients
+        .Include(p => p.Insurances).ThenInclude(pi => pi.InsurancePlan)
+        .FirstAsync(p => p.PatientId == id);
+    return Results.Ok(updated.ToDto());
+})
+.WithName("UpdatePatient")
+.WithTags("Patients");
+
+app.MapDelete("/api/patients/{id:int}", async (int id, PatientDbContext db) =>
+{
+    var patient = await db.Patients.FindAsync(id);
+    if (patient is null) return Results.NotFound();
+
+    // Soft delete
+    patient.Status = "Archived";
+    patient.ModifiedDate = DateTime.UtcNow;
+    await db.SaveChangesAsync();
+    return Results.NoContent();
+})
+.WithName("DeletePatient")
+.WithTags("Patients");
+
+app.MapGet("/api/patients/search", async (string q, PatientDbContext db, string? tenantId) =>
+{
+    var query = db.Patients
+        .Include(p => p.Insurances).ThenInclude(pi => pi.InsurancePlan)
+        .Where(p => p.Status != "Archived")
+        .Where(p => p.LastName.Contains(q) || p.FirstName.Contains(q) ||
+                    (p.Email != null && p.Email.Contains(q)));
+
+    if (!string.IsNullOrEmpty(tenantId))
+        query = query.Where(p => p.TenantId == tenantId);
+
+    var patients = await query.Take(50).Select(p => p.ToDto()).ToListAsync();
+    return Results.Ok(patients);
+})
+.WithName("SearchPatients")
+.WithTags("Patients");
+
+// ── Insurance Plan Endpoints ──
+
+app.MapGet("/api/insurance-plans", async (PatientDbContext db, string? tenantId) =>
+{
+    var query = db.InsurancePlans.AsQueryable();
+    if (!string.IsNullOrEmpty(tenantId))
+        query = query.Where(p => p.TenantId == tenantId);
+
+    var plans = await query.OrderBy(p => p.PayerName)
+        .Select(p => p.ToDto()).ToListAsync();
+    return Results.Ok(plans);
+})
+.WithName("GetInsurancePlans")
+.WithTags("Insurance");
+
+app.MapGet("/api/insurance-plans/{id:int}", async (int id, PatientDbContext db) =>
+{
+    var plan = await db.InsurancePlans.FindAsync(id);
+    return plan is not null ? Results.Ok(plan.ToDto()) : Results.NotFound();
+})
+.WithName("GetInsurancePlan")
+.WithTags("Insurance");
+
+app.MapPost("/api/insurance-plans", async (CreateInsurancePlanRequest request, PatientDbContext db, string? tenantId) =>
+{
+    var plan = new InsurancePlanEntity
+    {
+        TenantId = tenantId ?? "default",
+        PayerId = request.PayerId,
+        PayerName = request.PayerName,
+        PlanName = request.PlanName,
+        PlanType = request.PlanType,
+        Phone = request.Phone,
+        Address1 = request.Address1,
+        Address2 = request.Address2,
+        City = request.City,
+        State = request.State,
+        ZipCode = request.ZipCode,
+        EdiPayerId = request.EdiPayerId,
+        EdiEnabled = request.EdiEnabled,
+        EdiSubmissionType = request.EdiSubmissionType,
+        IsActive = true,
+        CreatedDate = DateTime.UtcNow,
+    };
+
+    db.InsurancePlans.Add(plan);
+    await db.SaveChangesAsync();
+    return Results.Created($"/api/insurance-plans/{plan.InsurancePlanId}", plan.ToDto());
+})
+.WithName("CreateInsurancePlan")
+.WithTags("Insurance");
+
+// ── Patient Insurance Endpoints ──
+
+app.MapPost("/api/patients/{patientId:int}/insurances", async (
+    int patientId, CreatePatientInsuranceRequest request, PatientDbContext db) =>
+{
+    var patient = await db.Patients.FindAsync(patientId);
+    if (patient is null) return Results.NotFound("Patient not found");
+
+    var insurance = new PatientInsuranceEntity
+    {
+        TenantId = patient.TenantId,
+        PatientId = patientId,
+        InsurancePlanId = request.InsurancePlanId,
+        MemberId = request.MemberId,
+        GroupNumber = request.GroupNumber,
+        SequenceNumber = request.SequenceNumber,
+        EffectiveDate = request.EffectiveDate,
+        TerminationDate = request.TerminationDate,
+        IsActive = true,
+        RelationshipToSubscriber = request.RelationshipToSubscriber,
+        SubscriberFirstName = request.SubscriberFirstName,
+        SubscriberLastName = request.SubscriberLastName,
+        SubscriberDateOfBirth = request.SubscriberDateOfBirth,
+        CreatedDate = DateTime.UtcNow,
+    };
+
+    db.PatientInsurances.Add(insurance);
+    await db.SaveChangesAsync();
+
+    // Reload with plan
+    var saved = await db.PatientInsurances
+        .Include(pi => pi.InsurancePlan)
+        .FirstAsync(pi => pi.PatientInsuranceId == insurance.PatientInsuranceId);
+    return Results.Created(
+        $"/api/patients/{patientId}/insurances/{saved.PatientInsuranceId}",
+        saved.ToDto());
+})
+.WithName("CreatePatientInsurance")
+.WithTags("Insurance");
+
+// Auto-migrate in development
+using (var scope = app.Services.CreateScope())
+{
+    var db = scope.ServiceProvider.GetRequiredService<PatientDbContext>();
+    if (app.Environment.IsDevelopment())
+        await db.Database.EnsureCreatedAsync();
+}
+
+app.Run();
+
+
