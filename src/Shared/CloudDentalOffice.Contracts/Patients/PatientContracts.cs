@@ -11,6 +11,7 @@ public record PatientDto
     public string? PreferredName { get; init; }
     public DateTime DateOfBirth { get; init; }
     public string Gender { get; init; } = string.Empty;
+    public string? SSN { get; init; }
     public string? Email { get; init; }
     public string? PrimaryPhone { get; init; }
     public string? SecondaryPhone { get; init; }
@@ -46,6 +47,7 @@ public record CreatePatientRequest
     public string? PreferredName { get; init; }
     public DateTime DateOfBirth { get; init; }
     public string Gender { get; init; } = "U";
+    public string? SSN { get; init; }
     public string? Email { get; init; }
     public string? PrimaryPhone { get; init; }
     public string? SecondaryPhone { get; init; }
@@ -64,6 +66,7 @@ public record UpdatePatientRequest
     public string? PreferredName { get; init; }
     public DateTime? DateOfBirth { get; init; }
     public string? Gender { get; init; }
+    public string? SSN { get; init; }
     public string? Email { get; init; }
     public string? PrimaryPhone { get; init; }
     public string? SecondaryPhone { get; init; }

@@ -65,7 +65,7 @@ app.MapPost("/api/appointments", async (CreateAppointmentRequest request, Schedu
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<SchedulingDbContext>();
-    if (app.Environment.IsDevelopment()) await db.Database.EnsureCreatedAsync();
+    await db.Database.EnsureCreatedAsync();
 }
 
 app.Run();

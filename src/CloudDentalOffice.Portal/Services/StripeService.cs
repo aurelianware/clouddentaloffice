@@ -2,10 +2,21 @@ using Stripe;
 
 namespace CloudDentalOffice.Portal.Services;
 
+public class StripeProductInfo
+{
+    public string Id { get; set; } = string.Empty;
+    public string Name { get; set; } = string.Empty;
+    public string PriceId { get; set; } = string.Empty;
+    public long UnitAmount { get; set; } // Price in cents
+    public string Currency { get; set; } = "usd";
+    public string Description { get; set; } = string.Empty;
+}
+
 public interface IStripeService
 {
     Task<string> CreateCustomerAsync(string name, string email, string tenantId);
     Task<string> CreateSubscriptionAsync(string customerId, string priceId);
+    Task<List<StripeProductInfo>> GetProductsAsync();
 }
 
 public class StripeService : IStripeService
@@ -70,5 +81,62 @@ public class StripeService : IStripeService
         var service = new SubscriptionService();
         var subscription = await service.CreateAsync(options);
         return subscription.Id;
+    }
+
+    public async Task<List<StripeProductInfo>> GetProductsAsync()
+    {
+        var products = new List<StripeProductInfo>();
+
+        if (string.IsNullOrEmpty(StripeConfiguration.ApiKey))
+        {
+            _logger.LogWarning("Stripe API Key is missing. Returning empty product list.");
+            return products;
+        }
+
+        try
+        {
+            var productService = new ProductService();
+            var stripeProducts = await productService.ListAsync(new ProductListOptions
+            {
+                Limit = 100,
+                Active = true
+            });
+
+            var priceService = new PriceService();
+            
+            foreach (var product in stripeProducts.Data)
+            {
+                // Get prices for this product
+                var prices = await priceService.ListAsync(new PriceListOptions
+                {
+                    Product = product.Id,
+                    Active = true,
+                    Limit = 10
+                });
+
+                // Use the first active price
+                var price = prices.Data.FirstOrDefault();
+                if (price != null)
+                {
+                    products.Add(new StripeProductInfo
+                    {
+                        Id = product.Id,
+                        Name = product.Name,
+                        PriceId = price.Id,
+                        UnitAmount = price.UnitAmount ?? 0,
+                        Currency = price.Currency ?? "usd",
+                        Description = product.Description ?? string.Empty
+                    });
+                }
+            }
+
+            _logger.LogInformation("Retrieved {ProductCount} products from Stripe", products.Count);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error retrieving products from Stripe");
+        }
+
+        return products;
     }
 }

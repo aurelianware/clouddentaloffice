@@ -109,7 +109,7 @@ app.MapGet("/api/claims/dashboard", async (ClaimsDbContext db) =>
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<ClaimsDbContext>();
-    if (app.Environment.IsDevelopment()) await db.Database.EnsureCreatedAsync();
+    await db.Database.EnsureCreatedAsync();
 }
 
 app.Run();

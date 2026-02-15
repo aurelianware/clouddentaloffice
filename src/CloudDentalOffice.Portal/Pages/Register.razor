@@ -3,6 +3,7 @@
 @using CloudDentalOffice.Portal.Services
 @using CloudDentalOffice.Portal.Services.Auth
 @inject IAuthService AuthService
+@inject IStripeService StripeService
 @inject NavigationManager Navigation
 @inject ISnackbar Snackbar
 
@@ -31,9 +32,25 @@
             <MudTextField T="string" Label="Password" Required="true" RequiredError="Password is required!"
                           @bind-Value="registerRequest.Password" InputType="InputType.Password" Class="mt-4" />
                           
-            <MudSelect T="string" Label="Plan" @bind-Value="registerRequest.PlanId" Class="mt-4">
-                <MudSelectItem Value="@("price_hobby")">Hobby ($20/mo)</MudSelectItem>
-                <MudSelectItem Value="@("price_pro")">Pro ($50/mo)</MudSelectItem>
+            <MudSelect T="string" Label="Plan" @bind-Value="registerRequest.PlanId" Class="mt-4" Disabled="isLoadingPlans">
+                @if (isLoadingPlans)
+                {
+                    <MudSelectItem Value="@("")">Loading plans...</MudSelectItem>
+                }
+                else if (stripeProducts.Count == 0)
+                {
+                    <MudSelectItem Value="@("")">No plans available</MudSelectItem>
+                }
+                else
+                {
+                    @foreach (var product in stripeProducts)
+                    {
+                        var priceDisplay = product.UnitAmount > 0 
+                            ? $"${(product.UnitAmount / 100m):F2}/mo" 
+                            : "Custom";
+                        <MudSelectItem Value="@product.PriceId">@product.Name (@priceDisplay)</MudSelectItem>
+                    }
+                }
             </MudSelect>
 
             <div class="d-flex flex-column align-center mt-6 gap-2">
@@ -53,6 +70,31 @@
     MudForm form = null!;
     RegistrationRequest registerRequest = new RegistrationRequest();
     string error = string.Empty;
+    List<StripeProductInfo> stripeProducts = new();
+    bool isLoadingPlans = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            // Load Stripe products
+            stripeProducts = await StripeService.GetProductsAsync();
+            
+            // Set first product as default
+            if (stripeProducts.Count > 0)
+            {
+                registerRequest.PlanId = stripeProducts[0].PriceId;
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading plans: {ex}");
+        }
+        finally
+        {
+            isLoadingPlans = false;
+        }
+    }
 
     private async Task DoRegister()
     {

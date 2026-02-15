@@ -112,17 +112,21 @@ public class AuthService : IAuthService
         _context.Users.Add(user);
 
         // 4. Seed default providers for new tenant
+        // Generate unique NPIs based on tenant ID to avoid duplicates across registrations
+        var tenantHash = Math.Abs(tenantId.GetHashCode());
+        var baseNpi = (1000000000 + (tenantHash % 9000000000L)).ToString();
+        
         var defaultProviders = new List<Provider>
         {
             new Provider 
             { 
                 TenantId = tenantId,
-                NPI = "1234567890",
+                NPI = baseNpi,
                 FirstName = "John", 
                 LastName = "Smith", 
                 Suffix = "DDS",
                 Specialty = "General Dentistry",
-                LicenseNumber = "D12345",
+                LicenseNumber = $"D{tenantHash:X6}01",
                 LicenseState = "CA",
                 Email = "jsmith@example.com",
                 Phone = "555-0101",
@@ -132,12 +136,12 @@ public class AuthService : IAuthService
             new Provider 
             { 
                 TenantId = tenantId,
-                NPI = "2345678901",
+                NPI = (long.Parse(baseNpi) + 1).ToString(),
                 FirstName = "Sarah", 
                 LastName = "Johnson", 
                 Suffix = "DMD",
                 Specialty = "Pediatric Dentistry",
-                LicenseNumber = "D23456",
+                LicenseNumber = $"D{tenantHash:X6}02",
                 LicenseState = "CA",
                 Email = "sjohnson@example.com",
                 Phone = "555-0102",
@@ -147,12 +151,12 @@ public class AuthService : IAuthService
             new Provider 
             { 
                 TenantId = tenantId,
-                NPI = "3456789012",
+                NPI = (long.Parse(baseNpi) + 2).ToString(),
                 FirstName = "Michael", 
                 LastName = "Chen", 
                 Suffix = "DDS",
                 Specialty = "Oral Surgery",
-                LicenseNumber = "D34567",
+                LicenseNumber = $"D{tenantHash:X6}03",
                 LicenseState = "CA",
                 Email = "mchen@example.com",
                 Phone = "555-0103",
@@ -162,12 +166,12 @@ public class AuthService : IAuthService
             new Provider 
             { 
                 TenantId = tenantId,
-                NPI = "4567890123",
+                NPI = (long.Parse(baseNpi) + 3).ToString(),
                 FirstName = "Emily", 
                 LastName = "Rodriguez", 
                 Suffix = "DMD",
                 Specialty = "Endodontics",
-                LicenseNumber = "D45678",
+                LicenseNumber = $"D{tenantHash:X6}04",
                 LicenseState = "CA",
                 Email = "erodriguez@example.com",
                 Phone = "555-0104",

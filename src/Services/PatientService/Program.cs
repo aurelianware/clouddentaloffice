@@ -91,6 +91,7 @@ app.MapPost("/api/patients", async (CreatePatientRequest request, PatientDbConte
         PreferredName = request.PreferredName,
         DateOfBirth = NormalizeToUtc(request.DateOfBirth),
         Gender = request.Gender,
+        SSN = request.SSN,
         Email = request.Email,
         PrimaryPhone = request.PrimaryPhone,
         SecondaryPhone = request.SecondaryPhone,
@@ -266,12 +267,11 @@ app.MapPost("/api/patients/{patientId:int}/insurances", async (
 .WithName("CreatePatientInsurance")
 .WithTags("Insurance");
 
-// Auto-migrate in development
+// Auto-migrate on startup (all environments)
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<PatientDbContext>();
-    if (app.Environment.IsDevelopment())
-        await db.Database.EnsureCreatedAsync();
+    await db.Database.EnsureCreatedAsync();
 }
 
 app.Run();
@@ -304,6 +304,9 @@ public class PatientEntity
 
     [Required, MaxLength(1)]
     public string Gender { get; set; } = "U";
+
+    [MaxLength(11)]
+    public string? SSN { get; set; }
 
     [MaxLength(255)]
     public string? Email { get; set; }
@@ -353,6 +356,7 @@ public class PatientEntity
         PreferredName = PreferredName,
         DateOfBirth = DateOfBirth,
         Gender = Gender,
+        SSN = SSN,
         Email = Email,
         PrimaryPhone = PrimaryPhone,
         SecondaryPhone = SecondaryPhone,
