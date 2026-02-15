@@ -78,16 +78,17 @@
                             <MudPaper Class="pa-3" Style="background: #0a0a0a; border: 1px solid rgba(0, 255, 255, 0.2);">
                                 <MudText Typo="Typo.caption" Style="color: #808080;" Class="mb-2">Upper Arch (1-16)</MudText>
                                 <MudStack Row="true" Spacing="1">
-                                    @for (int tooth = 1; tooth <= 16; tooth++)
+                                    @foreach (var tooth in Enumerable.Range(1, 16))
                                     {
                                         var toothNum = tooth.ToString();
                                         var hasProcs = _toothChartData.ContainsKey(toothNum);
                                         var borderColor = hasProcs ? "2px solid #00ffff" : "1px solid #404040";
                                         var bgColor = hasProcs ? "#1a3a3a" : "#1a1a1a";
                                         
-                                        <MudTooltip Text="@GetToothTooltip(toothNum)" Delay="300">
+                                        <MudTooltip Text="@GetToothTooltip(toothNum)" Delay="300" key="@($"tooth-{tooth}")">
                                             <MudPaper Class="pa-1" Style="@($"background: {bgColor}; width: 45px; height: 70px; border: {borderColor}; display: flex; flex-direction: column; align-items: center; justify-content: space-between; cursor: pointer;")"
-                                                      @onclick="@(() => ShowToothDetails(toothNum))">
+                                                      @onclick="@(() => ShowToothDetails(toothNum))"
+                                                      @key="@($"upper-{tooth}")">
                                                 <MudText Typo="Typo.caption" Style="color: #b0b0b0; font-weight: bold;">@tooth</MudText>
                                                 @if (hasProcs)
                                                 {
@@ -107,16 +108,17 @@
                             <MudPaper Class="pa-3" Style="background: #0a0a0a; border: 1px solid rgba(0, 255, 255, 0.2);">
                                 <MudText Typo="Typo.caption" Style="color: #808080;" Class="mb-2">Lower Arch (17-32)</MudText>
                                 <MudStack Row="true" Spacing="1">
-                                    @for (int tooth = 17; tooth <= 32; tooth++)
+                                    @foreach (var tooth in Enumerable.Range(17, 16))
                                     {
                                         var toothNum = tooth.ToString();
                                         var hasProcs = _toothChartData.ContainsKey(toothNum);
                                         var borderColor = hasProcs ? "2px solid #00ffff" : "1px solid #404040";
                                         var bgColor = hasProcs ? "#1a3a3a" : "#1a1a1a";
                                         
-                                        <MudTooltip Text="@GetToothTooltip(toothNum)" Delay="300">
+                                        <MudTooltip Text="@GetToothTooltip(toothNum)" Delay="300" key="@($"tooth-{tooth}")">
                                             <MudPaper Class="pa-1" Style="@($"background: {bgColor}; width: 45px; height: 70px; border: {borderColor}; display: flex; flex-direction: column; align-items: center; justify-content: space-between; cursor: pointer;")"
-                                                      @onclick="@(() => ShowToothDetails(toothNum))">
+                                                      @onclick="@(() => ShowToothDetails(toothNum))"
+                                                      @key="@($"lower-{tooth}")">
                                                 <MudText Typo="Typo.caption" Style="color: #b0b0b0; font-weight: bold;">@tooth</MudText>
                                                 @if (hasProcs)
                                                 {

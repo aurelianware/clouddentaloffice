@@ -21,8 +21,8 @@ public class ClinicalChartService : IClinicalChartService
         var tenantId = _tenantProvider.TenantId;
 
         // Get completed procedures from Procedures table
+        // NOTE: Provider data loaded separately from microservice
         var completedProcs = await _context.Procedures
-            .Include(p => p.Provider)
             .Where(p => p.TenantId == tenantId && p.PatientId == patientId)
             .Select(p => new CompletedProcedureDto
             {
@@ -32,7 +32,7 @@ public class ClinicalChartService : IClinicalChartService
                 Description = p.Description,
                 ToothNumber = p.ToothNumber,
                 Surface = p.Surface,
-                ProviderName = p.Provider.FullName,
+                ProviderName = "Provider " + p.ProviderId, // TODO: Load from provider service
                 ChargeAmount = p.ChargeAmount,
                 Status = p.Status
             })
@@ -61,15 +61,15 @@ public class ClinicalChartService : IClinicalChartService
     {
         var tenantId = _tenantProvider.TenantId;
 
+        // NOTE: Provider data loaded separately from microservice
         var notes = await _context.ClinicalNotes
-            .Include(cn => cn.Provider)
             .Where(cn => cn.TenantId == tenantId && cn.PatientId == patientId)
             .Select(cn => new ClinicalNoteDto
             {
                 NoteId = cn.ClinicalNoteId,
                 NoteDate = cn.NoteDate,
                 NoteText = cn.NoteText,
-                CreatedBy = cn.Provider != null ? cn.Provider.FullName : (cn.CreatedBy ?? "Unknown"),
+                CreatedBy = cn.CreatedBy ?? (cn.ProviderId.HasValue ? "Provider " + cn.ProviderId.Value : "Unknown"),
                 NoteType = cn.NoteType
             })
             .OrderByDescending(cn => cn.NoteDate)

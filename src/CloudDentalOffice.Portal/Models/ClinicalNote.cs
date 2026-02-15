@@ -20,11 +20,11 @@ public class ClinicalNote : ITenantEntity
     // Patient reference
     [Required]
     public int PatientId { get; set; }
-    public virtual Patient Patient { get; set; } = null!;
 
     // Provider who created the note (optional)
     public int? ProviderId { get; set; }
-    public virtual Provider? Provider { get; set; }
+
+    // NOTE: Navigation properties removed - data is in separate microservice databases
 
     // Note details
     [Required]

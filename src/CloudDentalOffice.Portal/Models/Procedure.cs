@@ -20,16 +20,15 @@ public class Procedure : ITenantEntity
     // Patient reference
     [Required]
     public int PatientId { get; set; }
-    public virtual Patient Patient { get; set; } = null!;
 
     // Provider who performed the procedure
     [Required]
     public int ProviderId { get; set; }
-    public virtual Provider Provider { get; set; } = null!;
 
     // Appointment reference (optional)
     public int? AppointmentId { get; set; }
-    public virtual Appointment? Appointment { get; set; }
+
+    // NOTE: Navigation properties removed - data is in separate microservice databases
 
     // Procedure details
     [Required]
