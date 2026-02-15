@@ -161,16 +161,9 @@ using (var scope = app.Services.CreateScope())
     {
         logger.LogInformation("Applying database migrations...");
         
-        // For PostgreSQL, reset and recreate the database to avoid migration compatibility issues
-        if (!builder.Environment.IsDevelopment())
-        {
-            logger.LogWarning("Production mode: Ensuring database is created (migrations may fail due to SQLite->PostgreSQL differences)");
-            dbContext.Database.EnsureCreated();
-        }
-        else
-        {
-            dbContext.Database.Migrate();
-        }
+        // Apply migrations in all environments
+        logger.LogInformation("Running database migrations...");
+        dbContext.Database.Migrate();
         
         logger.LogInformation("Database setup completed successfully");
         
