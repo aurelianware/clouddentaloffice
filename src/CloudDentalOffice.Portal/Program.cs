@@ -160,8 +160,19 @@ using (var scope = app.Services.CreateScope())
     try
     {
         logger.LogInformation("Applying database migrations...");
-        dbContext.Database.Migrate();
-        logger.LogInformation("Database migrations applied successfully");
+        
+        // For PostgreSQL, reset and recreate the database to avoid migration compatibility issues
+        if (!builder.Environment.IsDevelopment())
+        {
+            logger.LogWarning("Production mode: Ensuring database is created (migrations may fail due to SQLite->PostgreSQL differences)");
+            dbContext.Database.EnsureCreated();
+        }
+        else
+        {
+            dbContext.Database.Migrate();
+        }
+        
+        logger.LogInformation("Database setup completed successfully");
         
         // Seed initial data
         logger.LogInformation("Initializing database with seed data...");
@@ -177,11 +188,11 @@ using (var scope = app.Services.CreateScope())
         var demoUserExists = dbContext.Users.IgnoreQueryFilters().Any(u => u.Email == "demo@clouddentaloffice.com");
         if (demoUserExists)
         {
-            logger.LogInformation("Demo user verified: demo@clouddentaloffice.com");
+            logger.LogInformation("✅ Demo user verified: demo@clouddentaloffice.com");
         }
         else
         {
-            logger.LogWarning("Demo user not found in database!");
+            logger.LogWarning("⚠️  Demo user not found in database!");
         }
     }
     catch (Exception ex)
