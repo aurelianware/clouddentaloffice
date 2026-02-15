@@ -3,8 +3,6 @@ using CloudDentalOffice.Contracts.Patients;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
-namespace PatientService;
-
 // ── Entities ──
 
 [Table("Patients")]
