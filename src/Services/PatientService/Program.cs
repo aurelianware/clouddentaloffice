@@ -292,6 +292,8 @@ static DateTime NormalizeToUtc(DateTime dateTime) => dateTime.Kind switch
     _ => dateTime
 };
 
+// ── Application ──
+
 var builder = WebApplication.CreateBuilder(args);
 
 // Database
@@ -553,5 +555,3 @@ using (var scope = app.Services.CreateScope())
 }
 
 app.Run();
-
-
