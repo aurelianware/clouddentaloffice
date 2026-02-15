@@ -30,14 +30,12 @@ public class AppointmentServiceImpl : IAppointmentService
                 throw new InvalidOperationException("Tenant ID is not available");
 
             // Get appointments for the specific date
-            // Assuming appointments store full DateTime, we compare Date part
+            // NOTE: Patient/Provider data loaded separately from their microservices
             var localStart = DateTime.SpecifyKind(date.Date, DateTimeKind.Local);
             var utcStart = localStart.ToUniversalTime();
             var utcEnd = localStart.AddDays(1).ToUniversalTime();
 
             return await _context.Appointments
-                .Include(a => a.Patient)
-                .Include(a => a.Provider)
                 .Where(a => a.TenantId == tenantId && a.AppointmentDateTime >= utcStart && a.AppointmentDateTime < utcEnd)
                 .OrderBy(a => a.AppointmentDateTime)
                 .ToListAsync();
@@ -60,9 +58,8 @@ public class AppointmentServiceImpl : IAppointmentService
             if (string.IsNullOrEmpty(tenantId))
                 throw new InvalidOperationException("Tenant ID is not available");
 
+            // NOTE: Patient/Provider data loaded separately from their microservices
             return await _context.Appointments
-                .Include(a => a.Patient)
-                .Include(a => a.Provider)
                 .FirstOrDefaultAsync(a => a.TenantId == tenantId && a.AppointmentId == id);
         }
         catch (Exception ex)
@@ -97,19 +94,7 @@ public class AppointmentServiceImpl : IAppointmentService
             _logger.LogInformation("Appointment created successfully with ID: {AppointmentId}", appointment.AppointmentId);
 
             // Reload with navigation properties
-            var createdAppointment = await _context.Appointments
-                .Include(a => a.Patient)
-                .Include(a => a.Provider)
-                .FirstOrDefaultAsync(a => a.AppointmentId == appointment.AppointmentId && a.TenantId == tenantId);
-
-            if (createdAppointment == null)
-            {
-                _logger.LogError("Failed to reload appointment {AppointmentId} after creation", appointment.AppointmentId);
-                throw new InvalidOperationException("Failed to retrieve created appointment");
-            }
-
-            return createdAppointment;
-        }
+            return a
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error creating appointment for Patient {PatientId}, Provider {ProviderId}", 
@@ -159,9 +144,7 @@ public class AppointmentServiceImpl : IAppointmentService
 
     public async Task DeleteAppointmentAsync(string appointmentId)
     {
-        if (!int.TryParse(appointmentId, out var id))
-            return;
-
+        if (return existingAppointment
         try
         {
             var tenantId = _tenantProvider.TenantId;

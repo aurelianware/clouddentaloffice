@@ -47,7 +47,6 @@ public class Appointment : ITenantEntity
     public DateTime CreatedDate { get; set; } = DateTime.UtcNow;
     public DateTime? ModifiedDate { get; set; }
 
-    // Navigation properties
-    public virtual Patient Patient { get; set; } = null!;
-    public virtual Provider Provider { get; set; } = null!;
+    // NOTE: Navigation properties removed - Patient/Provider data is in separate microservice databases
+    // Patient and Provider info must be loaded separately via their respective services
 }
