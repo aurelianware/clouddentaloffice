@@ -21,7 +21,7 @@
                 @if (!string.IsNullOrEmpty(_validationMessage))
                 {
                     <MudItem xs="12">
-                        <MudAlert Severity="Severity.Warning">@_validationMessage</MudAlert>
+                        <MudAlert Severity="Severity.Warning" Variant="Variant.Filled">@_validationMessage</MudAlert>
                     </MudItem>
                 }
 

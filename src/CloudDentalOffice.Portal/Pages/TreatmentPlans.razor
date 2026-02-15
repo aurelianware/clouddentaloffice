@@ -30,7 +30,7 @@
 
     @if (!string.IsNullOrEmpty(_errorMessage))
     {
-        <MudAlert Severity="Severity.Error" Class="mt-4">
+        <MudAlert Severity="Severity.Error" Variant="Variant.Filled" Class="mt-4">
             <MudText Typo="Typo.body1" Style="font-family: monospace; white-space: pre-wrap;">@_errorMessage</MudText>
         </MudAlert>
     }

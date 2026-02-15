@@ -155,23 +155,42 @@ var app = builder.Build();
 using (var scope = app.Services.CreateScope())
 {
     var dbContext = scope.ServiceProvider.GetRequiredService<CloudDentalDbContext>();
+    var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+    
     try
     {
+        logger.LogInformation("Applying database migrations...");
         dbContext.Database.Migrate();
+        logger.LogInformation("Database migrations applied successfully");
         
         // Seed initial data
+        logger.LogInformation("Initializing database with seed data...");
         CloudDentalOffice.Portal.Data.DbInitializer.Initialize(dbContext);
+        logger.LogInformation("Database initialization completed");
         
         // Seed claims for demo tenant
+        logger.LogInformation("Seeding claims for demo tenant...");
         CloudDentalOffice.Portal.Data.DbInitializer.SeedClaims(dbContext, TenantConstants.DefaultTenantId);
+        logger.LogInformation("Claims seeding completed");
 
-        var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
-        logger.LogInformation("Database migrations applied successfully");
+        // Verify demo user exists
+        var demoUserExists = dbContext.Users.IgnoreQueryFilters().Any(u => u.Email == "demo@clouddentaloffice.com");
+        if (demoUserExists)
+        {
+            logger.LogInformation("Demo user verified: demo@clouddentaloffice.com");
+        }
+        else
+        {
+            logger.LogWarning("Demo user not found in database!");
+        }
     }
     catch (Exception ex)
     {
-        var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
-        logger.LogError(ex, "Error applying database migrations");
+        logger.LogError(ex, "Error during database initialization: {Message}", ex.Message);
+        logger.LogError("Stack trace: {StackTrace}", ex.StackTrace);
+        
+        // Don't throw - let the app start so we can see the error in logs
+        // In production, you might want to fail fast instead
     }
 }
 

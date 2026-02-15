@@ -23,7 +23,7 @@
             
             @if (!string.IsNullOrEmpty(error))
             {
-                <MudAlert Severity="Severity.Error" Class="mt-4">@error</MudAlert>
+                <MudAlert Severity="Severity.Error" Variant="Variant.Filled" Class="mt-4">@error</MudAlert>
             }
         </MudForm>
     </MudPaper>
@@ -50,13 +50,18 @@
             }
             else
             {
-                error = "Invalid email or password.";
+                error = "Invalid email or password. Please check your credentials and try again.";
             }
+        }
+        catch (HttpRequestException httpEx)
+        {
+            error = "Unable to connect to authentication service. Please try again later.";
+            Console.WriteLine($"HTTP Error during login: {httpEx}");
         }
         catch (Exception ex)
         {
-            error = "An error occurred during login.";
-            Console.WriteLine(ex);
+            error = $"An error occurred during login: {ex.Message}";
+            Console.WriteLine($"Login error: {ex}");
         }
     }
 }
