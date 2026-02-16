@@ -1,4 +1,6 @@
 # Cloud Dental Office
+![Main Branch Push Event Status](https://github.com/github/docs/actions/workflows/main.yml/badge.svg?event=push)
+
 
 **Modern SaaS Practice Management Platform for Dental Providers**
 
