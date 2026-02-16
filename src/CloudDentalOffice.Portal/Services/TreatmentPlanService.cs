@@ -23,8 +23,6 @@ public class TreatmentPlanService : ITreatmentPlanService
             throw new InvalidOperationException("Tenant ID is not available");
 
         return await _context.TreatmentPlans
-            .Include(tp => tp.Patient)
-            .Include(tp => tp.Provider)
             .Include(tp => tp.PlannedProcedures)
             .Where(tp => tp.TenantId == tenantId)
             .OrderByDescending(tp => tp.CreatedDate)
@@ -41,8 +39,6 @@ public class TreatmentPlanService : ITreatmentPlanService
             throw new ArgumentException("Invalid patient ID format", nameof(patientId));
 
         return await _context.TreatmentPlans
-            .Include(tp => tp.Patient)
-            .Include(tp => tp.Provider)
             .Include(tp => tp.PlannedProcedures)
             .Where(tp => tp.TenantId == tenantId && tp.PatientId == patientIdInt)
             .OrderByDescending(tp => tp.CreatedDate)
@@ -59,8 +55,6 @@ public class TreatmentPlanService : ITreatmentPlanService
             throw new ArgumentException("Invalid treatment plan ID format", nameof(treatmentPlanId));
 
         return await _context.TreatmentPlans
-            .Include(tp => tp.Patient)
-            .Include(tp => tp.Provider)
             .Include(tp => tp.PlannedProcedures)
             .Where(tp => tp.TenantId == tenantId && tp.TreatmentPlanId == planIdInt)
             .FirstOrDefaultAsync();

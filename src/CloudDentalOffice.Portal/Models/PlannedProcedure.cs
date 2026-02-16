@@ -54,5 +54,5 @@ public class PlannedProcedure : ITenantEntity
 
     // Navigation properties
     public virtual TreatmentPlan TreatmentPlan { get; set; } = null!;
-    public virtual ClaimProcedure? ClaimProcedure { get; set; }
+    // NOTE: ClaimProcedure FK removed - claim data is in separate database
 }

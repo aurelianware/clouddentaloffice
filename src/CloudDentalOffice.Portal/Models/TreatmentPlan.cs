@@ -41,9 +41,10 @@ public class TreatmentPlan : ITenantEntity
     public DateTime CreatedDate { get; set; } = DateTime.UtcNow;
     public DateTime? ModifiedDate { get; set; }
 
-    // Navigation properties
-    public virtual Patient Patient { get; set; } = null!;
-    public virtual Provider Provider { get; set; } = null!;
+    // NOTE: Navigation properties removed - data is in separate microservice databases
+    // Patient and Provider info must be loaded separately via their respective services
+
+    // Planned procedures collection still valid (same database)
     public virtual ICollection<PlannedProcedure> PlannedProcedures { get; set; } = new List<PlannedProcedure>();
 
     [NotMapped]
