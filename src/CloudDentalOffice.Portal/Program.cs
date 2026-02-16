@@ -9,6 +9,7 @@ using CloudDentalOffice.Portal.Data;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Web;
 using Microsoft.EntityFrameworkCore;
+using MudBlazor;
 using MudBlazor.Services;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -41,7 +42,15 @@ builder.Services.Configure<Microsoft.AspNetCore.SignalR.HubOptions>(options =>
     options.MaximumReceiveMessageSize = 128 * 1024; // 128KB
 });
 
-builder.Services.AddMudServices();
+// Configure MudBlazor with custom theme for better button text readability
+builder.Services.AddMudServices(config =>
+{
+    config.SnackbarConfiguration.PositionClass = Defaults.Classes.Position.BottomRight;
+});
+
+// Add custom theme provider
+builder.Services.AddScoped<MudThemeProvider>();
+
 builder.Services.AddHttpContextAccessor();
 
 // Configure JWT Authentication

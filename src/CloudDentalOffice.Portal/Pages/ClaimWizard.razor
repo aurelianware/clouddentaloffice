@@ -211,7 +211,7 @@
         </MudButton>
         @if (_activeStep < 3)
         {
-            <MudButton OnClick="NextStep" Variant="Variant.Filled" Color="Color.Primary" Disabled="@(!CanProceedToNextStep())" Style="color: #000000; font-weight: bold;">
+            <MudButton OnClick="NextStep" Variant="Variant.Filled" Color="Color.Primary" Disabled="@(!CanProceedToNextStep())">
                 Next
             </MudButton>
         }
