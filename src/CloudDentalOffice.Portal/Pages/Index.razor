@@ -260,7 +260,7 @@
                             <MudPaper Class="pa-2" Style="background: rgba(255, 170, 0, 0.05);">
                                 <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center">
                                     <div>
-                                        <MudText Typo="Typo.body2" Style="color: #00ffff;">@plan.Patient?.FullName</MudText>
+                                        <MudText Typo="Typo.body2" Style="color: #00ffff;">Patient @plan.PatientId</MudText>
                                         <MudText Typo="Typo.caption" Style="color: #b0b0b0;">
                                             @(plan.Title ?? "Treatment Plan") - @plan.TotalEstimatedCost.ToString("C")
                                         </MudText>
