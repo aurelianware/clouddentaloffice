@@ -1,10 +1,10 @@
 # Cloud Dental Office
-![Main Branch Push Event Status](https://github.com/github/docs/actions/workflows/main.yml/badge.svg?event=push)
+
 
 
 **Modern SaaS Practice Management Platform for Dental Providers**
 
-A cloud-native, microservices-based dental practice management system built from the ground up with .NET 8, Blazor Server, and deep payer interoperability.
+A cloud-native, microservices-based dental practice management system built from the ground up with .NET 8, Blazor Server and deep payer interoperability.
 
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![.NET](https://img.shields.io/badge/.NET-8.0-purple)](https://dotnet.microsoft.com)
