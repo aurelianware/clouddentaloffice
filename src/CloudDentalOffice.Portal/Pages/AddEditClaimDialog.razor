@@ -3,6 +3,7 @@
 @inject IClaimService ClaimService
 @inject IPatientService PatientService
 @inject IProviderService ProviderService
+@inject IProcedureCodeService ProcedureCodeService
 @inject ISnackbar Snackbar
 
 <MudDialog Style="background: #0a0a0a; border: 1px solid #00ffff;">
@@ -116,8 +117,18 @@
                                 </HeaderContent>
                                 <RowTemplate>
                                     <MudTd DataLabel="CDT Code">
-                                        <MudTextField @bind-Value="context.CDTCode" Variant="Variant.Text" 
-                                                      Margin="Margin.Dense" MaxLength="10" />
+                                        <MudAutocomplete T="ProcedureCode" 
+                                                         Value="@GetProcedureCodeForRow(context)"
+                                                         ValueChanged="@(code => OnProcedureCodeSelected(context, code))"
+                                                         SearchFunc="@SearchProcedureCodes"
+                                                         ToStringFunc="@(pc => pc?.DisplayName ?? "")"
+                                                         Variant="Variant.Text"
+                                                         Margin="Margin.Dense"
+                                                         Placeholder="Type to search..."
+                                                         Clearable="true"
+                                                         DebounceInterval="300"
+                                                         MinCharacters="0"
+                                                         AdornmentIcon="@Icons.Material.Filled.Search" />
                                     </MudTd>
                                     <MudTd DataLabel="Description">
                                         <MudTextField @bind-Value="context.Description" Variant="Variant.Text" 
@@ -203,6 +214,7 @@
     private List<PatientInsurance> _patientInsurances = new();
     private List<Provider> _providers = new();
     private List<ClaimProcedure> _procedures = new();
+    private Dictionary<ClaimProcedure, ProcedureCode?> _procedureCodeCache = new();
     private int? _selectedProviderId;
     private int? _selectedInsuranceId;
     private DateTime? _serviceDateFrom;
@@ -309,6 +321,43 @@
         return _allPatients
             .Where(p => p.FullName.Contains(searchString, StringComparison.OrdinalIgnoreCase))
             .Take(10);
+    }
+
+    private async Task<IEnumerable<ProcedureCode>> SearchProcedureCodes(string searchTerm, CancellationToken token)
+    {
+        try
+        {
+            // Allow search with any input, including empty (shows top codes)
+            return await ProcedureCodeService.SearchProcedureCodesAsync(searchTerm ?? "");
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error searching procedure codes: {ex.Message}", Severity.Error);
+            return new List<ProcedureCode>();
+        }
+    }
+
+    private ProcedureCode? GetProcedureCodeForRow(ClaimProcedure procedure)
+    {
+        if (_procedureCodeCache.TryGetValue(procedure, out var cachedCode))
+            return cachedCode;
+        return null;
+    }
+
+    private void OnProcedureCodeSelected(ClaimProcedure procedure, ProcedureCode? selectedCode)
+    {
+        if (selectedCode != null)
+        {
+            procedure.CDTCode = selectedCode.Code;
+            procedure.Description = selectedCode.Description;
+            procedure.ChargeAmount = selectedCode.DefaultFee;
+            _procedureCodeCache[procedure] = selectedCode;
+        }
+        else
+        {
+            // Clear the cache when autocomplete is cleared
+            _procedureCodeCache.Remove(procedure);
+        }
     }
 
     private async Task OnPatientSelected(Patient? patient)
