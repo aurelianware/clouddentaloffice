@@ -22,7 +22,7 @@
                             <MudIcon Icon="@Icons.Material.Filled.Person" Size="Size.Small" /> Patient Information
                         </MudText>
                         <MudText Typo="Typo.body2" Style="color: #b0b0b0;">
-                            <strong>Name:</strong> @TreatmentPlan.Patient?.FullName
+                            <strong>Name:</strong> Patient @TreatmentPlan.PatientId
                         </MudText>
                         <MudText Typo="Typo.body2" Style="color: #b0b0b0;">
                             <strong>Patient ID:</strong> @TreatmentPlan.PatientId
@@ -36,10 +36,10 @@
                             <MudIcon Icon="@Icons.Material.Filled.MedicalServices" Size="Size.Small" /> Provider Information
                         </MudText>
                         <MudText Typo="Typo.body2" Style="color: #b0b0b0;">
-                            <strong>Provider:</strong> @(TreatmentPlan.Provider?.FullName ?? "Not Assigned")
+                            <strong>Provider:</strong> Provider @TreatmentPlan.ProviderId
                         </MudText>
                         <MudText Typo="Typo.body2" Style="color: #b0b0b0;">
-                            <strong>NPI:</strong> @(TreatmentPlan.Provider?.NPI ?? "N/A")
+                            <strong>ID:</strong> @TreatmentPlan.ProviderId
                         </MudText>
                     </MudPaper>
                 </MudItem>

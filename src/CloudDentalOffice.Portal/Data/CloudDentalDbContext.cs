@@ -141,10 +141,8 @@ public class CloudDentalDbContext : DbContext
                 .HasForeignKey(pp => pp.TreatmentPlanId)
                 .OnDelete(DeleteBehavior.Cascade);
 
-            entity.HasOne(pp => pp.ClaimProcedure)
-                .WithMany()
-                .HasForeignKey(pp => pp.ClaimProcedureId)
-                .OnDelete(DeleteBehavior.SetNull);
+            // NOTE: ClaimProcedure relationship removed - claims data in separate microservice database
+            entity.HasIndex(e => e.ClaimProcedureId);
             entity.HasIndex(e => e.TenantId);
             entity.HasQueryFilter(e => e.TenantId == _tenantProvider.TenantId);
         });
