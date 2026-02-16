@@ -144,7 +144,9 @@ public class AppointmentServiceImpl : IAppointmentService
 
     public async Task DeleteAppointmentAsync(string appointmentId)
     {
-        if (return existingAppointment
+        if (!int.TryParse(appointmentId, out var id))
+            return;
+
         try
         {
             var tenantId = _tenantProvider.TenantId;
