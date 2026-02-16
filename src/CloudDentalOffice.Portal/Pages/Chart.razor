@@ -85,11 +85,9 @@
                                         var borderColor = hasProcs ? "2px solid #00ffff" : "1px solid #404040";
                                         var bgColor = hasProcs ? "#1a3a3a" : "#1a1a1a";
                                         
-                                        <MudTooltip Text="@GetToothTooltip(toothNum)" Delay="300" key="@($"tooth-{tooth}")">
-                                            <MudPaper Class="pa-1" Style="@($"background: {bgColor}; width: 45px; height: 70px; border: {borderColor}; display: flex; flex-direction: column; align-items: center; justify-content: space-between; cursor: pointer;")"
-                                                      @onclick="@(() => ShowToothDetails(toothNum))"
-                                                      @key="@($"upper-{tooth}")">
-                                                <MudText Typo="Typo.caption" Style="color: #b0b0b0; font-weight: bold;">@tooth</MudText>
+                                        <MudPaper @key="@($"upper-{tooth}")" Class="pa-1" Style="@($"background: {bgColor}; width: 45px; height: 70px; border: {borderColor}; display: flex; flex-direction: column; align-items: center; justify-content: space-between; cursor: pointer;")"
+                                                  @onclick="@(() => ShowToothDetails(toothNum))">
+                                            <MudText Typo="Typo.caption" Style="color: #b0b0b0; font-weight: bold;">@tooth</MudText>
                                                 @if (hasProcs)
                                                 {
                                                     var procCount = _toothChartData[toothNum].Count;
@@ -99,7 +97,6 @@
                                                     <MudText Typo="Typo.caption" Style="color: #808080;">@procCount</MudText>
                                                 }
                                             </MudPaper>
-                                        </MudTooltip>
                                     }
                                 </MudStack>
                             </MudPaper>
@@ -115,11 +112,9 @@
                                         var borderColor = hasProcs ? "2px solid #00ffff" : "1px solid #404040";
                                         var bgColor = hasProcs ? "#1a3a3a" : "#1a1a1a";
                                         
-                                        <MudTooltip Text="@GetToothTooltip(toothNum)" Delay="300" key="@($"tooth-{tooth}")">
-                                            <MudPaper Class="pa-1" Style="@($"background: {bgColor}; width: 45px; height: 70px; border: {borderColor}; display: flex; flex-direction: column; align-items: center; justify-content: space-between; cursor: pointer;")"
-                                                      @onclick="@(() => ShowToothDetails(toothNum))"
-                                                      @key="@($"lower-{tooth}")">
-                                                <MudText Typo="Typo.caption" Style="color: #b0b0b0; font-weight: bold;">@tooth</MudText>
+                                        <MudPaper @key="@($"lower-{tooth}")" Class="pa-1" Style="@($"background: {bgColor}; width: 45px; height: 70px; border: {borderColor}; display: flex; flex-direction: column; align-items: center; justify-content: space-between; cursor: pointer;")"
+                                                  @onclick="@(() => ShowToothDetails(toothNum))">
+                                            <MudText Typo="Typo.caption" Style="color: #b0b0b0; font-weight: bold;">@tooth</MudText>
                                                 @if (hasProcs)
                                                 {
                                                     var procCount = _toothChartData[toothNum].Count;
@@ -129,7 +124,6 @@
                                                     <MudText Typo="Typo.caption" Style="color: #808080;">@procCount</MudText>
                                                 }
                                             </MudPaper>
-                                        </MudTooltip>
                                     }
                                 </MudStack>
                             </MudPaper>
