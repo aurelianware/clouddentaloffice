@@ -80,10 +80,10 @@
                         </MudText>
                     </MudTd>
                     <MudTd DataLabel="Patient">
-                        <MudText Typo="Typo.body2">@context.Patient?.FullName</MudText>
+                        <MudText Typo="Typo.body2">Patient @context.PatientId</MudText>
                     </MudTd>
                     <MudTd DataLabel="Provider">
-                        <MudText Typo="Typo.body2">@context.Provider?.FullName</MudText>
+                        <MudText Typo="Typo.body2">Provider @context.ProviderId</MudText>
                     </MudTd>
                     <MudTd DataLabel="Type">
                         <MudText Typo="Typo.body2">@context.AppointmentType</MudText>
@@ -242,7 +242,7 @@
     {
         var result = await DialogService.ShowMessageBox(
             "Delete Appointment",
-            $"Are you sure you want to delete the appointment for {appointment.Patient?.FullName ?? "this patient"}?",
+            $"Are you sure you want to delete appointment #{appointment.AppointmentId}?",
             yesText: "Delete", cancelText: "Cancel");
 
         if (result == true)

@@ -109,17 +109,11 @@ public class CloudDentalDbContext : DbContext
         });
 
         // Appointment configuration
+        // NOTE: Patient/Provider relationships removed - data in separate microservice databases
         modelBuilder.Entity<Appointment>(entity =>
         {
-            entity.HasOne(a => a.Patient)
-                .WithMany(p => p.Appointments)
-                .HasForeignKey(a => a.PatientId)
-                .OnDelete(DeleteBehavior.Cascade);
-
-            entity.HasOne(a => a.Provider)
-                .WithMany(pr => pr.Appointments)
-                .HasForeignKey(a => a.ProviderId)
-                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasIndex(e => e.PatientId);
+            entity.HasIndex(e => e.ProviderId);
 
             entity.HasIndex(e => e.AppointmentDateTime);
             entity.HasIndex(e => new { e.AppointmentDateTime, e.ProviderId });
@@ -128,17 +122,11 @@ public class CloudDentalDbContext : DbContext
         });
 
         // TreatmentPlan configuration
+        // NOTE: Patient/Provider relationships removed - data in separate microservice databases
         modelBuilder.Entity<TreatmentPlan>(entity =>
         {
-            entity.HasOne(tp => tp.Patient)
-                .WithMany(p => p.TreatmentPlans)
-                .HasForeignKey(tp => tp.PatientId)
-                .OnDelete(DeleteBehavior.Cascade);
-
-            entity.HasOne(tp => tp.Provider)
-                .WithMany(pr => pr.TreatmentPlans)
-                .HasForeignKey(tp => tp.ProviderId)
-                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasIndex(e => e.PatientId);
+            entity.HasIndex(e => e.ProviderId);
 
             entity.HasIndex(e => e.Status);
             entity.HasIndex(e => e.TenantId);
@@ -162,17 +150,11 @@ public class CloudDentalDbContext : DbContext
         });
 
         // Claim configuration
+        // NOTE: Patient/Provider relationships removed - data in separate microservice databases
         modelBuilder.Entity<Claim>(entity =>
         {
-            entity.HasOne(c => c.Patient)
-                .WithMany(p => p.Claims)
-                .HasForeignKey(c => c.PatientId)
-                .OnDelete(DeleteBehavior.Restrict);
-
-            entity.HasOne(c => c.Provider)
-                .WithMany(pr => pr.Claims)
-                .HasForeignKey(c => c.ProviderId)
-                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasIndex(e => e.PatientId);
+            entity.HasIndex(e => e.ProviderId);
 
             entity.HasOne(c => c.PatientInsurance)
                 .WithMany()
@@ -208,22 +190,12 @@ public class CloudDentalDbContext : DbContext
         });
 
         // Procedure configuration
+        // NOTE: Patient/Provider/Appointment relationships removed - data in separate microservice databases  
         modelBuilder.Entity<Procedure>(entity =>
         {
-            entity.HasOne(p => p.Patient)
-                .WithMany()
-                .HasForeignKey(p => p.PatientId)
-                .OnDelete(DeleteBehavior.Restrict);
-
-            entity.HasOne(p => p.Provider)
-                .WithMany()
-                .HasForeignKey(p => p.ProviderId)
-                .OnDelete(DeleteBehavior.Restrict);
-
-            entity.HasOne(p => p.Appointment)
-                .WithMany()
-                .HasForeignKey(p => p.AppointmentId)
-                .OnDelete(DeleteBehavior.SetNull);
+            entity.HasIndex(e => e.PatientId);
+            entity.HasIndex(e => e.ProviderId);
+            entity.HasIndex(e => e.AppointmentId);
 
             entity.HasIndex(e => e.ServiceDate);
             entity.HasIndex(e => e.CDTCode);
@@ -234,17 +206,11 @@ public class CloudDentalDbContext : DbContext
         ConfigureTenantEntity<Procedure>(modelBuilder);
 
         // ClinicalNote configuration
+        // NOTE: Patient/Provider relationships removed - data in separate microservice databases
         modelBuilder.Entity<ClinicalNote>(entity =>
         {
-            entity.HasOne(cn => cn.Patient)
-                .WithMany()
-                .HasForeignKey(cn => cn.PatientId)
-                .OnDelete(DeleteBehavior.Cascade);
-
-            entity.HasOne(cn => cn.Provider)
-                .WithMany()
-                .HasForeignKey(cn => cn.ProviderId)
-                .OnDelete(DeleteBehavior.SetNull);
+            entity.HasIndex(e => e.PatientId);
+            entity.HasIndex(e => e.ProviderId);
 
             entity.HasIndex(e => e.NoteDate);
             entity.HasIndex(e => e.NoteType);

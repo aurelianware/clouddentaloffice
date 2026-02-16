@@ -209,7 +209,8 @@
                 CreatedDate = ExistingAppointment.CreatedDate
             };
 
-            _selectedPatient = ExistingAppointment.Patient;
+            // Load patient by ID (microservices pattern - no FK navigation)
+            _selectedPatient = _allPatients.FirstOrDefault(p => p.PatientId == ExistingAppointment.PatientId);
             _selectedProviderId = ExistingAppointment.ProviderId;
             _appointmentDate = localAppointmentDateTime.Date;
             _appointmentTime = localAppointmentDateTime.TimeOfDay;

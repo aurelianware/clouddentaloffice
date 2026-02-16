@@ -205,9 +205,8 @@ public class ClinicalChartService : IClinicalChartService
     {
         var tenantId = _tenantProvider.TenantId;
 
+        // NOTE: Patient/Provider data loaded separately from their microservices
         return await _context.Procedures
-            .Include(p => p.Patient)
-            .Include(p => p.Provider)
             .FirstOrDefaultAsync(p => p.TenantId == tenantId && p.ProcedureId == procedureId);
     }
 
