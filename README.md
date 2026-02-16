@@ -164,15 +164,19 @@ clouddentaloffice/
 - [x] Patient, Scheduling, Claims, Eligibility, ERA, Auth services
 - [x] Clean-room X12 837D claim generator
 - [x] Docker Compose full-stack deployment
-- [ ] Blazor Portal integration with API Gateway
-- [ ] Full 270/271 real-time eligibility checks
+- [X] Blazor Portal integration with API Gateway
+- [X] Send 837D Claim transactions to Pary SFTP
+- [X] Full 270/271 real-time eligibility checks
 - [ ] 835 ERA auto-posting & reconciliation
 - [ ] 276/277 claim status polling
 - [ ] 278 prior authorization
 - [ ] Multi-location / DSO support
-- [ ] Azure AD B2C / OpenID Connect auth
-- [ ] Kubernetes Helm charts
-- [ ] CI/CD with GitHub Actions
+- [ ] Azure AD Multi-Tenant App Registrations / OpenID Connect auth
+- [X] Kubernetes Helm charts
+- [X] CI/CD with GitHub Actions
+- [ ] DoseSpot Electronic Perscription
+- [ ] Availity Integration
+- [ ] Change Healthcare Integration
 
 ---
 
