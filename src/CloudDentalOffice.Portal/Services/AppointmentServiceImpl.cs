@@ -93,8 +93,8 @@ public class AppointmentServiceImpl : IAppointmentService
 
             _logger.LogInformation("Appointment created successfully with ID: {AppointmentId}", appointment.AppointmentId);
 
-            // Reload with navigation properties
-            return a
+            return appointment;
+        }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error creating appointment for Patient {PatientId}, Provider {ProviderId}", 
