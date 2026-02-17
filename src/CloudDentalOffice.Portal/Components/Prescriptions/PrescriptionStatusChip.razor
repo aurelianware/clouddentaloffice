@@ -1,0 +1,61 @@
+@using CloudDentalOffice.Contracts.Prescriptions
+
+<MudChip T="string" Size="Size.Small"
+         Color="@GetStatusColor(Status)"
+         Variant="Variant.Outlined"
+         Style="@GetStatusStyle(Status)">
+    <MudIcon Icon="@GetStatusIcon(Status)" Size="Size.Small" Class="mr-1" />
+    @GetStatusText(Status)
+</MudChip>
+
+@code {
+    [Parameter] public PrescriptionStatus Status { get; set; }
+
+    private static Color GetStatusColor(PrescriptionStatus status) => status switch
+    {
+        PrescriptionStatus.Draft => Color.Default,
+        PrescriptionStatus.PendingSafetyCheck => Color.Warning,
+        PrescriptionStatus.ReadyToSend => Color.Info,
+        PrescriptionStatus.Sent => Color.Success,
+        PrescriptionStatus.PharmacyVerified => Color.Success,
+        PrescriptionStatus.Dispensed => Color.Success,
+        PrescriptionStatus.Cancelled => Color.Error,
+        PrescriptionStatus.Denied => Color.Error,
+        PrescriptionStatus.RefillRequested => Color.Warning,
+        PrescriptionStatus.Expired => Color.Default,
+        PrescriptionStatus.Error => Color.Error,
+        _ => Color.Default
+    };
+
+    private static string GetStatusIcon(PrescriptionStatus status) => status switch
+    {
+        PrescriptionStatus.Draft => Icons.Material.Filled.Edit,
+        PrescriptionStatus.PendingSafetyCheck => Icons.Material.Filled.Shield,
+        PrescriptionStatus.ReadyToSend => Icons.Material.Filled.CheckCircle,
+        PrescriptionStatus.Sent => Icons.Material.Filled.Send,
+        PrescriptionStatus.PharmacyVerified => Icons.Material.Filled.Verified,
+        PrescriptionStatus.Dispensed => Icons.Material.Filled.LocalPharmacy,
+        PrescriptionStatus.Cancelled => Icons.Material.Filled.Cancel,
+        PrescriptionStatus.Denied => Icons.Material.Filled.Block,
+        PrescriptionStatus.RefillRequested => Icons.Material.Filled.Refresh,
+        PrescriptionStatus.Expired => Icons.Material.Filled.TimerOff,
+        PrescriptionStatus.Error => Icons.Material.Filled.Error,
+        _ => Icons.Material.Filled.HelpOutline
+    };
+
+    private static string GetStatusText(PrescriptionStatus status) => status switch
+    {
+        PrescriptionStatus.PendingSafetyCheck => "Safety Check",
+        PrescriptionStatus.ReadyToSend => "Ready",
+        PrescriptionStatus.PharmacyVerified => "Verified",
+        PrescriptionStatus.RefillRequested => "Refill Req",
+        _ => status.ToString()
+    };
+
+    private static string GetStatusStyle(PrescriptionStatus status) => status switch
+    {
+        PrescriptionStatus.Draft => "border-color: #455a64; color: #90a4ae; font-size: 0.75rem;",
+        PrescriptionStatus.Expired => "border-color: #37474f; color: #607d8b; font-size: 0.75rem;",
+        _ => "font-size: 0.75rem;"
+    };
+}

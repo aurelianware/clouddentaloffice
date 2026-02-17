@@ -61,6 +61,10 @@ jobs:
           docker push $REGISTRY/auth-service:$IMAGE_TAG
           docker push $REGISTRY/auth-service:latest
 
+          docker build -f infrastructure/docker/PrescriptionService.Dockerfile -t $REGISTRY/prescription-service:$IMAGE_TAG -t $REGISTRY/prescription-service:latest .
+          docker push $REGISTRY/prescription-service:$IMAGE_TAG
+          docker push $REGISTRY/prescription-service:latest
+
       - name: Fetch kubeconfig
         run: doctl kubernetes cluster kubeconfig save $CLUSTER_ID
 
@@ -84,6 +88,7 @@ jobs:
           kubectl -n $NAMESPACE set image deployment/eligibility-service eligibility-service=$REGISTRY/eligibility-service:$IMAGE_TAG
           kubectl -n $NAMESPACE set image deployment/era-service era-service=$REGISTRY/era-service:$IMAGE_TAG
           kubectl -n $NAMESPACE set image deployment/auth-service auth-service=$REGISTRY/auth-service:$IMAGE_TAG
+          kubectl -n $NAMESPACE set image deployment/prescription-service prescription-service=$REGISTRY/prescription-service:$IMAGE_TAG
 
       - name: Rollout status
         run: |
@@ -96,3 +101,4 @@ jobs:
           kubectl -n $NAMESPACE rollout status deployment/eligibility-service
           kubectl -n $NAMESPACE rollout status deployment/era-service
           kubectl -n $NAMESPACE rollout status deployment/auth-service
+          kubectl -n $NAMESPACE rollout status deployment/prescription-service

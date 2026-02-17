@@ -1,0 +1,354 @@
+@page "/prescriptions"
+@page "/prescriptions/patient/{PatientId:guid}"
+@using CloudDentalOffice.Contracts.Prescriptions
+@using CloudDentalOffice.Portal.Components.Prescriptions
+@inject IPrescriptionService PrescriptionService
+@inject ISnackbar Snackbar
+@inject NavigationManager Navigation
+
+<PageTitle>e-Prescribe — Cloud Dental Office</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-4">
+
+    @* ── Header Bar ── *@
+    <MudPaper Class="pa-4 mb-4" Style="background: linear-gradient(135deg, #1a2332 0%, #0d1b2a 100%); border-left: 4px solid #26a69a;">
+        <MudGrid>
+            <MudItem xs="12" sm="6">
+                <MudText Typo="Typo.h5" Style="color: #e0e0e0;">
+                    <MudIcon Icon="@Icons.Material.Filled.Medication" Class="mr-2" Style="color: #26a69a;" />
+                    e-Prescribe
+                </MudText>
+                <MudText Typo="Typo.body2" Style="color: #90a4ae;">
+                    DoseSpot Integration · Surescripts Certified · EPCS Enabled
+                </MudText>
+            </MudItem>
+            <MudItem xs="12" sm="6" Class="d-flex align-center justify-end gap-2">
+                @if (_notifications.Any(n => !n.Acknowledged))
+                {
+                    <MudBadge Content="@_notifications.Count(n => !n.Acknowledged)" Color="Color.Error" Overlap="true">
+                        <MudIconButton Icon="@Icons.Material.Filled.Notifications"
+                                       Color="Color.Default"
+                                       OnClick="@(() => _showNotifications = !_showNotifications)" />
+                    </MudBadge>
+                }
+                <MudButton Variant="Variant.Filled"
+                           Color="Color.Tertiary"
+                           StartIcon="@Icons.Material.Filled.Add"
+                           OnClick="OpenNewPrescription"
+                           Style="background-color: #26a69a;">
+                    New Prescription
+                </MudButton>
+                <MudButton Variant="Variant.Outlined"
+                           Color="Color.Default"
+                           StartIcon="@Icons.Material.Filled.OpenInNew"
+                           OnClick="LaunchDoseSpot"
+                           Style="border-color: #455a64; color: #b0bec5;">
+                    Open DoseSpot
+                </MudButton>
+            </MudItem>
+        </MudGrid>
+    </MudPaper>
+
+    @* ── Notifications Panel ── *@
+    @if (_showNotifications && _notifications.Any())
+    {
+        <NotificationsPanel Notifications="_notifications"
+                            OnDismiss="DismissNotification"
+                            OnNavigate="HandleNotificationClick" />
+    }
+
+    @* ── Main Content ── *@
+    <MudGrid>
+        @* ── Left Column: Patient Context + Prescription List ── *@
+        <MudItem xs="12" md="8">
+
+            @* Patient selector / context *@
+            <MudPaper Class="pa-4 mb-4" Elevation="0" Style="background-color: #1e2a3a; border: 1px solid #2d3e50;">
+                <MudGrid>
+                    <MudItem xs="12" sm="8">
+                        <MudAutocomplete T="PatientSearchResult"
+                                         Label="Patient"
+                                         @bind-Value="_selectedPatient"
+                                         SearchFunc="SearchPatients"
+                                         ToStringFunc="@(p => p == null ? string.Empty : $"{p.LastName}, {p.FirstName} (DOB: {p.DateOfBirth:MM/dd/yyyy})")"
+                                         Variant="Variant.Outlined"
+                                         Adornment="Adornment.Start"
+                                         AdornmentIcon="@Icons.Material.Filled.PersonSearch"
+                                         Style="color: #e0e0e0;"
+                                         Dense="true"
+                                         Placeholder="Search by name or patient ID..." />
+                    </MudItem>
+                    <MudItem xs="12" sm="4" Class="d-flex align-center gap-2">
+                        @if (_selectedPatient != null)
+                        {
+                            <MudChip T="string" Color="Color.Info" Size="Size.Small">@_selectedPatient.InsurancePlan</MudChip>
+                            <MudIconButton Icon="@Icons.Material.Filled.History"
+                                           Size="Size.Small"
+                                           Title="Medication History"
+                                           OnClick="LoadMedicationHistory" />
+                            <MudIconButton Icon="@Icons.Material.Filled.Warning"
+                                           Size="Size.Small"
+                                           Color="Color.Warning"
+                                           Title="Allergies"
+                                           OnClick="@(() => _showAllergies = !_showAllergies)" />
+                        }
+                    </MudItem>
+                </MudGrid>
+            </MudPaper>
+
+            @* Allergies banner *@
+            @if (_showAllergies && _allergies.Any())
+            {
+                <MudAlert Severity="Severity.Warning" Class="mb-4" Dense="true"
+                          Style="background-color: #3e2723; border-color: #ff8f00; color: #ffe082;">
+                    <MudText Typo="Typo.subtitle2">Known Allergies</MudText>
+                    <div class="d-flex flex-wrap gap-2 mt-1">
+                        @foreach (var allergy in _allergies)
+                        {
+                            <MudChip T="string" Size="Size.Small"
+                                     Color="@(allergy.Severity == AllergySeverity.Severe || allergy.Severity == AllergySeverity.LifeThreatening ? Color.Error : Color.Warning)">
+                                @allergy.AllergyName
+                                @if (!string.IsNullOrEmpty(allergy.Reaction))
+                                {
+                                    <text> — @allergy.Reaction</text>
+                                }
+                            </MudChip>
+                        }
+                    </div>
+                </MudAlert>
+            }
+
+            @* Active prescriptions table *@
+            <MudPaper Elevation="0" Style="background-color: #1e2a3a; border: 1px solid #2d3e50;">
+                <MudToolBar Dense="true" Style="background-color: #152238;">
+                    <MudText Typo="Typo.subtitle1" Style="color: #b0bec5;">
+                        <MudIcon Icon="@Icons.Material.Filled.List" Class="mr-1" Size="Size.Small" />
+                        Prescriptions
+                    </MudText>
+                    <MudSpacer />
+                    <MudToggleGroup T="string" @bind-Value="_prescriptionFilter" Style="border-color: #455a64;">
+                        <MudToggleItem Value="@("active")" Text="Active" />
+                        <MudToggleItem Value="@("all")" Text="All" />
+                    </MudToggleGroup>
+                </MudToolBar>
+
+                @if (_loading)
+                {
+                    <MudProgressLinear Color="Color.Tertiary" Indeterminate="true" Style="height: 2px;" />
+                }
+
+                <MudTable Items="@_filteredPrescriptions"
+                          Hover="true"
+                          Dense="true"
+                          Breakpoint="Breakpoint.Sm"
+                          Style="background-color: transparent;"
+                          RowStyle="color: #cfd8dc;"
+                          OnRowClick="@(args => { if (args.Item != null) ViewPrescription(args.Item); })"
+                          T="PrescriptionDto">
+                    <HeaderContent>
+                        <MudTh Style="color: #78909c;">Drug</MudTh>
+                        <MudTh Style="color: #78909c;">Sig</MudTh>
+                        <MudTh Style="color: #78909c;">Schedule</MudTh>
+                        <MudTh Style="color: #78909c;">Status</MudTh>
+                        <MudTh Style="color: #78909c;">Date</MudTh>
+                        <MudTh Style="color: #78909c; text-align: right;">Actions</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd DataLabel="Drug">
+                            <MudText Typo="Typo.body2" Style="color: #e0e0e0; font-weight: 500;">
+                                @context.DrugName
+                            </MudText>
+                            <MudText Typo="Typo.caption" Style="color: #78909c;">
+                                @context.Strength @context.DoseForm
+                            </MudText>
+                        </MudTd>
+                        <MudTd DataLabel="Sig">
+                            <MudText Typo="Typo.caption" Style="color: #b0bec5;">
+                                @TruncateDirections(context.Directions)
+                            </MudText>
+                        </MudTd>
+                        <MudTd DataLabel="Schedule">
+                            @if (context.Schedule != DrugSchedule.NonControlled)
+                            {
+                                <MudChip T="string" Size="Size.Small" Color="Color.Error" Variant="Variant.Outlined">
+                                    C-@((int)context.Schedule)
+                                </MudChip>
+                            }
+                            else
+                            {
+                                <MudText Typo="Typo.caption" Style="color: #607d8b;">Non-controlled</MudText>
+                            }
+                        </MudTd>
+                        <MudTd DataLabel="Status">
+                            <PrescriptionStatusChip Status="context.Status" />
+                        </MudTd>
+                        <MudTd DataLabel="Date">
+                            <MudText Typo="Typo.caption" Style="color: #90a4ae;">
+                                @(context.SentAt?.ToString("MM/dd/yy") ?? context.CreatedAt.ToString("MM/dd/yy"))
+                            </MudText>
+                        </MudTd>
+                        <MudTd DataLabel="Actions" Style="text-align: right;">
+                            <MudIconButton Icon="@Icons.Material.Filled.Send"
+                                           Size="Size.Small"
+                                           Color="Color.Success"
+                                           Title="Send"
+                                           Disabled="@(context.Status != PrescriptionStatus.Draft && context.Status != PrescriptionStatus.ReadyToSend)"
+                                           OnClick="@(() => SendPrescription(context))"
+                                           OnClick:stopPropagation="true" />
+                            <MudIconButton Icon="@Icons.Material.Filled.Cancel"
+                                           Size="Size.Small"
+                                           Color="Color.Error"
+                                           Title="Cancel"
+                                           Disabled="@(context.Status == PrescriptionStatus.Cancelled || context.Status == PrescriptionStatus.Expired)"
+                                           OnClick="@(() => CancelPrescription(context))"
+                                           OnClick:stopPropagation="true" />
+                        </MudTd>
+                    </RowTemplate>
+                    <NoRecordsContent>
+                        <MudText Typo="Typo.body2" Style="color: #607d8b;" Class="pa-4">
+                            @if (_selectedPatient == null)
+                            {
+                                <text>Select a patient to view prescriptions</text>
+                            }
+                            else
+                            {
+                                <text>No prescriptions found for this patient</text>
+                            }
+                        </MudText>
+                    </NoRecordsContent>
+                </MudTable>
+            </MudPaper>
+        </MudItem>
+
+        @* ── Right Column: Quick Actions + Rx Favorites + Pharmacy ── *@
+        <MudItem xs="12" md="4">
+
+            @* Dental Quick Rx *@
+            <MudPaper Class="pa-4 mb-4" Elevation="0" Style="background-color: #1e2a3a; border: 1px solid #2d3e50;">
+                <MudText Typo="Typo.subtitle2" Class="mb-3" Style="color: #78909c;">
+                    <MudIcon Icon="@Icons.Material.Filled.Star" Size="Size.Small" Class="mr-1" Style="color: #ffd54f;" />
+                    Quick Prescribe — Dental Favorites
+                </MudText>
+                @foreach (var favorite in _dentalFavorites)
+                {
+                    <MudButton Variant="Variant.Text"
+                               FullWidth="true"
+                               Class="mb-1 justify-start"
+                               Style="color: #b0bec5; text-transform: none; font-size: 0.85rem;"
+                               StartIcon="@Icons.Material.Filled.Medication"
+                               OnClick="@(() => QuickPrescribe(favorite))"
+                               Disabled="@(_selectedPatient == null)">
+                        <div>
+                            <MudText Typo="Typo.body2" Style="color: #e0e0e0;">@favorite.DrugName @favorite.Strength</MudText>
+                            <MudText Typo="Typo.caption" Style="color: #78909c;">@favorite.ShortDirections</MudText>
+                        </div>
+                    </MudButton>
+                }
+            </MudPaper>
+
+            @* Patient's Preferred Pharmacy *@
+            @if (_selectedPatient != null)
+            {
+                <MudPaper Class="pa-4 mb-4" Elevation="0" Style="background-color: #1e2a3a; border: 1px solid #2d3e50;">
+                    <MudText Typo="Typo.subtitle2" Class="mb-2" Style="color: #78909c;">
+                        <MudIcon Icon="@Icons.Material.Filled.LocalPharmacy" Size="Size.Small" Class="mr-1" Style="color: #26a69a;" />
+                        Pharmacy
+                    </MudText>
+                    @if (_selectedPharmacy != null)
+                    {
+                        <MudText Typo="Typo.body2" Style="color: #e0e0e0; font-weight: 500;">
+                            @_selectedPharmacy.Name
+                        </MudText>
+                        <MudText Typo="Typo.caption" Style="color: #90a4ae;">
+                            @_selectedPharmacy.Address, @_selectedPharmacy.City @_selectedPharmacy.State @_selectedPharmacy.ZipCode
+                        </MudText>
+                        <MudText Typo="Typo.caption" Style="color: #78909c;">
+                            @_selectedPharmacy.Phone
+                        </MudText>
+                        <div class="d-flex gap-2 mt-2">
+                            @if (_selectedPharmacy.AcceptsEpcs)
+                            {
+                                <MudChip T="string" Size="Size.Small" Color="Color.Success" Variant="Variant.Outlined">EPCS</MudChip>
+                            }
+                            <MudChip T="string" Size="Size.Small" Color="Color.Info" Variant="Variant.Outlined">
+                                NCPDP: @_selectedPharmacy.NcpdpId
+                            </MudChip>
+                        </div>
+                    }
+                    <MudButton Variant="Variant.Outlined"
+                               Size="Size.Small"
+                               FullWidth="true"
+                               Class="mt-2"
+                               Style="border-color: #455a64; color: #b0bec5;"
+                               StartIcon="@Icons.Material.Filled.Search"
+                               OnClick="OpenPharmacySearch">
+                        Change Pharmacy
+                    </MudButton>
+                </MudPaper>
+            }
+
+            @* Prescriber Info *@
+            <MudPaper Class="pa-4" Elevation="0" Style="background-color: #1e2a3a; border: 1px solid #2d3e50;">
+                <MudText Typo="Typo.subtitle2" Class="mb-2" Style="color: #78909c;">
+                    <MudIcon Icon="@Icons.Material.Filled.Badge" Size="Size.Small" Class="mr-1" Style="color: #42a5f5;" />
+                    Prescriber
+                </MudText>
+                @if (_currentPrescriber != null)
+                {
+                    <MudText Typo="Typo.body2" Style="color: #e0e0e0;">
+                        Dr. @_currentPrescriber.FirstName @_currentPrescriber.LastName
+                    </MudText>
+                    <MudText Typo="Typo.caption" Style="color: #90a4ae;">
+                        NPI: @_currentPrescriber.Npi · DEA: @_currentPrescriber.DeaNumber
+                    </MudText>
+                    <div class="d-flex gap-2 mt-2">
+                        @if (_currentPrescriber.EpcsEnabled)
+                        {
+                            <MudChip T="string" Size="Size.Small" Color="Color.Success" Variant="Variant.Outlined">
+                                EPCS Active
+                            </MudChip>
+                        }
+                        <MudChip T="string" Size="Size.Small" Color="Color.Default" Variant="Variant.Outlined"
+                                 Style="border-color: #455a64; color: #90a4ae;">
+                            @_currentPrescriber.EpcsAuthMethod
+                        </MudChip>
+                    </div>
+                }
+                else
+                {
+                    <MudAlert Severity="Severity.Info" Dense="true"
+                              Style="background-color: #0d2137; color: #90caf9; border-color: #1565c0;">
+                        No prescriber profile configured.
+                        <MudLink Href="/prescriptions/prescriber-setup" Style="color: #42a5f5;">Set up now</MudLink>
+                    </MudAlert>
+                }
+            </MudPaper>
+        </MudItem>
+    </MudGrid>
+
+    @* ── Medication History Drawer ── *@
+    <MudDrawer @bind-Open="_showMedHistory" Anchor="Anchor.Right" Width="480px"
+               Elevation="4" Variant="DrawerVariant.Temporary"
+               Style="background-color: #1a2332;">
+        <MedicationHistoryDrawer PatientId="@(_selectedPatient?.PatientId ?? Guid.Empty)"
+                                 MedicationHistory="_medicationHistory"
+                                 OnClose="@(() => _showMedHistory = false)" />
+    </MudDrawer>
+
+    @* ── New Prescription Dialog ── *@
+    <NewPrescriptionDialog @bind-IsOpen="_showNewRxDialog"
+                           PatientId="@(_selectedPatient?.PatientId ?? Guid.Empty)"
+                           PrescriberId="@(_currentPrescriber?.ProviderId ?? Guid.Empty)"
+                           PharmacyNcpdpId="@(_selectedPharmacy?.NcpdpId)"
+                           Allergies="_allergies"
+                           OnPrescriptionCreated="HandlePrescriptionCreated" />
+
+    @* ── Pharmacy Search Dialog ── *@
+    <PharmacySearchDialog @bind-IsOpen="_showPharmacySearch"
+                          OnPharmacySelected="HandlePharmacySelected" />
+
+    @* ── DoseSpot iFrame Dialog ── *@
+    <DoseSpotEmbedDialog @bind-IsOpen="_showDoseSpot"
+                         SsoUrl="@_doseSpotSsoUrl" />
+
+</MudContainer>

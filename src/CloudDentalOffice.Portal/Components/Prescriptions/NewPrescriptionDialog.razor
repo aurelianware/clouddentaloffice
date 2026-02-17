@@ -1,0 +1,417 @@
+@using CloudDentalOffice.Contracts.Prescriptions
+@inject IPrescriptionService PrescriptionService
+@inject ISnackbar Snackbar
+
+<MudDialog @bind-Visible="IsOpen" Options="@(new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true })">
+    <TitleContent>
+        <MudText Typo="Typo.h6" Style="color: #e0e0e0;">
+            <MudIcon Icon="@Icons.Material.Filled.NoteAdd" Class="mr-2" Style="color: #26a69a;" />
+            New Prescription
+        </MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudForm @ref="_form" @bind-IsValid="_formValid">
+            <MudTabs @bind-ActivePanelIndex="_activeStep" Color="Color.Tertiary" 
+                     ApplyEffectsToContainer="true" PanelClass="pa-4"
+                     Style="background-color: transparent;">
+
+                @* ── Step 1: Drug Selection ── *@
+                <MudTabPanel Text="Medication" Icon="@Icons.Material.Filled.Medication">
+                    <MudGrid>
+                        <MudItem xs="12">
+                            <MudTextField @bind-Value="_request.DrugName"
+                                          Label="Drug Name"
+                                          Required="true"
+                                          RequiredError="Drug name is required"
+                                          Variant="Variant.Outlined"
+                                          Adornment="Adornment.Start"
+                                          AdornmentIcon="@Icons.Material.Filled.Search"
+                                          Placeholder="Search drug name or RxNorm code..."
+                                          Immediate="true"
+                                          Style="color: #e0e0e0;" />
+                        </MudItem>
+                        <MudItem xs="6">
+                            <MudTextField @bind-Value="_request.Strength"
+                                          Label="Strength"
+                                          Required="true"
+                                          Variant="Variant.Outlined"
+                                          Placeholder="e.g., 500mg"
+                                          Style="color: #e0e0e0;" />
+                        </MudItem>
+                        <MudItem xs="6">
+                            <MudSelect @bind-Value="_request.DoseForm"
+                                       Label="Dose Form"
+                                       Required="true"
+                                       Variant="Variant.Outlined"
+                                       Style="color: #e0e0e0;">
+                                <MudSelectItem Value="@("Tablet")">Tablet</MudSelectItem>
+                                <MudSelectItem Value="@("Capsule")">Capsule</MudSelectItem>
+                                <MudSelectItem Value="@("Oral Rinse")">Oral Rinse</MudSelectItem>
+                                <MudSelectItem Value="@("Liquid")">Liquid / Solution</MudSelectItem>
+                                <MudSelectItem Value="@("Gel")">Gel</MudSelectItem>
+                                <MudSelectItem Value="@("Paste")">Paste</MudSelectItem>
+                                <MudSelectItem Value="@("Injection")">Injection</MudSelectItem>
+                                <MudSelectItem Value="@("Topical")">Topical</MudSelectItem>
+                                <MudSelectItem Value="@("Lozenge")">Lozenge</MudSelectItem>
+                            </MudSelect>
+                        </MudItem>
+                        <MudItem xs="6">
+                            <MudTextField @bind-Value="_request.RxNormCode"
+                                          Label="RxNorm Code"
+                                          Variant="Variant.Outlined"
+                                          Placeholder="Optional"
+                                          Style="color: #e0e0e0;" />
+                        </MudItem>
+                        <MudItem xs="6">
+                            <MudSelect @bind-Value="_request.Schedule"
+                                       Label="DEA Schedule"
+                                       Variant="Variant.Outlined"
+                                       Style="color: #e0e0e0;">
+                                <MudSelectItem Value="DrugSchedule.NonControlled">Non-Controlled</MudSelectItem>
+                                <MudSelectItem Value="DrugSchedule.ScheduleII">Schedule II</MudSelectItem>
+                                <MudSelectItem Value="DrugSchedule.ScheduleIII">Schedule III</MudSelectItem>
+                                <MudSelectItem Value="DrugSchedule.ScheduleIV">Schedule IV</MudSelectItem>
+                                <MudSelectItem Value="DrugSchedule.ScheduleV">Schedule V</MudSelectItem>
+                            </MudSelect>
+                        </MudItem>
+                    </MudGrid>
+
+                    @if (_request.Schedule != DrugSchedule.NonControlled)
+                    {
+                        <MudAlert Severity="Severity.Warning" Class="mt-3" Dense="true"
+                                  Style="background-color: #3e2723; color: #ffcc80; border-color: #e65100;">
+                            <MudIcon Icon="@Icons.Material.Filled.Shield" Size="Size.Small" Class="mr-1" />
+                            Controlled Substance — EPCS two-factor authentication required at send time
+                        </MudAlert>
+                    }
+                </MudTabPanel>
+
+                @* ── Step 2: Sig / Directions ── *@
+                <MudTabPanel Text="Directions" Icon="@Icons.Material.Filled.Description">
+                    <MudGrid>
+                        <MudItem xs="12">
+                            <MudTextField @bind-Value="_request.Directions"
+                                          Label="Sig (Directions)"
+                                          Required="true"
+                                          RequiredError="Directions are required"
+                                          Variant="Variant.Outlined"
+                                          Lines="3"
+                                          Placeholder="e.g., Take 1 capsule by mouth 3 times daily for 7 days"
+                                          Style="color: #e0e0e0;" />
+                        </MudItem>
+                        <MudItem xs="4">
+                            <MudNumericField @bind-Value="_request.Quantity"
+                                             Label="Quantity"
+                                             Required="true"
+                                             Min="1"
+                                             Variant="Variant.Outlined"
+                                             Style="color: #e0e0e0;" />
+                        </MudItem>
+                        <MudItem xs="2">
+                            <MudSelect @bind-Value="_request.QuantityUnit"
+                                       Label="Unit"
+                                       Variant="Variant.Outlined"
+                                       Style="color: #e0e0e0;">
+                                <MudSelectItem Value="@("EA")">EA</MudSelectItem>
+                                <MudSelectItem Value="@("ML")">mL</MudSelectItem>
+                                <MudSelectItem Value="@("GM")">g</MudSelectItem>
+                                <MudSelectItem Value="@("OZ")">oz</MudSelectItem>
+                            </MudSelect>
+                        </MudItem>
+                        <MudItem xs="3">
+                            <MudNumericField @bind-Value="_request.Refills"
+                                             Label="Refills"
+                                             Min="0"
+                                             Max="@(_request.Schedule == DrugSchedule.ScheduleII ? 0 : 11)"
+                                             Variant="Variant.Outlined"
+                                             Style="color: #e0e0e0;" />
+                        </MudItem>
+                        <MudItem xs="3">
+                            <MudNumericField @bind-Value="_request.DaysSupply"
+                                             Label="Days Supply"
+                                             Min="1"
+                                             Max="365"
+                                             Variant="Variant.Outlined"
+                                             Style="color: #e0e0e0;" />
+                        </MudItem>
+                        <MudItem xs="12">
+                            <MudCheckBox @bind-Value="_request.DispenseAsWritten"
+                                         Label="Dispense As Written (DAW)"
+                                         Color="Color.Tertiary"
+                                         Style="color: #b0bec5;" />
+                        </MudItem>
+                    </MudGrid>
+
+                    @if (_request.Schedule == DrugSchedule.ScheduleII && _request.Refills > 0)
+                    {
+                        <MudAlert Severity="Severity.Error" Class="mt-3" Dense="true">
+                            Schedule II controlled substances cannot have refills per DEA regulations.
+                        </MudAlert>
+                    }
+                </MudTabPanel>
+
+                @* ── Step 3: Clinical Context + Safety ── *@
+                <MudTabPanel Text="Clinical" Icon="@Icons.Material.Filled.LocalHospital">
+                    <MudGrid>
+                        <MudItem xs="6">
+                            <MudTextField @bind-Value="_request.DentalProcedureCode"
+                                          Label="CDT Procedure Code"
+                                          Variant="Variant.Outlined"
+                                          Placeholder="e.g., D7210"
+                                          HelperText="Dental procedure that prompted this Rx"
+                                          Style="color: #e0e0e0;" />
+                        </MudItem>
+                        <MudItem xs="6">
+                            <MudTextField @bind-Value="_request.DiagnosisCode"
+                                          Label="ICD-10 Diagnosis"
+                                          Variant="Variant.Outlined"
+                                          Placeholder="e.g., K04.7"
+                                          HelperText="Periapical abscess, acute infection, etc."
+                                          Style="color: #e0e0e0;" />
+                        </MudItem>
+                        <MudItem xs="12">
+                            <MudTextField @bind-Value="_request.ClinicalNotes"
+                                          Label="Clinical Notes"
+                                          Variant="Variant.Outlined"
+                                          Lines="2"
+                                          Placeholder="Additional notes for the pharmacy..."
+                                          Style="color: #e0e0e0;" />
+                        </MudItem>
+                    </MudGrid>
+
+                    @* Interaction Check Results *@
+                    @if (_interactionAlerts.Any())
+                    {
+                        <MudText Typo="Typo.subtitle2" Class="mt-4 mb-2" Style="color: #ef5350;">
+                            <MudIcon Icon="@Icons.Material.Filled.Warning" Size="Size.Small" Class="mr-1" />
+                            Drug Interaction Alerts
+                        </MudText>
+                        @foreach (var alert in _interactionAlerts)
+                        {
+                            <MudAlert Severity="@(alert.Severity == "high" ? Severity.Error : Severity.Warning)"
+                                      Class="mb-2" Dense="true">
+                                <MudText Typo="Typo.body2">
+                                    <strong>@alert.InteractionType:</strong> @alert.Drug1
+                                    @if (!string.IsNullOrEmpty(alert.Drug2))
+                                    {
+                                        <text> ↔ @alert.Drug2</text>
+                                    }
+                                </MudText>
+                                <MudText Typo="Typo.caption">@alert.Description</MudText>
+                            </MudAlert>
+                        }
+                    }
+
+                    @* Allergy warnings *@
+                    @if (Allergies.Any())
+                    {
+                        <MudText Typo="Typo.subtitle2" Class="mt-4 mb-2" Style="color: #ffa726;">
+                            <MudIcon Icon="@Icons.Material.Filled.HealthAndSafety" Size="Size.Small" Class="mr-1" />
+                            Patient Allergies — Verify Before Sending
+                        </MudText>
+                        <div class="d-flex flex-wrap gap-2">
+                            @foreach (var allergy in Allergies)
+                            {
+                                <MudChip T="string" Size="Size.Small"
+                                         Color="@(allergy.Severity >= AllergySeverity.Severe ? Color.Error : Color.Warning)"
+                                         Variant="Variant.Outlined">
+                                    @allergy.AllergyName
+                                </MudChip>
+                            }
+                        </div>
+                    }
+
+                    @* Benefits check *@
+                    @if (_benefitResult != null)
+                    {
+                        <MudPaper Class="pa-3 mt-4" Elevation="0"
+                                  Style="background-color: #0d2137; border: 1px solid #1565c0;">
+                            <MudText Typo="Typo.subtitle2" Style="color: #42a5f5;">
+                                <MudIcon Icon="@Icons.Material.Filled.AttachMoney" Size="Size.Small" Class="mr-1" />
+                                Real-Time Prescription Benefit
+                            </MudText>
+                            <MudGrid Class="mt-2">
+                                <MudItem xs="4">
+                                    <MudText Typo="Typo.caption" Style="color: #78909c;">Patient Copay</MudText>
+                                    <MudText Typo="Typo.h6" Style="color: #66bb6a;">
+                                        $@(_benefitResult.PatientCopay?.ToString("F2") ?? "N/A")
+                                    </MudText>
+                                </MudItem>
+                                <MudItem xs="4">
+                                    <MudText Typo="Typo.caption" Style="color: #78909c;">Formulary</MudText>
+                                    <MudText Typo="Typo.body2" Style="color: #e0e0e0;">
+                                        @(_benefitResult.FormularyStatus ?? "Unknown")
+                                    </MudText>
+                                </MudItem>
+                                <MudItem xs="4">
+                                    <MudText Typo="Typo.caption" Style="color: #78909c;">Tier</MudText>
+                                    <MudText Typo="Typo.body2" Style="color: #e0e0e0;">
+                                        @(_benefitResult.TierLevel ?? "N/A")
+                                    </MudText>
+                                </MudItem>
+                            </MudGrid>
+                            @if (_benefitResult.PriorAuthRequired)
+                            {
+                                <MudAlert Severity="Severity.Warning" Dense="true" Class="mt-2">
+                                    Prior Authorization required by payer
+                                </MudAlert>
+                            }
+                            @if (_benefitResult.Alternatives.Any())
+                            {
+                                <MudText Typo="Typo.caption" Class="mt-2" Style="color: #78909c;">
+                                    Lower-cost alternatives available
+                                </MudText>
+                                @foreach (var alt in _benefitResult.Alternatives.Take(3))
+                                {
+                                    <MudText Typo="Typo.caption" Style="color: #90caf9;">
+                                        • @alt.DrugName — est. $@(alt.EstimatedCopay?.ToString("F2") ?? "?")
+                                        (@alt.TierLevel)
+                                    </MudText>
+                                }
+                            }
+                        </MudPaper>
+                    }
+
+                    <MudButton Variant="Variant.Outlined"
+                               Size="Size.Small"
+                               Class="mt-3"
+                               Style="border-color: #1565c0; color: #42a5f5;"
+                               StartIcon="@Icons.Material.Filled.AttachMoney"
+                               OnClick="CheckBenefits"
+                               Disabled="_checkingBenefits">
+                        @if (_checkingBenefits)
+                        {
+                            <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                        }
+                        Check Benefits & Interactions
+                    </MudButton>
+                </MudTabPanel>
+
+            </MudTabs>
+        </MudForm>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="@(() => IsOpen = false)" Style="color: #78909c;">Cancel</MudButton>
+        @if (_activeStep > 0)
+        {
+            <MudButton OnClick="@(() => _activeStep--)" Style="color: #b0bec5;">Back</MudButton>
+        }
+        @if (_activeStep < 2)
+        {
+            <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                       OnClick="@(() => _activeStep++)"
+                       Style="background-color: #26a69a;">
+                Next
+            </MudButton>
+        }
+        else
+        {
+            <MudButton Variant="Variant.Filled"
+                       Color="Color.Success"
+                       StartIcon="@Icons.Material.Filled.Save"
+                       OnClick="CreatePrescription"
+                       Disabled="@(!_formValid || _saving)">
+                @if (_saving)
+                {
+                    <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                }
+                Create Prescription
+            </MudButton>
+        }
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [Parameter] public bool IsOpen { get; set; }
+    [Parameter] public EventCallback<bool> IsOpenChanged { get; set; }
+    [Parameter] public Guid PatientId { get; set; }
+    [Parameter] public Guid PrescriberId { get; set; }
+    [Parameter] public string? PharmacyNcpdpId { get; set; }
+    [Parameter] public List<PatientAllergyDto> Allergies { get; set; } = new();
+    [Parameter] public EventCallback<PrescriptionDto> OnPrescriptionCreated { get; set; }
+
+    private MudForm _form = null!;
+    private bool _formValid;
+    private bool _saving;
+    private bool _checkingBenefits;
+    private int _activeStep;
+
+    private CreatePrescriptionRequest _request = new();
+    private List<DrugInteractionAlertDto> _interactionAlerts = new();
+    private PrescriptionBenefitDto? _benefitResult;
+
+    protected override void OnParametersSet()
+    {
+        if (IsOpen)
+        {
+            _request = new CreatePrescriptionRequest
+            {
+                PatientId = PatientId,
+                PrescriberId = PrescriberId,
+                PharmacyNcpdpId = PharmacyNcpdpId,
+                QuantityUnit = "EA"
+            };
+            _activeStep = 0;
+            _interactionAlerts.Clear();
+            _benefitResult = null;
+        }
+    }
+
+    private async Task CheckBenefits()
+    {
+        _checkingBenefits = true;
+        StateHasChanged();
+
+        try
+        {
+            // Check interactions
+            if (!string.IsNullOrEmpty(_request.RxNormCode))
+            {
+                _interactionAlerts = await PrescriptionService.CheckInteractionsAsync(
+                    PatientId, _request.RxNormCode);
+            }
+
+            // Check benefits (RTPB)
+            _benefitResult = await PrescriptionService.CheckBenefitsAsync(
+                new CheckBenefitsRequest
+                {
+                    PatientId = PatientId,
+                    DrugName = _request.DrugName,
+                    RxNormCode = _request.RxNormCode,
+                    PharmacyNcpdpId = PharmacyNcpdpId
+                });
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error checking benefits: {ex.Message}", Severity.Warning);
+        }
+        finally
+        {
+            _checkingBenefits = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task CreatePrescription()
+    {
+        _saving = true;
+        StateHasChanged();
+
+        try
+        {
+            var prescription = await PrescriptionService.CreatePrescriptionAsync(_request);
+            await OnPrescriptionCreated.InvokeAsync(prescription);
+            IsOpen = false;
+            await IsOpenChanged.InvokeAsync(false);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _saving = false;
+            StateHasChanged();
+        }
+    }
+}

@@ -1,0 +1,121 @@
+@* 
+    DoseSpot JumpStart Integration
+    
+    This dialog embeds the DoseSpot prescribing UI via iFrame using SSO authentication.
+    The SSO URL is generated server-side with HMAC-SHA256 signing (see DoseSpotGateway.cs).
+    
+    DoseSpot handles the full prescribing workflow within the iFrame:
+    - Drug search and selection (with Lexicomp for dentistry)
+    - Drug interaction and allergy checks
+    - Pharmacy selection
+    - EPCS two-factor authentication for controlled substances
+    - Prescription transmission via Surescripts
+    - Refill request management
+    - Medication history viewing
+    
+    The host application (CloudDentalOffice) provides:
+    - Patient context (synced via API before launching)
+    - Clinician context (via SSO token)
+    - Notification badges (via polling or webhooks)
+    
+    Reference: https://dosespot.com/jumpstart/
+*@
+
+<MudDialog @bind-Visible="IsOpen"
+           Options="@(new DialogOptions
+           {
+               MaxWidth = MaxWidth.ExtraLarge,
+               FullWidth = true,
+               FullScreen = true,
+               CloseButton = true,
+               CloseOnEscapeKey = true,
+               NoHeader = false
+           })">
+    <TitleContent>
+        <div class="d-flex align-center gap-2">
+            <MudIcon Icon="@Icons.Material.Filled.Medication" Style="color: #26a69a;" />
+            <MudText Typo="Typo.h6" Style="color: #e0e0e0;">DoseSpot e-Prescribe</MudText>
+            <MudSpacer />
+            <MudChip T="string" Size="Size.Small" Color="Color.Success" Variant="Variant.Outlined">
+                Surescripts Certified
+            </MudChip>
+            <MudChip T="string" Size="Size.Small" Color="Color.Info" Variant="Variant.Outlined">
+                EPCS Enabled
+            </MudChip>
+            <MudIconButton Icon="@Icons.Material.Filled.OpenInNew"
+                           Size="Size.Small"
+                           Title="Open in new window"
+                           OnClick="OpenInNewWindow"
+                           Style="color: #78909c;" />
+        </div>
+    </TitleContent>
+    <DialogContent>
+        @if (string.IsNullOrEmpty(SsoUrl))
+        {
+            <div class="d-flex flex-column align-center justify-center" style="height: 600px;">
+                <MudProgressCircular Color="Color.Tertiary" Indeterminate="true" Size="Size.Large" />
+                <MudText Typo="Typo.body1" Class="mt-4" Style="color: #78909c;">
+                    Authenticating with DoseSpot...
+                </MudText>
+            </div>
+        }
+        else
+        {
+            <div style="position: relative; width: 100%; height: calc(100vh - 120px);">
+                @if (_iframeLoading)
+                {
+                    <div style="position: absolute; top: 0; left: 0; right: 0; z-index: 1;">
+                        <MudProgressLinear Color="Color.Tertiary" Indeterminate="true" Style="height: 3px;" />
+                    </div>
+                }
+
+                <iframe src="@SsoUrl"
+                        style="width: 100%; height: 100%; border: none; border-radius: 4px; background-color: #fff;"
+                        sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox"
+                        allow="camera; microphone"
+                        title="DoseSpot ePrescribing"
+                        @onload="OnIframeLoaded"
+                        referrerpolicy="strict-origin-when-cross-origin">
+                </iframe>
+
+                @* Security notice *@
+                <MudText Typo="Typo.caption" Class="mt-1" Style="color: #546e7a; text-align: center;">
+                    <MudIcon Icon="@Icons.Material.Filled.Lock" Size="Size.Small" Style="vertical-align: middle;" />
+                    Secure connection to DoseSpot · HIPAA compliant · DEA EPCS certified
+                </MudText>
+            </div>
+        }
+    </DialogContent>
+</MudDialog>
+
+@code {
+    [Parameter] public bool IsOpen { get; set; }
+    [Parameter] public EventCallback<bool> IsOpenChanged { get; set; }
+    [Parameter] public string? SsoUrl { get; set; }
+
+    private bool _iframeLoading = true;
+
+    protected override void OnParametersSet()
+    {
+        if (IsOpen)
+        {
+            _iframeLoading = true;
+        }
+    }
+
+    private void OnIframeLoaded()
+    {
+        _iframeLoading = false;
+        StateHasChanged();
+    }
+
+    private void OpenInNewWindow()
+    {
+        // This will be handled via JS interop to open DoseSpot in a new browser tab
+        // The SSO URL is time-limited so it must be used promptly
+        if (!string.IsNullOrEmpty(SsoUrl))
+        {
+            // TODO: JSRuntime.InvokeVoidAsync("open", SsoUrl, "_blank");
+        }
+    }
+}

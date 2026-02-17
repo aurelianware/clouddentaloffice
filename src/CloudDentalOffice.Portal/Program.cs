@@ -137,6 +137,30 @@ else
     builder.Services.AddScoped<IPatientService, PatientServiceImpl>();
 }
 
+// Prescription service: configurable between monolith and microservice mode
+var usePrescriptionMicroservice = builder.Configuration.GetValue("Microservices:Prescription:Enabled", false);
+if (usePrescriptionMicroservice)
+{
+    var gatewayUrl = builder.Configuration.GetValue<string>("ApiGateway:BaseUrl") ?? "http://localhost:5200";
+    builder.Services.AddHttpClient<CloudDentalOffice.Contracts.Prescriptions.IPrescriptionService, PrescriptionServiceHttpClient>(client =>
+    {
+        client.BaseAddress = new Uri(gatewayUrl);
+        client.DefaultRequestHeaders.Add("Accept", "application/json");
+        client.Timeout = TimeSpan.FromSeconds(30);
+    });
+}
+else
+{
+    // For now, use microservice mode as default since PrescriptionService is standalone
+    var gatewayUrl = builder.Configuration.GetValue<string>("ApiGateway:BaseUrl") ?? "http://localhost:5200";
+    builder.Services.AddHttpClient<CloudDentalOffice.Contracts.Prescriptions.IPrescriptionService, PrescriptionServiceHttpClient>(client =>
+    {
+        client.BaseAddress = new Uri(gatewayUrl);
+        client.DefaultRequestHeaders.Add("Accept", "application/json");
+        client.Timeout = TimeSpan.FromSeconds(30);
+    });
+}
+
 // Remaining services still use monolith mode (migrate one at a time)
 builder.Services.AddScoped<IClaimService, ClaimServiceImpl>();
 builder.Services.AddScoped<IAppointmentService, AppointmentServiceImpl>();
