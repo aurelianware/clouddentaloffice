@@ -94,6 +94,8 @@ spec:
               value: http://era-service:5105
             - name: ReverseProxy__Clusters__auth-cluster__Destinations__primary__Address
               value: http://auth-service:5106
+            - name: ReverseProxy__Clusters__prescription-cluster__Destinations__primary__Address
+              value: http://prescription-service:5107
 ---
 apiVersion: v1
 kind: Service
@@ -365,3 +367,61 @@ spec:
     - name: http
       port: 5106
       targetPort: 5106
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: prescription-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: prescription-service
+  template:
+    metadata:
+      labels:
+        app: prescription-service
+    spec:
+      containers:
+        - name: prescription-service
+          image: registry.digitalocean.com/clouddental/prescription-service:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 5107
+          env:
+            - name: ASPNETCORE_ENVIRONMENT
+              value: Production
+            - name: DatabaseProvider
+              value: PostgreSQL
+            - name: ConnectionStrings__PrescriptionDb
+              valueFrom:
+                secretKeyRef:
+                  name: cdo-app-secrets
+                  key: ConnectionStrings__PrescriptionDb
+            - name: ErxProvider
+              value: DoseSpot
+            - name: DoseSpot__ClinicId
+              valueFrom:
+                secretKeyRef:
+                  name: cdo-app-secrets
+                  key: DoseSpot__ClinicId
+            - name: DoseSpot__ClinicKey
+              valueFrom:
+                secretKeyRef:
+                  name: cdo-app-secrets
+                  key: DoseSpot__ClinicKey
+            - name: DoseSpot__UseSandbox
+              value: "false"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: prescription-service
+spec:
+  type: ClusterIP
+  selector:
+    app: prescription-service
+  ports:
+    - name: http
+      port: 5107
+      targetPort: 5107

@@ -1,0 +1,120 @@
+@using CloudDentalOffice.Contracts.Prescriptions
+
+<div class="pa-4">
+    <div class="d-flex justify-space-between align-center mb-4">
+        <MudText Typo="Typo.h6" Style="color: #e0e0e0;">
+            <MudIcon Icon="@Icons.Material.Filled.History" Class="mr-2" Style="color: #42a5f5;" />
+            Medication History
+        </MudText>
+        <MudIconButton Icon="@Icons.Material.Filled.Close"
+                       Size="Size.Small"
+                       OnClick="OnClose"
+                       Style="color: #78909c;" />
+    </div>
+
+    <MudText Typo="Typo.caption" Class="mb-3" Style="color: #607d8b;">
+        Aggregated from pharmacies and PBMs via Surescripts
+    </MudText>
+
+    @if (!MedicationHistory.Any())
+    {
+        <MudAlert Severity="Severity.Info" Dense="true"
+                  Style="background-color: #0d2137; color: #90caf9;">
+            No medication history available. Patient consent may be required.
+        </MudAlert>
+    }
+    else
+    {
+        @* ── Active Medications ── *@
+        var activeMeds = MedicationHistory.Where(m => m.IsActive).ToList();
+        var inactiveMeds = MedicationHistory.Where(m => !m.IsActive).ToList();
+
+        @if (activeMeds.Any())
+        {
+            <MudText Typo="Typo.subtitle2" Class="mb-2" Style="color: #66bb6a;">
+                <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Size="Size.Small" Class="mr-1" />
+                Active Medications (@activeMeds.Count)
+            </MudText>
+
+            @foreach (var med in activeMeds)
+            {
+                <MudPaper Class="pa-3 mb-2" Elevation="0"
+                          Style="background-color: #152238; border: 1px solid #1b5e20; border-radius: 6px;">
+                    <MudText Typo="Typo.body2" Style="color: #e0e0e0; font-weight: 500;">
+                        @med.DrugName
+                    </MudText>
+                    <MudText Typo="Typo.caption" Style="color: #b0bec5;">
+                        @med.Strength
+                    </MudText>
+                    @if (!string.IsNullOrEmpty(med.Directions))
+                    {
+                        <MudText Typo="Typo.caption" Style="color: #90a4ae;">
+                            Sig: @med.Directions
+                        </MudText>
+                    }
+                    <div class="d-flex justify-space-between mt-1">
+                        <MudText Typo="Typo.caption" Style="color: #78909c;">
+                            @if (!string.IsNullOrEmpty(med.Prescriber))
+                            {
+                                <text>Rx by @med.Prescriber</text>
+                            }
+                        </MudText>
+                        <MudText Typo="Typo.caption" Style="color: #78909c;">
+                            @if (med.LastFillDate.HasValue)
+                            {
+                                <text>Filled @med.LastFillDate.Value.ToString("MM/dd/yy")</text>
+                            }
+                        </MudText>
+                    </div>
+                    @if (!string.IsNullOrEmpty(med.Source))
+                    {
+                        <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined"
+                                 Style="font-size: 0.65rem; border-color: #37474f; color: #78909c; margin-top: 4px;">
+                            Source: @med.Source
+                        </MudChip>
+                    }
+                </MudPaper>
+            }
+        }
+
+        @* ── Inactive / Past Medications ── *@
+        @if (inactiveMeds.Any())
+        {
+            <MudExpansionPanels Class="mt-3">
+                <MudExpansionPanel Style="background-color: #152238; color: #b0bec5;">
+                    <TitleContent>
+                        <MudText Typo="Typo.subtitle2" Style="color: #78909c;">
+                            <MudIcon Icon="@Icons.Material.Filled.History" Size="Size.Small" Class="mr-1" />
+                            Past Medications (@inactiveMeds.Count)
+                        </MudText>
+                    </TitleContent>
+                    <ChildContent>
+                        @foreach (var med in inactiveMeds)
+                        {
+                            <MudPaper Class="pa-3 mb-2" Elevation="0"
+                                      Style="background-color: #0d1b2a; border: 1px solid #2d3e50; border-radius: 6px;">
+                                <MudText Typo="Typo.body2" Style="color: #90a4ae;">
+                                    @med.DrugName @med.Strength
+                                </MudText>
+                                <div class="d-flex justify-space-between mt-1">
+                                    <MudText Typo="Typo.caption" Style="color: #607d8b;">
+                                        @med.Prescriber
+                                    </MudText>
+                                    <MudText Typo="Typo.caption" Style="color: #607d8b;">
+                                        @med.LastFillDate?.ToString("MM/dd/yy")
+                                    </MudText>
+                                </div>
+                            </MudPaper>
+                        }
+                    </ChildContent>
+                </MudExpansionPanel>
+            </MudExpansionPanels>
+        }
+    }
+</div>
+
+@code {
+    [Parameter] public Guid PatientId { get; set; }
+    [Parameter] public List<MedicationHistoryDto> MedicationHistory { get; set; } = new();
+    [Parameter] public EventCallback OnClose { get; set; }
+}

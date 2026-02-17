@@ -1,0 +1,216 @@
+@using CloudDentalOffice.Contracts.Prescriptions
+@inject IPrescriptionService PrescriptionService
+@inject ISnackbar Snackbar
+
+<MudDialog @bind-Visible="IsOpen" Options="@(new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true })">
+    <TitleContent>
+        <MudText Typo="Typo.h6" Style="color: #e0e0e0;">
+            <MudIcon Icon="@Icons.Material.Filled.LocalPharmacy" Class="mr-2" Style="color: #26a69a;" />
+            Find Pharmacy
+        </MudText>
+    </TitleContent>
+    <DialogContent>
+        @* ── Search Form ── *@
+        <MudGrid>
+            <MudItem xs="12" sm="5">
+                <MudTextField @bind-Value="_searchName"
+                              Label="Pharmacy Name"
+                              Variant="Variant.Outlined"
+                              Placeholder="CVS, Walgreens, etc."
+                              Adornment="Adornment.Start"
+                              AdornmentIcon="@Icons.Material.Filled.Search"
+                              Style="color: #e0e0e0;"
+                              Dense="true" />
+            </MudItem>
+            <MudItem xs="12" sm="3">
+                <MudTextField @bind-Value="_searchZip"
+                              Label="ZIP Code"
+                              Variant="Variant.Outlined"
+                              Placeholder="75201"
+                              Style="color: #e0e0e0;"
+                              Dense="true" />
+            </MudItem>
+            <MudItem xs="12" sm="2">
+                <MudNumericField @bind-Value="_searchRadius"
+                                 Label="Miles"
+                                 Variant="Variant.Outlined"
+                                 Min="1" Max="50"
+                                 Style="color: #e0e0e0;"
+                                 Dense="true" />
+            </MudItem>
+            <MudItem xs="12" sm="2" Class="d-flex align-end">
+                <MudButton Variant="Variant.Filled"
+                           FullWidth="true"
+                           OnClick="SearchPharmacies"
+                           Disabled="_searching"
+                           Style="background-color: #26a69a; height: 40px;">
+                    @if (_searching)
+                    {
+                        <MudProgressCircular Size="Size.Small" Indeterminate="true" />
+                    }
+                    else
+                    {
+                        <MudIcon Icon="@Icons.Material.Filled.Search" />
+                    }
+                </MudButton>
+            </MudItem>
+        </MudGrid>
+
+        @* ── Filter Chips ── *@
+        <div class="d-flex gap-2 mt-3 mb-3">
+            <MudChip T="string" Size="Size.Small"
+                     Color="@(_filterEpcs ? Color.Success : Color.Default)"
+                     Variant="@(_filterEpcs ? Variant.Filled : Variant.Outlined)"
+                     OnClick="@(() => { _filterEpcs = !_filterEpcs; })"
+                     Style="@(!_filterEpcs ? "border-color: #455a64; color: #90a4ae;" : "")">
+                EPCS Enabled
+            </MudChip>
+            <MudChip T="string" Size="Size.Small"
+                     Color="@(_filter24Hr ? Color.Info : Color.Default)"
+                     Variant="@(_filter24Hr ? Variant.Filled : Variant.Outlined)"
+                     OnClick="@(() => { _filter24Hr = !_filter24Hr; })"
+                     Style="@(!_filter24Hr ? "border-color: #455a64; color: #90a4ae;" : "")">
+                24 Hour
+            </MudChip>
+            @foreach (var type in new[] { PharmacyType.Retail, PharmacyType.MailOrder, PharmacyType.Compounding })
+            {
+                <MudChip T="string" Size="Size.Small"
+                         Color="@(_filterType == type ? Color.Tertiary : Color.Default)"
+                         Variant="@(_filterType == type ? Variant.Filled : Variant.Outlined)"
+                         OnClick="@(() => _filterType = _filterType == type ? null : type)"
+                         Style="@(_filterType != type ? "border-color: #455a64; color: #90a4ae;" : "")">
+                    @type
+                </MudChip>
+            }
+        </div>
+
+        @* ── Results ── *@
+        @if (_pharmacies.Any())
+        {
+            <MudList T="PharmacyDto" Dense="true" Style="background-color: transparent;">
+                @foreach (var pharmacy in FilteredPharmacies)
+                {
+                    <MudListItem OnClick="@(() => SelectPharmacy(pharmacy))"
+                                 Style="border-bottom: 1px solid #2d3e50; cursor: pointer;"
+                                 Class="pharmacy-list-item">
+                        <div class="d-flex justify-space-between align-center" style="width: 100%;">
+                            <div>
+                                <MudText Typo="Typo.body1" Style="color: #e0e0e0; font-weight: 500;">
+                                    @pharmacy.Name
+                                </MudText>
+                                <MudText Typo="Typo.body2" Style="color: #90a4ae;">
+                                    @pharmacy.Address, @pharmacy.City, @pharmacy.State @pharmacy.ZipCode
+                                </MudText>
+                                <MudText Typo="Typo.caption" Style="color: #78909c;">
+                                    @pharmacy.Phone
+                                </MudText>
+                                <div class="d-flex gap-1 mt-1">
+                                    @if (pharmacy.AcceptsEpcs)
+                                    {
+                                        <MudChip T="string" Size="Size.Small" Color="Color.Success"
+                                                 Variant="Variant.Outlined" Style="font-size: 0.7rem;">
+                                            EPCS
+                                        </MudChip>
+                                    }
+                                    @if (pharmacy.Is24Hour)
+                                    {
+                                        <MudChip T="string" Size="Size.Small" Color="Color.Info"
+                                                 Variant="Variant.Outlined" Style="font-size: 0.7rem;">
+                                            24HR
+                                        </MudChip>
+                                    }
+                                    <MudChip T="string" Size="Size.Small" Color="Color.Default"
+                                             Variant="Variant.Outlined"
+                                             Style="font-size: 0.7rem; border-color: #455a64; color: #78909c;">
+                                        @pharmacy.PharmacyType
+                                    </MudChip>
+                                </div>
+                            </div>
+                            <div style="text-align: right; min-width: 80px;">
+                                @if (pharmacy.DistanceMiles.HasValue)
+                                {
+                                    <MudText Typo="Typo.body2" Style="color: #26a69a; font-weight: 500;">
+                                        @pharmacy.DistanceMiles.Value.ToString("F1") mi
+                                    </MudText>
+                                }
+                                <MudText Typo="Typo.caption" Style="color: #607d8b;">
+                                    NCPDP: @pharmacy.NcpdpId
+                                </MudText>
+                            </div>
+                        </div>
+                    </MudListItem>
+                }
+            </MudList>
+
+            <MudText Typo="Typo.caption" Class="mt-2" Style="color: #607d8b;">
+                @FilteredPharmacies.Count() of @_pharmacies.Count results shown
+            </MudText>
+        }
+        else if (_hasSearched)
+        {
+            <MudAlert Severity="Severity.Info" Dense="true" Class="mt-3"
+                      Style="background-color: #0d2137; color: #90caf9;">
+                No pharmacies found. Try expanding your search radius or changing filters.
+            </MudAlert>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="@(() => IsOpen = false)" Style="color: #78909c;">Close</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [Parameter] public bool IsOpen { get; set; }
+    [Parameter] public EventCallback<bool> IsOpenChanged { get; set; }
+    [Parameter] public EventCallback<PharmacyDto> OnPharmacySelected { get; set; }
+
+    private string? _searchName;
+    private string? _searchZip;
+    private double _searchRadius = 10;
+    private bool _searching;
+    private bool _hasSearched;
+    private bool _filterEpcs;
+    private bool _filter24Hr;
+    private PharmacyType? _filterType;
+
+    private List<PharmacyDto> _pharmacies = new();
+
+    private IEnumerable<PharmacyDto> FilteredPharmacies => _pharmacies
+        .Where(p => !_filterEpcs || p.AcceptsEpcs)
+        .Where(p => !_filter24Hr || p.Is24Hour)
+        .Where(p => _filterType == null || p.PharmacyType == _filterType);
+
+    private async Task SearchPharmacies()
+    {
+        _searching = true;
+        _hasSearched = true;
+        StateHasChanged();
+
+        try
+        {
+            _pharmacies = await PrescriptionService.SearchPharmaciesAsync(
+                new PharmacySearchRequest
+                {
+                    Name = _searchName,
+                    ZipCode = _searchZip,
+                    RadiusMiles = _searchRadius
+                });
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Pharmacy search error: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _searching = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task SelectPharmacy(PharmacyDto pharmacy)
+    {
+        await OnPharmacySelected.InvokeAsync(pharmacy);
+        IsOpen = false;
+        await IsOpenChanged.InvokeAsync(false);
+    }
+}

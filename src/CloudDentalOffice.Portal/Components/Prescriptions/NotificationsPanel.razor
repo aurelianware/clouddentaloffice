@@ -1,0 +1,69 @@
+@* eRx Notifications Panel *@
+
+<MudPaper Class="pa-3 mb-4" Elevation="2"
+          Style="background-color: #1a2332; border: 1px solid #ff8f00; border-radius: 8px;">
+    <MudText Typo="Typo.subtitle2" Class="mb-2" Style="color: #ffcc80;">
+        <MudIcon Icon="@Icons.Material.Filled.Notifications" Size="Size.Small" Class="mr-1" />
+        eRx Notifications
+    </MudText>
+
+    @foreach (var notification in Notifications.Where(n => !n.Acknowledged))
+    {
+        var notifColor = GetNotificationColor(notification.Type);
+        <div class="d-flex align-center gap-2 pa-2 mb-1"
+             style="background-color: #152238; border-radius: 4px; border-left: 3px solid @notifColor; cursor: pointer;"
+             @onclick="@(() => OnNavigate.InvokeAsync(notification))">
+            <MudIcon Icon="@GetNotificationIcon(notification.Type)"
+                     Size="Size.Small"
+                     Style="@($"color: {notifColor};")" />
+            <div style="flex: 1;">
+                <MudText Typo="Typo.body2" Style="color: #e0e0e0;">
+                    @notification.Message
+                </MudText>
+                <MudText Typo="Typo.caption" Style="color: #607d8b;">
+                    @notification.Timestamp.ToString("MMM dd, h:mm tt")
+                </MudText>
+            </div>
+            <MudIconButton Icon="@Icons.Material.Filled.Close"
+                           Size="Size.Small"
+                           OnClick="@(() => OnDismiss.InvokeAsync(notification))"
+                           OnClick:stopPropagation="true"
+                           Style="color: #546e7a;" />
+        </div>
+    }
+
+    @if (!Notifications.Any(n => !n.Acknowledged))
+    {
+        <MudText Typo="Typo.caption" Style="color: #607d8b;">No new notifications</MudText>
+    }
+</MudPaper>
+
+@code {
+    [Parameter] public List<ErxNotification> Notifications { get; set; } = new();
+    [Parameter] public EventCallback<ErxNotification> OnDismiss { get; set; }
+    [Parameter] public EventCallback<ErxNotification> OnNavigate { get; set; }
+
+    private static string GetNotificationIcon(ErxNotificationType type) => type switch
+    {
+        ErxNotificationType.RefillRequest => Icons.Material.Filled.Refresh,
+        ErxNotificationType.RefillDenied => Icons.Material.Filled.Cancel,
+        ErxNotificationType.RefillApproved => Icons.Material.Filled.CheckCircle,
+        ErxNotificationType.PrescriptionChange => Icons.Material.Filled.Edit,
+        ErxNotificationType.PharmacyMessage => Icons.Material.Filled.LocalPharmacy,
+        ErxNotificationType.ClinicalAlert => Icons.Material.Filled.Warning,
+        ErxNotificationType.SystemError => Icons.Material.Filled.Error,
+        _ => Icons.Material.Filled.Info
+    };
+
+    private static string GetNotificationColor(ErxNotificationType type) => type switch
+    {
+        ErxNotificationType.RefillRequest => "#ffa726",
+        ErxNotificationType.RefillDenied => "#ef5350",
+        ErxNotificationType.RefillApproved => "#66bb6a",
+        ErxNotificationType.PrescriptionChange => "#42a5f5",
+        ErxNotificationType.PharmacyMessage => "#29b6f6",
+        ErxNotificationType.ClinicalAlert => "#ff6f00",
+        ErxNotificationType.SystemError => "#ef5350",
+        _ => "#78909c"
+    };
+}
