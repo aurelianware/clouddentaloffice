@@ -74,7 +74,7 @@
     <MudPaper Elevation="2" Style="background-color: #1e2a3a; border: 1px solid #2d3e50;">
         @if (_events.Any())
         {
-            <MudList T="string" Clickable="true" Dense="false">
+            <MudList T="string" Dense="false">
                 @foreach (var evt in _events)
                 {
                     <MudListItem T="string" OnClick="@(() => ViewEventDetails(evt.Id))" 
