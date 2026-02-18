@@ -7,7 +7,8 @@ public static class DbInitializer
 {
     public static void Initialize(CloudDentalDbContext context)
     {
-        context.Database.EnsureCreated();
+        // Database structure is created by migrations in Program.cs
+        // Just seed the data if needed
 
         // Check if we have any tenants
         if (context.Tenants.IgnoreQueryFilters().Any())
@@ -41,19 +42,23 @@ public static class DbInitializer
         };
         context.Users.Add(user);
 
-        // 3. Create Provider
-        var provider = new Provider
+        // 3. Use existing provider (from seed migrations) or create one
+        var provider = context.Providers.IgnoreQueryFilters().FirstOrDefault(p => p.TenantId == demoTenantId);
+        if (provider == null)
         {
-            TenantId = demoTenantId,
-            FirstName = "Sarah",
-            LastName = "Smile",
-            NPI = "1234567890",
-            Specialty = "General Dentist",
-            Email = "dr.smile@demo.com",
-            IsActive = true,
-            CreatedDate = DateTime.UtcNow
-        };
-        context.Providers.Add(provider);
+            provider = new Provider
+            {
+                TenantId = demoTenantId,
+                FirstName = "Sarah",
+                LastName = "Smile",
+                NPI = "9876543210", // Use unique NPI
+                Specialty = "General Dentist",
+                Email = "dr.smile@demo.com",
+                IsActive = true,
+                CreatedDate = DateTime.UtcNow
+            };
+            context.Providers.Add(provider);
+        }
 
         // 4. Create Insurance Plan
         var insurance = new InsurancePlan

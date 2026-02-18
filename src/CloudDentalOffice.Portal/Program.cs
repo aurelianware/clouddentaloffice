@@ -161,6 +161,15 @@ else
     });
 }
 
+// Vision service: always use microservice mode
+var visionGatewayUrl = builder.Configuration.GetValue<string>("ApiGateway:BaseUrl") ?? "http://localhost:5200";
+builder.Services.AddHttpClient<CloudDentalOffice.Contracts.Vision.IVisionService, VisionServiceHttpClient>(client =>
+{
+    client.BaseAddress = new Uri(visionGatewayUrl);
+    client.DefaultRequestHeaders.Add("Accept", "application/json");
+    client.Timeout = TimeSpan.FromSeconds(30);
+});
+
 // Remaining services still use monolith mode (migrate one at a time)
 builder.Services.AddScoped<IClaimService, ClaimServiceImpl>();
 builder.Services.AddScoped<IAppointmentService, AppointmentServiceImpl>();

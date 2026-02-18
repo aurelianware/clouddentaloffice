@@ -96,6 +96,8 @@ spec:
               value: http://auth-service:5106
             - name: ReverseProxy__Clusters__prescription-cluster__Destinations__primary__Address
               value: http://prescription-service:5107
+            - name: ReverseProxy__Clusters__vision-cluster__Destinations__primary__Address
+              value: http://vision-service:5108
 ---
 apiVersion: v1
 kind: Service
@@ -425,3 +427,73 @@ spec:
     - name: http
       port: 5107
       targetPort: 5107
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vision-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vision-service
+  template:
+    metadata:
+      labels:
+        app: vision-service
+    spec:
+      containers:
+        - name: vision-service
+          image: registry.digitalocean.com/clouddental/vision-service:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 5108
+          env:
+            - name: ASPNETCORE_ENVIRONMENT
+              value: Production
+            - name: DatabaseProvider
+              value: PostgreSQL
+            - name: ConnectionStrings__VisionDb
+              valueFrom:
+                secretKeyRef:
+                  name: cdo-app-secrets
+                  key: ConnectionStrings__VisionDb
+            - name: OcrProvider
+              value: AzureAiVision
+            - name: CorrelationProvider
+              value: Live
+            - name: ApiGatewayUrl
+              value: http://api-gateway:5200
+            - name: AzureAiVision__Endpoint
+              valueFrom:
+                secretKeyRef:
+                  name: cdo-app-secrets
+                  key: AzureAiVision__Endpoint
+            - name: AzureAiVision__ApiKey
+              valueFrom:
+                secretKeyRef:
+                  name: cdo-app-secrets
+                  key: AzureAiVision__ApiKey
+            - name: AzureBlobStorage__AccountName
+              valueFrom:
+                secretKeyRef:
+                  name: cdo-app-secrets
+                  key: AzureBlobStorage__AccountName
+            - name: AzureBlobStorage__SasToken
+              valueFrom:
+                secretKeyRef:
+                  name: cdo-app-secrets
+                  key: AzureBlobStorage__SasToken
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vision-service
+spec:
+  type: ClusterIP
+  selector:
+    app: vision-service
+  ports:
+    - name: http
+      port: 5108
+      targetPort: 5108
