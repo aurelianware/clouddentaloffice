@@ -10,7 +10,7 @@ public static class LogSanitizer
     /// This prevents log forging attacks where an attacker could inject additional log lines via user-controlled input.
     /// </summary>
     /// <param name="value">The value to sanitize. Can be null or empty.</param>
-    /// <returns>The sanitized value with CR/LF/TAB replaced by literal "\r", "\n", and "\t" sequences, or the original value if null/empty.</returns>
+    /// <returns>The sanitized value with control characters replaced by literal escape sequences, or the original value if null/empty.</returns>
     public static string? Sanitize(string? value)
     {
         if (string.IsNullOrEmpty(value))
@@ -18,8 +18,9 @@ public static class LogSanitizer
             return value;
         }
 
-        // Replace control characters with visible escape sequences to prevent log forging
+        // Replace common control characters with visible escape sequences to prevent log forging
         // while preserving the original structure of the value.
+        // We use sequential Replace() which is simple and efficient for the most common cases.
         return value
             .Replace("\r", "\\r")
             .Replace("\n", "\\n")
