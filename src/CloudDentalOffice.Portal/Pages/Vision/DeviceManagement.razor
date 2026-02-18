@@ -61,7 +61,7 @@
             </HeaderContent>
             <RowTemplate>
                 <MudTd>
-                    <MudChip Size="Size.Small" Color="GetStatusColor(context.Status)">
+                    <MudChip T="string" Size="Size.Small" Color="GetStatusColor(context.Status)">
                         @context.Status
                     </MudChip>
                 </MudTd>
@@ -271,85 +271,5 @@
         }
 
         private void Cancel() => MudDialog.Cancel();
-
-        protected override void BuildRenderTree(Microsoft.AspNetCore.Components.Rendering.RenderTreeBuilder builder)
-        {
-            builder.OpenComponent<MudDialog>(0);
-            builder.OpenComponent<MudDialogContent>(1);
-            
-            builder.OpenComponent<MudForm>(2);
-            
-            // Name
-            builder.OpenComponent<MudTextField<string>>(3);
-            builder.AddAttribute(4, "Label", "Device Name");
-            builder.AddAttribute(5, "Value", _request.Name);
-            builder.AddAttribute(6, "ValueChanged", EventCallback.Factory.Create<string>(this, v => _request.Name = v));
-            builder.AddAttribute(7, "Required", true);
-            builder.CloseComponent();
-            
-            // Type
-            builder.OpenComponent<MudSelect<DeviceType>>(8);
-            builder.AddAttribute(9, "Label", "Device Type");
-            builder.AddAttribute(10, "Value", _request.Type);
-            builder.AddAttribute(11, "ValueChanged", EventCallback.Factory.Create<DeviceType>(this, v => _request.Type = v));
-            builder.OpenComponent<MudSelectItem<DeviceType>>(12);
-            builder.AddAttribute(13, "Value", DeviceType.IpCamera);
-            builder.AddAttribute(14, "ChildContent", (RenderFragment)(b => b.AddContent(0, "IP Camera")));
-            builder.CloseComponent();
-            builder.OpenComponent<MudSelectItem<DeviceType>>(15);
-            builder.AddAttribute(16, "Value", DeviceType.Tablet);
-            builder.AddAttribute(17, "ChildContent", (RenderFragment)(b => b.AddContent(0, "Tablet")));
-            builder.CloseComponent();
-            builder.OpenComponent<MudSelectItem<DeviceType>>(18);
-            builder.AddAttribute(19, "Value", DeviceType.RaspberryPi);
-            builder.AddAttribute(20, "ChildContent", (RenderFragment)(b => b.AddContent(0, "Raspberry Pi")));
-            builder.CloseComponent();
-            builder.CloseComponent();
-            
-            // Location
-            builder.OpenComponent<MudSelect<CameraLocation>>(21);
-            builder.AddAttribute(22, "Label", "Location");
-            builder.AddAttribute(23, "Value", _request.Location);
-            builder.AddAttribute(24, "ValueChanged", EventCallback.Factory.Create<CameraLocation>(this, v => _request.Location = v));
-            builder.OpenComponent<MudSelectItem<CameraLocation>>(25);
-            builder.AddAttribute(26, "Value", CameraLocation.Operatory);
-            builder.AddAttribute(27, "ChildContent", (RenderFragment)(b => b.AddContent(0, "Operatory")));
-            builder.CloseComponent();
-            builder.OpenComponent<MudSelectItem<CameraLocation>>(28);
-            builder.AddAttribute(29, "Value", CameraLocation.FrontDesk);
-            builder.AddAttribute(30, "ChildContent", (RenderFragment)(b => b.AddContent(0, "Front Desk")));
-            builder.CloseComponent();
-            builder.OpenComponent<MudSelectItem<CameraLocation>>(31);
-            builder.AddAttribute(32, "Value", CameraLocation.NarcoticsCabinet);
-            builder.AddAttribute(33, "ChildContent", (RenderFragment)(b => b.AddContent(0, "Narcotics Cabinet")));
-            builder.CloseComponent();
-            builder.CloseComponent();
-            
-            // IP Address
-            builder.OpenComponent<MudTextField<string>>(34);
-            builder.AddAttribute(35, "Label", "IP Address");
-            builder.AddAttribute(36, "Value", _request.IpAddress);
-            builder.AddAttribute(37, "ValueChanged", EventCallback.Factory.Create<string>(this, v => _request.IpAddress = v));
-            builder.CloseComponent();
-            
-            builder.CloseComponent(); // MudForm
-            builder.CloseComponent(); // MudDialogContent
-            
-            // Dialog Actions
-            builder.OpenComponent<MudDialogActions>(38);
-            builder.OpenComponent<MudButton>(39);
-            builder.AddAttribute(40, "OnClick", EventCallback.Factory.Create(this, Cancel));
-            builder.AddAttribute(41, "ChildContent", (RenderFragment)(b => b.AddContent(0, "Cancel")));
-            builder.CloseComponent();
-            builder.OpenComponent<MudButton>(42);
-            builder.AddAttribute(43, "Color", Color.Primary);
-            builder.AddAttribute(44, "Disabled", _processing);
-            builder.AddAttribute(45, "OnClick", EventCallback.Factory.Create(this, Submit));
-            builder.AddAttribute(46, "ChildContent", (RenderFragment)(b => b.AddContent(0, "Register")));
-            builder.CloseComponent();
-            builder.CloseComponent(); // MudDialogActions
-            
-            builder.CloseComponent(); // MudDialog
-        }
     }
 }

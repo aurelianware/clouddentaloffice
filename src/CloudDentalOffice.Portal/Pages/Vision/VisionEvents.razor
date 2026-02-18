@@ -74,10 +74,10 @@
     <MudPaper Elevation="2" Style="background-color: #1e2a3a; border: 1px solid #2d3e50;">
         @if (_events.Any())
         {
-            <MudList Clickable="true" Dense="false">
+            <MudList T="string" Clickable="true" Dense="false">
                 @foreach (var evt in _events)
                 {
-                    <MudListItem OnClick="@(() => ViewEventDetails(evt.Id))" 
+                    <MudListItem T="string" OnClick="@(() => ViewEventDetails(evt.Id))" 
                                  Style="border-bottom: 1px solid #2d3e50; padding: 16px;">
                         <MudGrid>
                             <MudItem xs="12" sm="2">
@@ -103,7 +103,7 @@
                             </MudItem>
 
                             <MudItem xs="12" sm="2">
-                                <MudChip Size="Size.Small" Color="GetEventTypeColor(evt.EventType)">
+                                <MudChip T="string" Size="Size.Small" Color="GetEventTypeColor(evt.EventType)">
                                     @evt.EventType
                                 </MudChip>
                             </MudItem>
@@ -128,13 +128,13 @@
                                     <div class="d-flex gap-1 flex-wrap">
                                         @foreach (var detection in evt.Detections.Take(3))
                                         {
-                                            <MudChip Size="Size.Small" Variant="Variant.Outlined">
+                                            <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">
                                                 @detection.DetectionClass
                                             </MudChip>
                                         }
                                         @if (evt.Detections.Count > 3)
                                         {
-                                            <MudChip Size="Size.Small" Variant="Variant.Outlined">
+                                            <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">
                                                 +@(evt.Detections.Count - 3)
                                             </MudChip>
                                         }
@@ -146,7 +146,7 @@
                                 <div class="d-flex align-center justify-end gap-2">
                                     @if (evt.AlertSeverity.HasValue)
                                     {
-                                        <MudChip Size="Size.Small" Color="GetSeverityColor(evt.AlertSeverity.Value)">
+                                        <MudChip T="string" Size="Size.Small" Color="GetSeverityColor(evt.AlertSeverity.Value)">
                                             @evt.AlertSeverity.Value
                                         </MudChip>
                                     }
