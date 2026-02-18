@@ -27,15 +27,15 @@ Cloud Dental Office uses a **microservices architecture** with each bounded cont
                     │ API Gateway │  ← YARP Reverse Proxy
                     │   :5200     │
                     └──────┬──────┘
-         ┌─────────┬───────┼───────┬──────────┬──────────┐
-         │         │       │       │          │          │
-    ┌────┴───┐ ┌───┴────┐ ┌┴─────┐ ┌┴────────┐ ┌┴──────┐ ┌┴─────┐
-    │Patient │ │Schedule│ │Claims│ │Eligiblty│ │  ERA  │ │ Auth │
-    │Service │ │Service │ │Svc   │ │Service  │ │Service│ │  Svc │
-    │ :5101  │ │ :5102  │ │:5103 │ │ :5104   │ │ :5105 │ │:5106 │
-    └────┬───┘ └───┬────┘ └┬─────┘ └┬────────┘ └┬──────┘ └┬─────┘
-         │         │       │        │           │         │
-         └─────────┴───────┴────────┴───────────┴─────────┘
+         ┌─────────┬───────┼───────┬──────────┬──────────┬──────────┬────────────┐
+         │         │       │       │          │          │          │            │
+    ┌────┴───┐ ┌───┴────┐ ┌┴─────┐ ┌┴────────┐ ┌┴──────┐ ┌┴─────┐ ┌┴────────────┐
+    │Patient │ │Schedule│ │Claims│ │Eligibility│ │  ERA  │ │ Auth │ │Prescription│
+    │Service │ │Service │ │Svc   │ │Service  │ │Service│ │  Svc │ │Service     │
+    │ :5101  │ │ :5102  │ │:5103 │ │ :5104   │ │ :5105 │ │:5106 │ │ :5107      │
+    └────┬───┘ └───┬────┘ └┬─────┘ └┬────────┘ └┬──────┘ └┬─────┘ └┬───────────┘
+         │         │       │        │           │         │         │
+         └─────────┴───────┴────────┴───────────┴─────────┴─────────┘
                         PostgreSQL (per-service DB)
 ```
 
@@ -51,6 +51,7 @@ Cloud Dental Office uses a **microservices architecture** with each bounded cont
 | **EligibilityService** | 5104 | Real-time 270/271 eligibility verification |
 | **EraService** | 5105 | 835 ERA file processing, claim matching, auto-posting |
 | **AuthService** | 5106 | JWT authentication, OpenID Connect, multi-tenant identity |
+| **PrescriptionService** | 5107 | Electronic prescriptions (eRx), DoseSpot integration, EPCS, drug interactions |
 
 ### Shared Libraries
 
@@ -129,7 +130,8 @@ clouddentaloffice/
 │   │   ├── ClaimsService/         # Claims bounded context
 │   │   ├── EligibilityService/    # 270/271 bounded context
 │   │   ├── EraService/            # 835 bounded context
-│   │   └── AuthService/           # Identity bounded context
+│   │   ├── AuthService/           # Identity bounded context
+│   │   └── PrescriptionService/   # eRx bounded context
 │   └── Shared/
 │       ├── CloudDentalOffice.Contracts/   # Shared DTOs & events
 │       └── CloudDentalOffice.EdiCommon/   # X12 parser & generators
@@ -154,6 +156,7 @@ clouddentaloffice/
 - **Azure** — Cloud deployment (Bicep IaC templates)
 - **JWT / OpenID Connect** — Authentication and multi-tenant identity
 - **SSH.NET** — SFTP for clearinghouse file exchange
+- **DoseSpot** — Electronic prescription (eRx) and EPCS integration
 
 ---
 
@@ -174,7 +177,7 @@ clouddentaloffice/
 - [ ] Azure AD Multi-Tenant App Registrations / OpenID Connect auth
 - [X] Kubernetes Helm charts
 - [X] CI/CD with GitHub Actions
-- [ ] DoseSpot Electronic Perscription
+- [X] DoseSpot Electronic Prescription (eRx) with EPCS support
 - [ ] Availity Integration
 - [ ] Change Healthcare Integration
 
