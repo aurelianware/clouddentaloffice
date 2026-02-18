@@ -21,12 +21,26 @@ public class ProviderServiceImpl : IProviderService
         _logger = logger;
     }
 
+    private static string? SanitizeForLogging(string? value)
+    {
+        if (string.IsNullOrEmpty(value))
+        {
+            return value;
+        }
+
+        // Remove newline characters to prevent log forging via user-controlled input.
+        return value
+            .Replace("\r", string.Empty)
+            .Replace("\n", string.Empty);
+    }
+
     public async Task<List<Provider>> GetProvidersAsync()
     {
         try
         {
             var tenantId = _tenantProvider.TenantId;
-            _logger.LogInformation("Loading providers for tenant: {TenantId}", tenantId);
+            var safeTenantId = SanitizeForLogging(tenantId);
+            _logger.LogInformation("Loading providers for tenant: {TenantId}", safeTenantId);
             
             if (string.IsNullOrEmpty(tenantId))
             {
@@ -40,12 +54,13 @@ public class ProviderServiceImpl : IProviderService
                 .ThenBy(p => p.FirstName)
                 .ToListAsync();
             
-            _logger.LogInformation("Found {Count} active providers for tenant {TenantId}", providers.Count, tenantId);
+            _logger.LogInformation("Found {Count} active providers for tenant {TenantId}", providers.Count, safeTenantId);
             return providers;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error retrieving providers for tenant {TenantId}", _tenantProvider.TenantId);
+            var errorTenantId = SanitizeForLogging(_tenantProvider.TenantId);
+            _logger.LogError(ex, "Error retrieving providers for tenant {TenantId}", errorTenantId);
             return new List<Provider>();
         }
     }
