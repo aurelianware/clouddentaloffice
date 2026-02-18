@@ -301,7 +301,7 @@ public class DoseSpotGateway : IErxGateway
         };
     }
 
-    public async Task<string> GetSsoUrlAsync(
+    public Task<string> GetSsoUrlAsync(
         string clinicianId, string? patientId, CancellationToken ct = default)
     {
         // DoseSpot SSO uses HMAC-SHA256 to generate a signed URL
@@ -320,7 +320,7 @@ public class DoseSpotGateway : IErxGateway
         if (!string.IsNullOrEmpty(patientId))
             ssoUrl += $"&PatientId={patientId}";
 
-        return ssoUrl;
+        return Task.FromResult(ssoUrl);
     }
 
     public async Task<ErxRefillResult> RespondToRefillAsync(
