@@ -74,8 +74,12 @@ public class AppointmentServiceImpl : IAppointmentService
         try
         {
             var tenantId = _tenantProvider.TenantId;
-            _logger.LogInformation("Creating appointment for tenant: {TenantId}, Patient: {PatientId}, Provider: {ProviderId}", 
-                tenantId, appointment.PatientId, appointment.ProviderId);
+            var safeTenantId = tenantId?
+                .Replace("\r\n", string.Empty)
+                .Replace("\n", string.Empty)
+                .Replace("\r", string.Empty);
+            _logger.LogInformation("Creating appointment for tenant: {TenantId}, Patient: {PatientId}, Provider: {ProviderId}",
+                safeTenantId, appointment.PatientId, appointment.ProviderId);
             
             if (string.IsNullOrEmpty(tenantId))
             {
