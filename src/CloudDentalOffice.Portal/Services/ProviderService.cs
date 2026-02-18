@@ -1,6 +1,7 @@
 using CloudDentalOffice.Portal.Data;
 using CloudDentalOffice.Portal.Models;
 using CloudDentalOffice.Portal.Services.Tenancy;
+using CloudDentalOffice.Portal.Utilities;
 using Microsoft.EntityFrameworkCore;
 
 namespace CloudDentalOffice.Portal.Services;
@@ -26,10 +27,8 @@ public class ProviderServiceImpl : IProviderService
         try
         {
             var tenantId = _tenantProvider.TenantId;
-            var safeTenantIdForLog = tenantId?
-                .Replace("\r", string.Empty)
-                .Replace("\n", string.Empty);
-            _logger.LogInformation("Loading providers for tenant: {TenantId}", safeTenantIdForLog);
+            var safeTenantId = LogSanitizer.Sanitize(tenantId);
+            _logger.LogInformation("Loading providers for tenant: {TenantId}", safeTenantId);
             
             if (string.IsNullOrEmpty(tenantId))
             {
@@ -43,15 +42,13 @@ public class ProviderServiceImpl : IProviderService
                 .ThenBy(p => p.FirstName)
                 .ToListAsync();
             
-            _logger.LogInformation("Found {Count} active providers for tenant {TenantId}", providers.Count, safeTenantIdForLog);
+            _logger.LogInformation("Found {Count} active providers for tenant {TenantId}", providers.Count, safeTenantId);
             return providers;
         }
         catch (Exception ex)
         {
-            var safeTenantIdForLog = _tenantProvider.TenantId?
-                .Replace("\r", string.Empty)
-                .Replace("\n", string.Empty);
-            _logger.LogError(ex, "Error retrieving providers for tenant {TenantId}", safeTenantIdForLog);
+            var errorTenantId = LogSanitizer.Sanitize(_tenantProvider.TenantId);
+            _logger.LogError(ex, "Error retrieving providers for tenant {TenantId}", errorTenantId);
             return new List<Provider>();
         }
     }
