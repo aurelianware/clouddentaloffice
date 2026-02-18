@@ -257,7 +257,6 @@
 
         private async Task Submit()
         {
-            _processing = true;
             try
             {
                 await VisionService.RegisterDeviceAsync(_request);
@@ -266,7 +265,6 @@
             catch (Exception ex)
             {
                 Snackbar.Add($"Error: {ex.Message}", Severity.Error);
-                _processing = false;
             }
         }
 
