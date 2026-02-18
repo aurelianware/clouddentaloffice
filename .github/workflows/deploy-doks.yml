@@ -65,6 +65,10 @@ jobs:
           docker push $REGISTRY/prescription-service:$IMAGE_TAG
           docker push $REGISTRY/prescription-service:latest
 
+          docker build -f infrastructure/docker/VisionService.Dockerfile -t $REGISTRY/vision-service:$IMAGE_TAG -t $REGISTRY/vision-service:latest .
+          docker push $REGISTRY/vision-service:$IMAGE_TAG
+          docker push $REGISTRY/vision-service:latest
+
       - name: Fetch kubeconfig
         run: doctl kubernetes cluster kubeconfig save $CLUSTER_ID
 
@@ -89,6 +93,7 @@ jobs:
           kubectl -n $NAMESPACE set image deployment/era-service era-service=$REGISTRY/era-service:$IMAGE_TAG
           kubectl -n $NAMESPACE set image deployment/auth-service auth-service=$REGISTRY/auth-service:$IMAGE_TAG
           kubectl -n $NAMESPACE set image deployment/prescription-service prescription-service=$REGISTRY/prescription-service:$IMAGE_TAG
+          kubectl -n $NAMESPACE set image deployment/vision-service vision-service=$REGISTRY/vision-service:$IMAGE_TAG
 
       - name: Rollout status
         run: |
@@ -102,3 +107,4 @@ jobs:
           kubectl -n $NAMESPACE rollout status deployment/era-service
           kubectl -n $NAMESPACE rollout status deployment/auth-service
           kubectl -n $NAMESPACE rollout status deployment/prescription-service
+          kubectl -n $NAMESPACE rollout status deployment/vision-service

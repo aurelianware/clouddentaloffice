@@ -1,0 +1,295 @@
+@page "/vision"
+@using CloudDentalOffice.Contracts.Vision
+@inject IVisionService VisionService
+@inject ISnackbar Snackbar
+@inject NavigationManager Navigation
+
+<PageTitle>AI Vision Dashboard — Cloud Dental Office</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-4">
+
+    @* ── Header Bar ── *@
+    <MudPaper Class="pa-4 mb-4" Style="background: linear-gradient(135deg, #1a2332 0%, #0d1b2a 100%); border-left: 4px solid #00ffff;">
+        <MudGrid>
+            <MudItem xs="12" sm="8">
+                <MudText Typo="Typo.h5" Style="color: #e0e0e0;">
+                    <MudIcon Icon="@Icons.Material.Filled.RemoveRedEye" Class="mr-2" Style="color: #00ffff;" />
+                    AI Vision Dashboard
+                </MudText>
+                <MudText Typo="Typo.body2" Style="color: #90a4ae;">
+                    privaseeAI Integration · Real-time Detection · Compliance Monitoring
+                </MudText>
+            </MudItem>
+            <MudItem xs="12" sm="4" Class="d-flex align-center justify-end gap-2">
+                <MudButton Variant="Variant.Outlined"
+                           Color="Color.Primary"
+                           StartIcon="@Icons.Material.Filled.Add"
+                           Href="/vision/devices">
+                    Register Device
+                </MudButton>
+            </MudItem>
+        </MudGrid>
+    </MudPaper>
+
+    @* ── Loading State ── *@
+    @if (_loading)
+    {
+        <MudProgressLinear Color="Color.Primary" Indeterminate="true" Class="mb-4" />
+    }
+
+    @* ── Stats Cards ── *@
+    <MudGrid Class="mb-4">
+        <MudItem xs="12" sm="6" md="3">
+            <MudCard Elevation="2" Style="background-color: #1e2a3a; border: 1px solid #2d3e50;">
+                <MudCardContent>
+                    <div class="d-flex align-center mb-2">
+                        <MudIcon Icon="@Icons.Material.Filled.Devices" Style="color: #00ffff;" Class="mr-2" />
+                        <MudText Typo="Typo.h6" Style="color: #e0e0e0;">Devices</MudText>
+                    </div>
+                    <MudText Typo="Typo.h3" Style="color: #00ffff;">@_totalDevices</MudText>
+                    <MudText Typo="Typo.body2" Style="color: #90a4ae;">
+                        @_onlineDevices Online · @_offlineDevices Offline
+                    </MudText>
+                </MudCardContent>
+            </MudCard>
+        </MudItem>
+
+        <MudItem xs="12" sm="6" md="3">
+            <MudCard Elevation="2" Style="background-color: #1e2a3a; border: 1px solid #2d3e50;">
+                <MudCardContent>
+                    <div class="d-flex align-center mb-2">
+                        <MudIcon Icon="@Icons.Material.Filled.Videocam" Style="color: #00ff88;" Class="mr-2" />
+                        <MudText Typo="Typo.h6" Style="color: #e0e0e0;">Events Today</MudText>
+                    </div>
+                    <MudText Typo="Typo.h3" Style="color: #00ff88;">@_eventsToday</MudText>
+                    <MudText Typo="Typo.body2" Style="color: #90a4ae;">
+                        @_alertsToday Alerts
+                    </MudText>
+                </MudCardContent>
+            </MudCard>
+        </MudItem>
+
+        <MudItem xs="12" sm="6" md="3">
+            <MudCard Elevation="2" Style="background-color: #1e2a3a; border: 1px solid #2d3e50;">
+                <MudCardContent>
+                    <div class="d-flex align-center mb-2">
+                        <MudIcon Icon="@Icons.Material.Filled.CreditCard" Style="color: #ffa726;" Class="mr-2" />
+                        <MudText Typo="Typo.h6" Style="color: #e0e0e0;">Insurance Scans</MudText>
+                    </div>
+                    <MudText Typo="Typo.h3" Style="color: #ffa726;">@_insuranceScans</MudText>
+                    <MudText Typo="Typo.body2" Style="color: #90a4ae;">
+                        Last 7 days
+                    </MudText>
+                </MudCardContent>
+            </MudCard>
+        </MudItem>
+
+        <MudItem xs="12" sm="6" md="3">
+            <MudCard Elevation="2" Style="background-color: #1e2a3a; border: 1px solid #2d3e50;">
+                <MudCardContent>
+                    <div class="d-flex align-center mb-2">
+                        <MudIcon Icon="@Icons.Material.Filled.Lock" Style="color: #ef5350;" Class="mr-2" />
+                        <MudText Typo="Typo.h6" Style="color: #e0e0e0;">Cabinet Access</MudText>
+                    </div>
+                    <MudText Typo="Typo.h3" Style="color: #ef5350;">@_cabinetAccess</MudText>
+                    <MudText Typo="Typo.body2" Style="color: #90a4ae;">
+                        @_cabinetAlerts Compliance Issues
+                    </MudText>
+                </MudCardContent>
+            </MudCard>
+        </MudItem>
+    </MudGrid>
+
+    @* ── Recent Events ── *@
+    <MudGrid>
+        <MudItem xs="12" md="8">
+            <MudPaper Class="pa-4" Elevation="2" Style="background-color: #1e2a3a; border: 1px solid #2d3e50;">
+                <div class="d-flex align-center justify-space-between mb-4">
+                    <MudText Typo="Typo.h6" Style="color: #e0e0e0;">Recent Events</MudText>
+                    <MudButton Variant="Variant.Text" Color="Color.Primary" Href="/vision/events">View All</MudButton>
+                </div>
+
+                @if (_recentEvents.Any())
+                {
+                    <MudTable Items="_recentEvents" Hover="true" Dense="true" Elevation="0"
+                              Style="background-color: transparent;">
+                        <HeaderContent>
+                            <MudTh Style="color: #90a4ae;">Time</MudTh>
+                            <MudTh Style="color: #90a4ae;">Location</MudTh>
+                            <MudTh Style="color: #90a4ae;">Event Type</MudTh>
+                            <MudTh Style="color: #90a4ae;">Alert</MudTh>
+                            <MudTh Style="color: #90a4ae;">Actions</MudTh>
+                        </HeaderContent>
+                        <RowTemplate>
+                            <MudTd Style="color: #e0e0e0;">@context.Timestamp.ToString("MM/dd HH:mm")</MudTd>
+                            <MudTd Style="color: #e0e0e0;">@context.Location</MudTd>
+                            <MudTd Style="color: #e0e0e0;">@context.EventType</MudTd>
+                            <MudTd>
+                                @if (context.AlertSeverity.HasValue)
+                                {
+                                    <MudChip Size="Size.Small" Color="GetSeverityColor(context.AlertSeverity.Value)">
+                                        @context.AlertSeverity.Value
+                                    </MudChip>
+                                }
+                            </MudTd>
+                            <MudTd>
+                                <MudIconButton Icon="@Icons.Material.Filled.Visibility" Size="Size.Small"
+                                               OnClick="@(() => ViewEvent(context.Id))" />
+                            </MudTd>
+                        </RowTemplate>
+                    </MudTable>
+                }
+                else
+                {
+                    <MudAlert Severity="Severity.Info" Variant="Variant.Outlined">
+                        No recent events. Devices will appear here once they start detecting.
+                    </MudAlert>
+                }
+            </MudPaper>
+        </MudItem>
+
+        @* ── Device Status ── *@
+        <MudItem xs="12" md="4">
+            <MudPaper Class="pa-4" Elevation="2" Style="background-color: #1e2a3a; border: 1px solid #2d3e50;">
+                <div class="d-flex align-center justify-space-between mb-4">
+                    <MudText Typo="Typo.h6" Style="color: #e0e0e0;">Device Status</MudText>
+                    <MudButton Variant="Variant.Text" Color="Color.Primary" Href="/vision/devices">Manage</MudButton>
+                </div>
+
+                @if (_devices.Any())
+                {
+                    <MudList Dense="true" Style="background-color: transparent;">
+                        @foreach (var device in _devices.Take(5))
+                        {
+                            <MudListItem>
+                                <div class="d-flex align-center justify-space-between w-100">
+                                    <div class="d-flex align-center">
+                                        <MudIcon Icon="GetDeviceIcon(device.Type)" Size="Size.Small" Class="mr-2"
+                                                 Style="@($"color: {GetStatusColor(device.Status)}")" />
+                                        <div>
+                                            <MudText Typo="Typo.body2" Style="color: #e0e0e0;">@device.Name</MudText>
+                                            <MudText Typo="Typo.caption" Style="color: #90a4ae;">@device.Location</MudText>
+                                        </div>
+                                    </div>
+                                    <MudChip Size="Size.Small" Color="GetStatusChipColor(device.Status)">
+                                        @device.Status
+                                    </MudChip>
+                                </div>
+                            </MudListItem>
+                        }
+                    </MudList>
+                }
+                else
+                {
+                    <MudAlert Severity="Severity.Info" Variant="Variant.Outlined">
+                        No devices registered yet.
+                    </MudAlert>
+                }
+            </MudPaper>
+        </MudItem>
+    </MudGrid>
+
+</MudContainer>
+
+@code {
+    private bool _loading = true;
+    
+    // Stats
+    private int _totalDevices;
+    private int _onlineDevices;
+    private int _offlineDevices;
+    private int _eventsToday;
+    private int _alertsToday;
+    private int _insuranceScans;
+    private int _cabinetAccess;
+    private int _cabinetAlerts;
+
+    // Data
+    private List<VisionDeviceDto> _devices = new();
+    private List<VisionEventDto> _recentEvents = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadDashboardData();
+    }
+
+    private async Task LoadDashboardData()
+    {
+        _loading = true;
+        try
+        {
+            // Load devices
+            _devices = await VisionService.GetDevicesAsync();
+            _totalDevices = _devices.Count;
+            _onlineDevices = _devices.Count(d => d.Status == DeviceStatus.Online);
+            _offlineDevices = _devices.Count(d => d.Status == DeviceStatus.Offline);
+
+            // Load recent events (last 24 hours)
+            var yesterday = DateTime.UtcNow.AddDays(-1);
+            _recentEvents = await VisionService.GetEventsAsync(from: yesterday, limit: 10);
+            _eventsToday = _recentEvents.Count(e => e.Timestamp.Date == DateTime.UtcNow.Date);
+            _alertsToday = _recentEvents.Count(e => e.AlertSeverity.HasValue && e.Timestamp.Date == DateTime.UtcNow.Date);
+
+            // Load insurance scans (last 7 days)
+            var insuranceScans = await VisionService.GetInsuranceScansAsync(limit: 100);
+            _insuranceScans = insuranceScans.Count(s => s.Timestamp >= DateTime.UtcNow.AddDays(-7));
+
+            // Load cabinet access (last 7 days)
+            var sevenDaysAgo = DateTime.UtcNow.AddDays(-7);
+            var cabinetLogs = await VisionService.GetCabinetAccessLogsAsync(from: sevenDaysAgo);
+            _cabinetAccess = cabinetLogs.Count;
+            _cabinetAlerts = cabinetLogs.Count(c => c.Severity >= AlertSeverity.Medium);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error loading dashboard: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private Color GetSeverityColor(AlertSeverity severity) => severity switch
+    {
+        AlertSeverity.Critical => Color.Error,
+        AlertSeverity.High => Color.Error,
+        AlertSeverity.Medium => Color.Warning,
+        AlertSeverity.Low => Color.Info,
+        _ => Color.Default
+    };
+
+    private Color GetStatusChipColor(DeviceStatus status) => status switch
+    {
+        DeviceStatus.Online => Color.Success,
+        DeviceStatus.Offline => Color.Default,
+        DeviceStatus.Error => Color.Error,
+        DeviceStatus.Maintenance => Color.Warning,
+        _ => Color.Default
+    };
+
+    private string GetStatusColor(DeviceStatus status) => status switch
+    {
+        DeviceStatus.Online => "#00ff88",
+        DeviceStatus.Offline => "#78909c",
+        DeviceStatus.Error => "#ef5350",
+        DeviceStatus.Maintenance => "#ffa726",
+        _ => "#90a4ae"
+    };
+
+    private string GetDeviceIcon(DeviceType type) => type switch
+    {
+        DeviceType.IpCamera => Icons.Material.Filled.Videocam,
+        DeviceType.Tablet => Icons.Material.Filled.Tablet,
+        DeviceType.MobileIos or DeviceType.MobileAndroid => Icons.Material.Filled.Smartphone,
+        DeviceType.RaspberryPi => Icons.Material.Filled.DeveloperBoard,
+        DeviceType.UsbWebcam => Icons.Material.Filled.Camera,
+        DeviceType.DesktopBrowser => Icons.Material.Filled.Computer,
+        _ => Icons.Material.Filled.Devices
+    };
+
+    private void ViewEvent(Guid eventId)
+    {
+        Navigation.NavigateTo($"/vision/events/{eventId}");
+    }
+}

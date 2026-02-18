@@ -18,30 +18,40 @@ Cloud Dental Office uses a **microservices architecture** with each bounded cont
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                    Blazor Server Portal                      │
-│              (MudBlazor · Dark Theme · Real-time)            │
+│         (MudBlazor · Dark Theme · Real-time · AI Vision)     │
 └──────────────────────────┬──────────────────────────────────┘
                            │
                     ┌──────┴──────┐
                     │ API Gateway │  ← YARP Reverse Proxy
                     │   :5200     │
                     └──────┬──────┘
-         ┌─────────┬───────┼───────┬──────────┬──────────┐
-         │         │       │       │          │          │
-    ┌────┴───┐ ┌───┴────┐ ┌┴─────┐ ┌┴────────┐ ┌┴──────┐ ┌┴─────┐
-    │Patient │ │Schedule│ │Claims│ │Eligiblty│ │  ERA  │ │ Auth │
-    │Service │ │Service │ │Svc   │ │Service  │ │Service│ │  Svc │
-    │ :5101  │ │ :5102  │ │:5103 │ │ :5104   │ │ :5105 │ │:5106 │
-    └────┬───┘ └───┬────┘ └┬─────┘ └┬────────┘ └┬──────┘ └┬─────┘
-         │         │       │        │           │         │
-         └─────────┴───────┴────────┴───────────┴─────────┘
+         ┌─────────┬───────┼───────┬──────────┬──────────┬──────────┐
+         │         │       │       │          │          │          │
+    ┌────┴───┐ ┌───┴────┐ ┌┴─────┐ ┌┴────────┐ ┌┴──────┐ ┌┴─────┐ ┌┴─────────┐
+    │Patient │ │Schedule│ │Claims│ │Eligiblty│ │  ERA  │ │ Auth │ │Rx (EPCS) │
+    │Service │ │Service │ │Svc   │ │Service  │ │Service│ │  Svc │ │ :5107    │
+    │ :5101  │ │ :5102  │ │:5103 │ │ :5104   │ │ :5105 │ │:5106 │ └─────┬────┘
+    └────┬───┘ └───┬────┘ └┬─────┘ └┬────────┘ └┬──────┘ └┬─────┘       │
+         │         │       │        │           │         │             │
+         │         │       │        │           │     ┌───┴──────┐      │
+         │         │       │        │           │     │AI Vision │      │
+         │         │       │        │           │     │ Service  │      │
+         │         │       │        │           │     │ :5108    │      │
+         │         │       │        │           │     └────┬─────┘      │
+         │         │       │        │           │          │            │
+         └─────────┴───────┴────────┴───────────┴──────────┴────────────┘
                         PostgreSQL (per-service DB)
+              ┌──────────────────────┴────────────────────┐
+              │  privaseeAI Edge Devices (IP Cameras,     │
+              │  Tablets, Raspberry Pi) + Azure AI Vision │
+              └───────────────────────────────────────────┘
 ```
 
 ### Services
 
 | Service | Port | Description |
 |---------|------|-------------|
-| **Portal** | 5000 | Blazor Server UI — dashboard, patient management, claim wizard, scheduling |
+| **Portal** | 5000 | Blazor Server UI — dashboard, patient management, claims, scheduling, e-prescribing, AI vision |
 | **API Gateway** | 5200 | YARP reverse proxy routing to all backend services |
 | **PatientService** | 5101 | Patient demographics, insurance/subscriber info, search |
 | **SchedulingService** | 5102 | Appointments, operatory management, provider calendars |
@@ -49,6 +59,8 @@ Cloud Dental Office uses a **microservices architecture** with each bounded cont
 | **EligibilityService** | 5104 | Real-time 270/271 eligibility verification |
 | **EraService** | 5105 | 835 ERA file processing, claim matching, auto-posting |
 | **AuthService** | 5106 | JWT authentication, OpenID Connect, multi-tenant identity |
+| **PrescriptionService** | 5107 | e-Prescribing with DoseSpot integration, EPCS compliance, Surescripts certified |
+| **VisionService** | 5108 | AI vision platform — privaseeAI integration, insurance card OCR (Azure AI Vision), narcotics cabinet monitoring, consent recording, clinical note generation |
 
 ### Shared Libraries
 
@@ -110,6 +122,78 @@ Designed to pair with **[Cloud Health Office](https://github.com/aurelianware/cl
 
 ---
 
+## AI Vision Platform
+
+Cloud Dental Office integrates with **privaseeAI** edge devices to provide intelligent vision capabilities for dental practices:
+
+### Features
+
+| Feature | Description | Status |
+|---------|-------------|--------|
+| **Insurance Card OCR** | Automatic extraction of member ID, payer info, group numbers from insurance cards using Azure AI Vision | ✅ Implemented |
+| **Narcotics Cabinet Monitoring** | Real-time detection and compliance tracking for controlled substance access with badge verification | ✅ Implemented |
+| **Patient Consent Recording** | Video-verified consent capture with detection of patient, provider, and consent forms | ✅ Implemented |
+| **Clinical Note Generation** | AI-assisted procedure documentation from instrument detection and procedure observations | ✅ Implemented |
+| **Real-time Detection** | SignalR hub for live camera feeds and event streaming | ✅ Implemented |
+| **Device Management** | Multi-device registration and monitoring (IP cameras, tablets, Raspberry Pi, mobile devices) | ✅ Implemented |
+
+### Detection Classes
+
+The VisionService supports detection of:
+- **Generic objects**: Person, Document, Cell Phone, Backpack, Handbag (COCO-SSD)
+- **Dental instruments**: Handpiece, Mirror, Explorer, Forceps, Elevator, Scaler/Curette, Syringes, Suture Kit, Cotton Roll, Gauze, Impression Tray, Crown/Bridge, Dental Dam
+- **Documents**: Insurance cards, consent forms, ID documents, prescription pads
+- **Security**: Cabinet door status, badge scanning, medication vials, narcotics safe monitoring
+
+### Architecture
+
+```
+┌───────────────────────────────────────────────────────────────┐
+│                     privaseeAI Edge Devices                    │
+│  (IP Cameras, Tablets, Raspberry Pi, Mobile Devices)          │
+│                  ↓ Detection Events (HTTPS)                   │
+└───────────────────────────────────────────────────────────────┘
+                              ↓
+┌───────────────────────────────────────────────────────────────┐
+│                      VisionService (:5108)                     │
+│  ┌─────────────────┐  ┌────────────────┐  ┌────────────────┐ │
+│  │ Ingest Detections│→│Context Correlate│→│ Event Storage │ │
+│  │  (REST API)      │  │   (Appt/Pt)     │  │  (PostgreSQL) │ │
+│  └─────────────────┘  └────────────────┘  └────────────────┘ │
+│                              ↓                                 │
+│  ┌─────────────────┐  ┌────────────────┐  ┌────────────────┐ │
+│  │ SignalR Hub      │  │  Azure AI      │  │ Alert Engine  │ │
+│  │ (Real-time)      │  │  Vision OCR    │  │ (Compliance)  │ │
+│  └─────────────────┘  └────────────────┘  └────────────────┘ │
+└───────────────────────────────────────────────────────────────┘
+                              ↓
+┌───────────────────────────────────────────────────────────────┐
+│                   Portal UI — AI Vision Pages                  │
+│  • Vision Dashboard  • Device Management  • Events & Alerts    │
+│  • Insurance Scans   • Consent Recording  • Cabinet Access     │
+└───────────────────────────────────────────────────────────────┘
+```
+
+### Configuration
+
+The VisionService supports two modes:
+- **Development/Mock**: Uses mock OCR and correlation providers for testing without external dependencies
+- **Production**: Integrates with Azure AI Vision API and live correlation engine
+
+Configure via `appsettings.json`:
+```json
+{
+  "OcrProvider": "AzureAiVision",  // or "Mock"
+  "CorrelationProvider": "Live",    // or "Mock"
+  "AzureAiVision": {
+    "Endpoint": "https://yourresource.cognitiveservices.azure.com/",
+    "ApiKey": "your-api-key"
+  }
+}
+```
+
+---
+
 ## Project Structure
 
 ```
@@ -127,7 +211,9 @@ clouddentaloffice/
 │   │   ├── ClaimsService/         # Claims bounded context
 │   │   ├── EligibilityService/    # 270/271 bounded context
 │   │   ├── EraService/            # 835 bounded context
-│   │   └── AuthService/           # Identity bounded context
+│   │   ├── AuthService/           # Identity bounded context
+│   │   ├── PrescriptionService/   # e-Prescribing (DoseSpot, EPCS)
+│   │   └── VisionService/         # AI Vision (privaseeAI, Azure AI)
 │   └── Shared/
 │       ├── CloudDentalOffice.Contracts/   # Shared DTOs & events
 │       └── CloudDentalOffice.EdiCommon/   # X12 parser & generators
@@ -160,9 +246,17 @@ clouddentaloffice/
 - [x] Microservices architecture with per-service databases
 - [x] API Gateway with YARP
 - [x] Patient, Scheduling, Claims, Eligibility, ERA, Auth services
+- [x] e-Prescribing service with DoseSpot integration (EPCS, Surescripts)
+- [x] AI Vision service — privaseeAI integration for dental practice automation
+- [x] Insurance card OCR with Azure AI Vision
+- [x] Narcotics cabinet monitoring and compliance tracking
+- [x] Video consent recording and verification
+- [x] Clinical note generation from procedure observations
 - [x] Clean-room X12 837D claim generator
 - [x] Docker Compose full-stack deployment
-- [ ] Blazor Portal integration with API Gateway
+- [x] Blazor Portal integration with microservices via API Gateway
+- [x] Kubernetes deployment manifests (DOKS)
+- [x] CI/CD with GitHub Actions
 - [ ] Full 270/271 real-time eligibility checks
 - [ ] 835 ERA auto-posting & reconciliation
 - [ ] 276/277 claim status polling
@@ -170,7 +264,6 @@ clouddentaloffice/
 - [ ] Multi-location / DSO support
 - [ ] Azure AD B2C / OpenID Connect auth
 - [ ] Kubernetes Helm charts
-- [ ] CI/CD with GitHub Actions
 
 ---
 
