@@ -1,6 +1,7 @@
 using CloudDentalOffice.Portal.Data;
 using CloudDentalOffice.Portal.Models;
 using CloudDentalOffice.Portal.Services.Tenancy;
+using CloudDentalOffice.Portal.Utilities;
 using Microsoft.EntityFrameworkCore;
 
 namespace CloudDentalOffice.Portal.Services;
@@ -21,26 +22,12 @@ public class ProviderServiceImpl : IProviderService
         _logger = logger;
     }
 
-    private static string? SanitizeForLogging(string? value)
-    {
-        if (string.IsNullOrEmpty(value))
-        {
-            return value;
-        }
-
-        // Replace newline characters with visible escape sequences to prevent log forging
-        // while preserving the original structure of the value.
-        return value
-            .Replace("\r", "\\r")
-            .Replace("\n", "\\n");
-    }
-
     public async Task<List<Provider>> GetProvidersAsync()
     {
         try
         {
             var tenantId = _tenantProvider.TenantId;
-            var safeTenantId = SanitizeForLogging(tenantId);
+            var safeTenantId = LogSanitizer.Sanitize(tenantId);
             _logger.LogInformation("Loading providers for tenant: {TenantId}", safeTenantId);
             
             if (string.IsNullOrEmpty(tenantId))
@@ -60,7 +47,7 @@ public class ProviderServiceImpl : IProviderService
         }
         catch (Exception ex)
         {
-            var errorTenantId = SanitizeForLogging(_tenantProvider.TenantId);
+            var errorTenantId = LogSanitizer.Sanitize(_tenantProvider.TenantId);
             _logger.LogError(ex, "Error retrieving providers for tenant {TenantId}", errorTenantId);
             return new List<Provider>();
         }

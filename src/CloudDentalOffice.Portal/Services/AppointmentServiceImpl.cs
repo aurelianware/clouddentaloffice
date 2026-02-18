@@ -1,6 +1,7 @@
 using CloudDentalOffice.Portal.Data;
 using CloudDentalOffice.Portal.Models;
 using CloudDentalOffice.Portal.Services.Tenancy;
+using CloudDentalOffice.Portal.Utilities;
 using Microsoft.EntityFrameworkCore;
 
 namespace CloudDentalOffice.Portal.Services;
@@ -74,8 +75,9 @@ public class AppointmentServiceImpl : IAppointmentService
         try
         {
             var tenantId = _tenantProvider.TenantId;
+            var safeTenantId = LogSanitizer.Sanitize(tenantId);
             _logger.LogInformation("Creating appointment for tenant: {TenantId}, Patient: {PatientId}, Provider: {ProviderId}", 
-                tenantId, appointment.PatientId, appointment.ProviderId);
+                safeTenantId, appointment.PatientId, appointment.ProviderId);
             
             if (string.IsNullOrEmpty(tenantId))
             {
