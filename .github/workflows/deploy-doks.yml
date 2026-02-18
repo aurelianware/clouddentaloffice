@@ -1,8 +1,5 @@
 name: Deploy to DOKS
 
-permissions:
-  contents: read
-
 on:
   push:
     branches:
