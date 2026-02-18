@@ -30,7 +30,7 @@ Cloud Dental Office uses a **microservices architecture** with each bounded cont
          ┌─────────┬───────┼───────┬──────────┬──────────┬──────────┐
          │         │       │       │          │          │          │
     ┌────┴───┐ ┌───┴────┐ ┌┴─────┐ ┌┴────────┐ ┌┴──────┐ ┌┴─────┐ ┌┴────────┐
-    │Patient │ │Schedule│ │Claims│ │Eligiblty│ │  ERA  │ │ Auth │ │  eRx   │
+    │Patient │ │Schedule│ │Claims│ │Eligibility│ │  ERA  │ │ Auth │ │  eRx   │
     │Service │ │Service │ │Svc   │ │Service  │ │Service│ │  Svc │ │Service │
     │ :5101  │ │ :5102  │ │:5103 │ │ :5104   │ │ :5105 │ │:5106 │ │ :5107  │
     └────┬───┘ └───┬────┘ └┬─────┘ └┬────────┘ └┬──────┘ └┬─────┘ └┬───────┘
