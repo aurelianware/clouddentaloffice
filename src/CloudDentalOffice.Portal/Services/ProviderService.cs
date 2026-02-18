@@ -28,10 +28,11 @@ public class ProviderServiceImpl : IProviderService
             return value;
         }
 
-        // Remove newline characters to prevent log forging via user-controlled input.
+        // Replace newline characters with visible escape sequences to prevent log forging
+        // while preserving the original structure of the value.
         return value
-            .Replace("\r", string.Empty)
-            .Replace("\n", string.Empty);
+            .Replace("\r", "\\r")
+            .Replace("\n", "\\n");
     }
 
     public async Task<List<Provider>> GetProvidersAsync()
