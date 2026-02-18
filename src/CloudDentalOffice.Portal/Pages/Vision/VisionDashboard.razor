@@ -127,7 +127,7 @@
                             <MudTd>
                                 @if (context.AlertSeverity.HasValue)
                                 {
-                                    <MudChip Size="Size.Small" Color="GetSeverityColor(context.AlertSeverity.Value)">
+                                    <MudChip T="string" Size="Size.Small" Color="GetSeverityColor(context.AlertSeverity.Value)">
                                         @context.AlertSeverity.Value
                                     </MudChip>
                                 }
@@ -158,10 +158,10 @@
 
                 @if (_devices.Any())
                 {
-                    <MudList Dense="true" Style="background-color: transparent;">
+                    <MudList T="string" Dense="true" Style="background-color: transparent;">
                         @foreach (var device in _devices.Take(5))
                         {
-                            <MudListItem>
+                            <MudListItem T="string">
                                 <div class="d-flex align-center justify-space-between w-100">
                                     <div class="d-flex align-center">
                                         <MudIcon Icon="GetDeviceIcon(device.Type)" Size="Size.Small" Class="mr-2"
@@ -171,7 +171,7 @@
                                             <MudText Typo="Typo.caption" Style="color: #90a4ae;">@device.Location</MudText>
                                         </div>
                                     </div>
-                                    <MudChip Size="Size.Small" Color="GetStatusChipColor(device.Status)">
+                                    <MudChip T="string" Size="Size.Small" Color="GetStatusChipColor(device.Status)">
                                         @device.Status
                                     </MudChip>
                                 </div>
