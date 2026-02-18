@@ -26,7 +26,10 @@ public class ProviderServiceImpl : IProviderService
         try
         {
             var tenantId = _tenantProvider.TenantId;
-            _logger.LogInformation("Loading providers for tenant: {TenantId}", tenantId);
+            var safeTenantIdForLog = tenantId?
+                .Replace("\r", string.Empty)
+                .Replace("\n", string.Empty);
+            _logger.LogInformation("Loading providers for tenant: {TenantId}", safeTenantIdForLog);
             
             if (string.IsNullOrEmpty(tenantId))
             {
@@ -40,12 +43,15 @@ public class ProviderServiceImpl : IProviderService
                 .ThenBy(p => p.FirstName)
                 .ToListAsync();
             
-            _logger.LogInformation("Found {Count} active providers for tenant {TenantId}", providers.Count, tenantId);
+            _logger.LogInformation("Found {Count} active providers for tenant {TenantId}", providers.Count, safeTenantIdForLog);
             return providers;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error retrieving providers for tenant {TenantId}", _tenantProvider.TenantId);
+            var safeTenantIdForLog = _tenantProvider.TenantId?
+                .Replace("\r", string.Empty)
+                .Replace("\n", string.Empty);
+            _logger.LogError(ex, "Error retrieving providers for tenant {TenantId}", safeTenantIdForLog);
             return new List<Provider>();
         }
     }
