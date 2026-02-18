@@ -1,0 +1,256 @@
+@page "/vision/events"
+@using CloudDentalOffice.Contracts.Vision
+@inject IVisionService VisionService
+@inject ISnackbar Snackbar
+@inject NavigationManager Navigation
+
+<PageTitle>Vision Events — Cloud Dental Office</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-4">
+
+    @* ── Header Bar ── *@
+    <MudPaper Class="pa-4 mb-4" Style="background: linear-gradient(135deg, #1a2332 0%, #0d1b2a 100%); border-left: 4px solid #00ffff;">
+        <MudGrid>
+            <MudItem xs="12" sm="6">
+                <MudText Typo="Typo.h5" Style="color: #e0e0e0;">
+                    <MudIcon Icon="@Icons.Material.Filled.Videocam" Class="mr-2" Style="color: #00ffff;" />
+                    Vision Events & Alerts
+                </MudText>
+                <MudText Typo="Typo.body2" Style="color: #90a4ae;">
+                    Real-time detection events from privaseeAI devices
+                </MudText>
+            </MudItem>
+            <MudItem xs="12" sm="6" Class="d-flex align-center justify-end gap-2">
+                <MudButton Variant="Variant.Outlined"
+                           Color="Color.Default"
+                           StartIcon="@Icons.Material.Filled.Refresh"
+                           OnClick="LoadEvents">
+                    Refresh
+                </MudButton>
+            </MudItem>
+        </MudGrid>
+    </MudPaper>
+
+    @* ── Filters ── *@
+    <MudPaper Class="pa-4 mb-4" Elevation="1" Style="background-color: #1e2a3a; border: 1px solid #2d3e50;">
+        <MudGrid>
+            <MudItem xs="12" sm="3">
+                <MudDatePicker Label="From Date" @bind-Date="_fromDate" />
+            </MudItem>
+            <MudItem xs="12" sm="3">
+                <MudDatePicker Label="To Date" @bind-Date="_toDate" />
+            </MudItem>
+            <MudItem xs="12" sm="3">
+                <MudSelect T="CameraLocation?" Label="Location" @bind-Value="_selectedLocation" Clearable="true">
+                    <MudSelectItem T="CameraLocation?" Value="null">All Locations</MudSelectItem>
+                    @foreach (var location in Enum.GetValues<CameraLocation>())
+                    {
+                        <MudSelectItem T="CameraLocation?" Value="@location">@location</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12" sm="3">
+                <MudSelect T="AlertSeverity?" Label="Min Severity" @bind-Value="_minSeverity" Clearable="true">
+                    <MudSelectItem T="AlertSeverity?" Value="null">All Events</MudSelectItem>
+                    <MudSelectItem T="AlertSeverity?" Value="AlertSeverity.Low">Low+</MudSelectItem>
+                    <MudSelectItem T="AlertSeverity?" Value="AlertSeverity.Medium">Medium+</MudSelectItem>
+                    <MudSelectItem T="AlertSeverity?" Value="AlertSeverity.High">High+</MudSelectItem>
+                    <MudSelectItem T="AlertSeverity?" Value="AlertSeverity.Critical">Critical Only</MudSelectItem>
+                </MudSelect>
+            </MudItem>
+        </MudGrid>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="LoadEvents" Class="mt-2">
+            Apply Filters
+        </MudButton>
+    </MudPaper>
+
+    @* ── Loading State ── *@
+    @if (_loading)
+    {
+        <MudProgressLinear Color="Color.Primary" Indeterminate="true" Class="mb-4" />
+    }
+
+    @* ── Events List ── *@
+    <MudPaper Elevation="2" Style="background-color: #1e2a3a; border: 1px solid #2d3e50;">
+        @if (_events.Any())
+        {
+            <MudList Clickable="true" Dense="false">
+                @foreach (var evt in _events)
+                {
+                    <MudListItem OnClick="@(() => ViewEventDetails(evt.Id))" 
+                                 Style="border-bottom: 1px solid #2d3e50; padding: 16px;">
+                        <MudGrid>
+                            <MudItem xs="12" sm="2">
+                                <div class="d-flex flex-column">
+                                    <MudText Typo="Typo.body2" Style="color: #e0e0e0;">
+                                        @evt.Timestamp.ToString("MM/dd/yyyy")
+                                    </MudText>
+                                    <MudText Typo="Typo.caption" Style="color: #90a4ae;">
+                                        @evt.Timestamp.ToString("HH:mm:ss")
+                                    </MudText>
+                                </div>
+                            </MudItem>
+
+                            <MudItem xs="12" sm="2">
+                                <div class="d-flex flex-column">
+                                    <MudText Typo="Typo.body2" Style="color: #e0e0e0;">
+                                        @evt.DeviceName
+                                    </MudText>
+                                    <MudText Typo="Typo.caption" Style="color: #90a4ae;">
+                                        @evt.Location
+                                    </MudText>
+                                </div>
+                            </MudItem>
+
+                            <MudItem xs="12" sm="2">
+                                <MudChip Size="Size.Small" Color="GetEventTypeColor(evt.EventType)">
+                                    @evt.EventType
+                                </MudChip>
+                            </MudItem>
+
+                            <MudItem xs="12" sm="2">
+                                @if (evt.PatientName != null)
+                                {
+                                    <div class="d-flex flex-column">
+                                        <MudText Typo="Typo.body2" Style="color: #e0e0e0;">
+                                            @evt.PatientName
+                                        </MudText>
+                                        <MudText Typo="Typo.caption" Style="color: #90a4ae;">
+                                            Patient
+                                        </MudText>
+                                    </div>
+                                }
+                            </MudItem>
+
+                            <MudItem xs="12" sm="2">
+                                @if (evt.Detections.Any())
+                                {
+                                    <div class="d-flex gap-1 flex-wrap">
+                                        @foreach (var detection in evt.Detections.Take(3))
+                                        {
+                                            <MudChip Size="Size.Small" Variant="Variant.Outlined">
+                                                @detection.DetectionClass
+                                            </MudChip>
+                                        }
+                                        @if (evt.Detections.Count > 3)
+                                        {
+                                            <MudChip Size="Size.Small" Variant="Variant.Outlined">
+                                                +@(evt.Detections.Count - 3)
+                                            </MudChip>
+                                        }
+                                    </div>
+                                }
+                            </MudItem>
+
+                            <MudItem xs="12" sm="2">
+                                <div class="d-flex align-center justify-end gap-2">
+                                    @if (evt.AlertSeverity.HasValue)
+                                    {
+                                        <MudChip Size="Size.Small" Color="GetSeverityColor(evt.AlertSeverity.Value)">
+                                            @evt.AlertSeverity.Value
+                                        </MudChip>
+                                    }
+                                    <MudIconButton Icon="@Icons.Material.Filled.ChevronRight" Size="Size.Small" />
+                                </div>
+                            </MudItem>
+                        </MudGrid>
+
+                        @if (!string.IsNullOrEmpty(evt.AlertMessage))
+                        {
+                            <MudAlert Severity="GetAlertSeverity(evt.AlertSeverity)" Dense="true" Class="mt-2">
+                                @evt.AlertMessage
+                            </MudAlert>
+                        }
+
+                        @if (!string.IsNullOrEmpty(evt.ImageUrl))
+                        {
+                            <MudImage Src="@evt.ImageUrl" Alt="Event snapshot" Height="100" Class="mt-2 rounded" />
+                        }
+                    </MudListItem>
+                }
+            </MudList>
+        }
+        else if (!_loading)
+        {
+            <div class="pa-8">
+                <MudAlert Severity="Severity.Info" Variant="Variant.Outlined">
+                    No events found for the selected filters.
+                </MudAlert>
+            </div>
+        }
+    </MudPaper>
+
+</MudContainer>
+
+@code {
+    private bool _loading = true;
+    private List<VisionEventDto> _events = new();
+
+    // Filters
+    private DateTime? _fromDate = DateTime.Today.AddDays(-7);
+    private DateTime? _toDate = DateTime.Today.AddDays(1);
+    private CameraLocation? _selectedLocation;
+    private AlertSeverity? _minSeverity;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadEvents();
+    }
+
+    private async Task LoadEvents()
+    {
+        _loading = true;
+        try
+        {
+            _events = await VisionService.GetEventsAsync(
+                from: _fromDate,
+                to: _toDate,
+                location: _selectedLocation,
+                minSeverity: _minSeverity,
+                limit: 100
+            );
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error loading events: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private void ViewEventDetails(Guid eventId)
+    {
+        Navigation.NavigateTo($"/vision/events/{eventId}");
+    }
+
+    private Color GetSeverityColor(AlertSeverity severity) => severity switch
+    {
+        AlertSeverity.Critical => Color.Error,
+        AlertSeverity.High => Color.Error,
+        AlertSeverity.Medium => Color.Warning,
+        AlertSeverity.Low => Color.Info,
+        _ => Color.Default
+    };
+
+    private Severity GetAlertSeverity(AlertSeverity? severity) => severity switch
+    {
+        AlertSeverity.Critical => Severity.Error,
+        AlertSeverity.High => Severity.Error,
+        AlertSeverity.Medium => Severity.Warning,
+        AlertSeverity.Low => Severity.Info,
+        _ => Severity.Normal
+    };
+
+    private Color GetEventTypeColor(VisionEventType eventType) => eventType switch
+    {
+        VisionEventType.CabinetAccess => Color.Error,
+        VisionEventType.ConsentCapture => Color.Success,
+        VisionEventType.InsuranceCardScan => Color.Info,
+        VisionEventType.ProcedureObservation => Color.Primary,
+        VisionEventType.MotionAlert => Color.Warning,
+        VisionEventType.SystemAlert => Color.Warning,
+        _ => Color.Default
+    };
+}

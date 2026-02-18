@@ -17,6 +17,7 @@ services:
       - era-service
       - auth-service
       - prescription-service
+      - vision-service
     environment:
       - ASPNETCORE_ENVIRONMENT=Development
     networks:
@@ -125,6 +126,24 @@ services:
       - DatabaseProvider=PostgreSQL
       - ConnectionStrings__PrescriptionDb=Host=postgres;Database=cdo_prescriptions;Username=cdo;Password=cdo_dev_password
       - ErxProvider=Mock
+    depends_on:
+      - postgres
+    networks:
+      - cdo-network
+
+  vision-service:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/VisionService.Dockerfile
+    ports:
+      - "5108:5108"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - DatabaseProvider=PostgreSQL
+      - ConnectionStrings__VisionDb=Host=postgres;Database=cdo_vision;Username=cdo;Password=cdo_dev_password
+      - OcrProvider=Mock
+      - CorrelationProvider=Mock
+      - ApiGatewayUrl=http://api-gateway:5200
     depends_on:
       - postgres
     networks:

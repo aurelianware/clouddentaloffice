@@ -9,3 +9,4 @@ CREATE DATABASE cdo_eligibility;
 CREATE DATABASE cdo_era;
 CREATE DATABASE cdo_auth;
 CREATE DATABASE cdo_prescriptions;
+CREATE DATABASE cdo_vision;
