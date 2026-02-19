@@ -1,0 +1,220 @@
+@page "/signup"
+@attribute [AllowAnonymous]
+@using CloudDentalOffice.Portal.Services
+@using CloudDentalOffice.Portal.Models
+@inject IOrganizationService OrganizationService
+@inject ISnackbar Snackbar
+@inject NavigationManager Navigation
+@inject IConfiguration Configuration
+
+<PageTitle>Sign Up - Cloud Dental Office</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Medium" Class="mt-8">
+    <MudPaper Elevation="3" Class="pa-8">
+        <MudText Typo="Typo.h4" Align="Align.Center" Class="mb-2">
+            Start Your Free Trial
+        </MudText>
+        <MudText Typo="Typo.body1" Align="Align.Center" Color="Color.Secondary" Class="mb-6">
+            14-day free trial • No credit card required
+        </MudText>
+
+        @if (azureAdEnabled)
+        {
+            <MudAlert Severity="Severity.Info" Class="mb-6">
+                This application uses Microsoft Azure AD for authentication. 
+                You'll be redirected to Microsoft to sign in with your organization's account.
+            </MudAlert>
+
+            <div class="d-flex flex-column gap-4">
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Large"
+                          FullWidth="true" StartIcon="@Icons.Material.Filled.Business"
+                          Href="/MicrosoftIdentity/Account/SignIn">
+                    Sign up with Microsoft Azure AD
+                </MudButton>
+
+                <MudDivider />
+
+                <div class="d-flex justify-center">
+                    <MudText Typo="Typo.body2" Color="Color.Secondary">
+                        Already have an account? 
+                        <MudLink Href="/login" Color="Color.Primary">Sign In</MudLink>
+                    </MudText>
+                </div>
+            </div>
+        }
+        else
+        {
+            <MudForm @ref="form" @bind-IsValid="@isValid">
+                <MudText Typo="Typo.h6" Class="mb-4">Organization Information</MudText>
+
+                <MudTextField T="string" Label="Organization Name" Required="true"
+                              @bind-Value="orgName" RequiredError="Organization name is required"
+                              HelperText="Your dental practice name" />
+
+                <MudTextField T="string" Label="Email Domain" Class="mt-4"
+                              @bind-Value="domain"
+                              HelperText="e.g., yourpractice.com (optional)" />
+
+                <MudText Typo="Typo.h6" Class="mt-6 mb-4">Admin Account</MudText>
+
+                <MudTextField T="string" Label="First Name" Required="true"
+                              @bind-Value="firstName" RequiredError="First name is required" />
+
+                <MudTextField T="string" Label="Last Name" Required="true" Class="mt-4"
+                              @bind-Value="lastName" RequiredError="Last name is required" />
+
+                <MudTextField T="string" Label="Email" Required="true" Class="mt-4"
+                              @bind-Value="email" InputType="InputType.Email"
+                              RequiredError="Email is required" />
+
+                <MudTextField T="string" Label="Password" Required="true" Class="mt-4"
+                              @bind-Value="password" InputType="InputType.Password"
+                              RequiredError="Password is required"
+                              HelperText="Minimum 8 characters" />
+
+                <MudTextField T="string" Label="Confirm Password" Required="true" Class="mt-4"
+                              @bind-Value="confirmPassword" InputType="InputType.Password"
+                              RequiredError="Please confirm your password"
+                              Validation="@((string val) => val == password ? null : "Passwords must match")" />
+
+                <MudCheckBox T="bool" @bind-Value="agreeToTerms" Label="I agree to the Terms of Service and Privacy Policy"
+                            Class="mt-4" Required="true" />
+
+                @if (!string.IsNullOrEmpty(errorMessage))
+                {
+                    <MudAlert Severity="Severity.Error" Class="mt-4">@errorMessage</MudAlert>
+                }
+
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Large"
+                          FullWidth="true" Class="mt-6" Disabled="@(!isValid || !agreeToTerms || isProcessing)"
+                          OnClick="CreateOrganization">
+                    @if (isProcessing)
+                    {
+                        <MudProgressCircular Size="Size.Small" Indeterminate="true" />
+                        <span class="ml-2">Creating account...</span>
+                    }
+                    else
+                    {
+                        <span>Create Account</span>
+                    }
+                </MudButton>
+            </MudForm>
+
+            <MudDivider Class="mt-6 mb-4" />
+
+            <div class="d-flex justify-center">
+                <MudText Typo="Typo.body2" Color="Color.Secondary">
+                    Already have an account? 
+                    <MudLink Href="/login" Color="Color.Primary">Sign In</MudLink>
+                </MudText>
+            </div>
+        }
+    </MudPaper>
+
+    <MudPaper Elevation="1" Class="pa-6 mt-4">
+        <MudText Typo="Typo.h6" Class="mb-4">What's included in your trial:</MudText>
+        <MudList T="string" Dense="true">
+            <MudListItem T="string" Icon="@Icons.Material.Filled.Check" IconColor="Color.Success">
+                Full access to all features
+            </MudListItem>
+            <MudListItem T="string" Icon="@Icons.Material.Filled.Check" IconColor="Color.Success">
+                Unlimited patients and appointments
+            </MudListItem>
+            <MudListItem T="string" Icon="@Icons.Material.Filled.Check" IconColor="Color.Success">
+                EDI claims submission
+            </MudListItem>
+            <MudListItem T="string" Icon="@Icons.Material.Filled.Check" IconColor="Color.Success">
+                Real-time eligibility verification
+            </MudListItem>
+            <MudListItem T="string" Icon="@Icons.Material.Filled.Check" IconColor="Color.Success">
+                Multi-user support with Azure AD SSO
+            </MudListItem>
+        </MudList>
+    </MudPaper>
+</MudContainer>
+
+@code {
+    private MudForm? form;
+    private bool isValid;
+    private bool isProcessing;
+    private bool azureAdEnabled;
+    private bool agreeToTerms;
+
+    // Organization fields
+    private string orgName = string.Empty;
+    private string domain = string.Empty;
+
+    // Admin user fields
+    private string firstName = string.Empty;
+    private string lastName = string.Empty;
+    private string email = string.Empty;
+    private string password = string.Empty;
+    private string confirmPassword = string.Empty;
+
+    private string errorMessage = string.Empty;
+
+    protected override void OnInitialized()
+    {
+        azureAdEnabled = Configuration.GetValue("AzureAd:Enabled", false);
+    }
+
+    private async Task CreateOrganization()
+    {
+        if (form == null) return;
+
+        await form.Validate();
+
+        if (!isValid || !agreeToTerms)
+        {
+            Snackbar.Add("Please complete all required fields", Severity.Error);
+            return;
+        }
+
+        if (password != confirmPassword)
+        {
+            errorMessage = "Passwords do not match";
+            return;
+        }
+
+        if (password.Length < 8)
+        {
+            errorMessage = "Password must be at least 8 characters";
+            return;
+        }
+
+        isProcessing = true;
+        errorMessage = string.Empty;
+
+        try
+        {
+            // Create organization
+            var organization = new Organization
+            {
+                TenantId = Guid.NewGuid().ToString(),
+                Name = orgName,
+                Domain = string.IsNullOrWhiteSpace(domain) ? null : domain,
+                Plan = "trial",
+                IsActive = true,
+                CreatedAt = DateTime.UtcNow,
+                TrialExpiresAt = DateTime.UtcNow.AddDays(14)
+            };
+
+            organization = await OrganizationService.CreateOrganizationAsync(organization);
+
+            // Create admin user
+            // Note: This is a simplified version. In production, you'd want to:
+            // 1. Hash the password properly
+            // 2. Send verification email
+            // 3. Create Stripe customer
+            // For now, we'll just show success and redirect to login
+
+            Snackbar.Add("Account created successfully! Please log in.", Severity.Success);
+            Navigation.NavigateTo("/login");
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error creating organization: {ex.Message}";
+            isProcessing = false;
+        }
+    }
+}

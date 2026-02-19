@@ -26,6 +26,7 @@ public class CloudDentalDbContext : DbContext
 
     // DbSets
     public DbSet<TenantRegistry> Tenants => Set<TenantRegistry>();
+    public DbSet<Organization> Organizations => Set<Organization>();
     public DbSet<User> Users => Set<User>();
     public DbSet<Patient> Patients => Set<Patient>();
     public DbSet<PatientInsurance> PatientInsurances => Set<PatientInsurance>();

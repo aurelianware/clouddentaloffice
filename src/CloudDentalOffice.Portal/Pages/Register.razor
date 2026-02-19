@@ -6,10 +6,25 @@
 @inject IStripeService StripeService
 @inject NavigationManager Navigation
 @inject ISnackbar Snackbar
+@inject IConfiguration Configuration
 
 <MudContainer MaxWidth="MaxWidth.Small" Class="mt-12">
     <MudPaper Elevation="3" Class="pa-8">
         <MudText Typo="Typo.h5" Align="Align.Center" Class="mb-6">Register Your Practice</MudText>
+
+        @if (azureAdEnabled)
+        {
+            <!-- Azure AD Sign-Up (Primary) -->
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Large"
+                      FullWidth="true" StartIcon="@Icons.Material.Filled.Business"
+                      Href="/MicrosoftIdentity/Account/SignIn" Class="mb-6">
+                Sign up with Microsoft Azure AD
+            </MudButton>
+
+            <MudDivider Class="mb-6">
+                <MudText Typo="Typo.body2" Color="Color.Secondary">Or create local account</MudText>
+            </MudDivider>
+        }
 
         <MudForm @ref="form">
              <MudTextField T="string" Label="Practice Name" Required="true" RequiredError="Practice Name is required!"
@@ -72,9 +87,12 @@
     string error = string.Empty;
     List<StripeProductInfo> stripeProducts = new();
     bool isLoadingPlans = true;
+    bool azureAdEnabled;
 
     protected override async Task OnInitializedAsync()
     {
+        azureAdEnabled = Configuration.GetValue("AzureAd:Enabled", false);
+        
         try
         {
             // Load Stripe products

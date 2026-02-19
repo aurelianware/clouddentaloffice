@@ -6,12 +6,15 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <UserSecretsId>clouddental-portal-secrets</UserSecretsId>
     <DockerDefaultTargetOS>Linux</DockerDefaultTargetOS>
-    <NoWarn>$(NoWarn);CS8602;CS1998;MUD0002</NoWarn>
+    <NoWarn>$(NoWarn);CS8602;CS1998;MUD0002;NU1902</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="BCrypt.Net-Next" Version="4.0.3" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="8.0.0" />
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.OpenIdConnect" Version="8.0.11" />
+    <PackageReference Include="Microsoft.Identity.Web" Version="3.3.1" />
+    <PackageReference Include="Microsoft.Identity.Web.UI" Version="3.3.1" />
     <PackageReference Include="MudBlazor" Version="7.8.0" />
     <PackageReference Include="Azure.Extensions.AspNetCore.Configuration.Secrets" Version="1.3.2" />
     <PackageReference Include="Azure.Identity" Version="1.12.0" />

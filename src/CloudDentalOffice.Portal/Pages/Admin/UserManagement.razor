@@ -1,0 +1,230 @@
+@page "/admin/users"
+@attribute [Authorize(Roles = "Admin")]
+@using CloudDentalOffice.Portal.Services
+@using CloudDentalOffice.Portal.Models
+@inject IOrganizationService OrganizationService
+@inject ISnackbar Snackbar
+@inject AuthenticationStateProvider AuthStateProvider
+
+<PageTitle>User Management</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Large" Class="mt-4">
+    <div class="d-flex justify-space-between align-center mb-6">
+        <MudText Typo="Typo.h4">User Management</MudText>
+        @if (canInvite)
+        {
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" 
+                      OnClick="OpenInviteDialog" StartIcon="@Icons.Material.Filled.PersonAdd">
+                Invite User
+            </MudButton>
+        }
+    </div>
+
+    @if (organization == null || users == null)
+    {
+        <MudProgressCircular Indeterminate="true" />
+    }
+    else
+    {
+        <MudPaper Elevation="2">
+            <MudTable T="User" Items="@users" Hover="true" Breakpoint="Breakpoint.Sm">
+                <HeaderContent>
+                    <MudTh>Name</MudTh>
+                    <MudTh>Email</MudTh>
+                    <MudTh>Role</MudTh>
+                    <MudTh>Auth Method</MudTh>
+                    <MudTh>Status</MudTh>
+                    <MudTh>Last Login</MudTh>
+                    <MudTh>Actions</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd DataLabel="Name">@context.FirstName @context.LastName</MudTd>
+                    <MudTd DataLabel="Email">@context.Email</MudTd>
+                    <MudTd DataLabel="Role">
+                        <MudChip T="string" Size="Size.Small" Color="@GetRoleColor(context.Role)">
+                            @context.Role
+                        </MudChip>
+                    </MudTd>
+                    <MudTd DataLabel="Auth Method">
+                        @if (!string.IsNullOrEmpty(context.AzureAdObjectId))
+                        {
+                            <MudChip T="string" Size="Size.Small" Color="Color.Info">Azure AD</MudChip>
+                        }
+                        else
+                        {
+                            <MudChip T="string" Size="Size.Small" Color="Color.Default">Local</MudChip>
+                        }
+                    </MudTd>
+                    <MudTd DataLabel="Status">
+                        @if (context.IsActive)
+                        {
+                            <MudChip T="string" Size="Size.Small" Color="Color.Success">Active</MudChip>
+                        }
+                        else
+                        {
+                            <MudChip T="string" Size="Size.Small" Color="Color.Default">Inactive</MudChip>
+                        }
+                    </MudTd>
+                    <MudTd DataLabel="Last Login">
+                        @(context.LastLoginAt.HasValue ? context.LastLoginAt.Value.ToLocalTime().ToString("MMM dd, yyyy") : "Never")
+                    </MudTd>
+                    <MudTd DataLabel="Actions">
+                        @if (context.Id != currentUserId)
+                        {
+                            <MudIconButton Icon="@Icons.Material.Filled.Delete" 
+                                          Color="Color.Error" Size="Size.Small"
+                                          OnClick="@(() => RemoveUser(context))" />
+                        }
+                    </MudTd>
+                </RowTemplate>
+            </MudTable>
+        </MudPaper>
+
+        @if (users.Count == 0)
+        {
+            <MudAlert Severity="Severity.Info" Class="mt-4">
+                No users found. Invite users to get started.
+            </MudAlert>
+        }
+    }
+</MudContainer>
+
+<MudDialog @bind-Visible="inviteDialogOpen">
+    <DialogContent>
+        <MudText Typo="Typo.h6" Class="mb-4">Invite User</MudText>
+        
+        <MudForm @ref="inviteForm" @bind-IsValid="@inviteIsValid">
+            <MudTextField T="string" Label="Email" Required="true" 
+                          @bind-Value="inviteEmail" InputType="InputType.Email"
+                          RequiredError="Email is required" />
+            
+            <MudSelect T="string" Label="Role" @bind-Value="inviteRole" Required="true" Class="mt-4">
+                <MudSelectItem Value="@("Admin")">Admin</MudSelectItem>
+                <MudSelectItem Value="@("Staff")">Staff</MudSelectItem>
+                <MudSelectItem Value="@("Dentist")">Dentist</MudSelectItem>
+                <MudSelectItem Value="@("Hygienist")">Hygienist</MudSelectItem>
+            </MudSelect>
+
+            <MudAlert Severity="Severity.Info" Class="mt-4">
+                An invitation email will be sent to the user with instructions to join your organization.
+            </MudAlert>
+        </MudForm>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="CloseInviteDialog">Cancel</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" 
+                  Disabled="@(!inviteIsValid)" OnClick="SendInvite">
+            Send Invitation
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    private Organization? organization;
+    private List<User> users = new();
+    private bool canInvite;
+    private int currentUserId;
+    private int currentOrganizationId;
+    
+    // Invite dialog
+    private bool inviteDialogOpen;
+    private MudForm? inviteForm;
+    private bool inviteIsValid;
+    private string inviteEmail = string.Empty;
+    private string inviteRole = "Staff";
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+
+        if (user?.Identity?.IsAuthenticated == true)
+        {
+            var tenantIdClaim = user.FindFirst("TenantId");
+            var userIdClaim = user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier);
+            var orgIdClaim = user.FindFirst("OrganizationId");
+
+            if (tenantIdClaim != null && 
+                int.TryParse(userIdClaim?.Value, out currentUserId) &&
+                int.TryParse(orgIdClaim?.Value, out currentOrganizationId))
+            {
+                organization = await OrganizationService.GetOrganizationByTenantIdAsync(tenantIdClaim.Value);
+                
+                if (organization != null)
+                {
+                    users = await OrganizationService.GetOrganizationUsersAsync(organization.Id);
+                    canInvite = await OrganizationService.CanUserInviteAsync(currentUserId);
+                }
+            }
+        }
+    }
+
+    private void OpenInviteDialog()
+    {
+        inviteEmail = string.Empty;
+        inviteRole = "Staff";
+        inviteDialogOpen = true;
+    }
+
+    private void CloseInviteDialog()
+    {
+        inviteDialogOpen = false;
+    }
+
+    private async Task SendInvite()
+    {
+        if (inviteForm == null || organization == null) return;
+
+        await inviteForm.Validate();
+
+        if (!inviteIsValid)
+        {
+            Snackbar.Add("Please fix validation errors", Severity.Error);
+            return;
+        }
+
+        try
+        {
+            var newUser = await OrganizationService.InviteUserAsync(
+                organization.Id, inviteEmail, inviteRole, currentUserId);
+            
+            users.Add(newUser);
+            Snackbar.Add($"Invitation sent to {inviteEmail}", Severity.Success);
+            CloseInviteDialog();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error inviting user: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task RemoveUser(User user)
+    {
+        if (organization == null) return;
+
+        // TODO: Add confirmation dialog
+        // For now, we'll just proceed with removal
+
+        try
+        {
+            await OrganizationService.RemoveUserAsync(organization.Id, user.Id);
+            users.Remove(user);
+            Snackbar.Add("User removed successfully", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error removing user: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private Color GetRoleColor(string role)
+    {
+        return role switch
+        {
+            "Admin" => Color.Error,
+            "Dentist" => Color.Primary,
+            "Hygienist" => Color.Info,
+            _ => Color.Default
+        };
+    }
+}

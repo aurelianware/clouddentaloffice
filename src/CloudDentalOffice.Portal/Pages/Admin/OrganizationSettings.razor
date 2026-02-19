@@ -1,0 +1,152 @@
+@page "/admin/organization/settings"
+@attribute [Authorize(Roles = "Admin")]
+@using CloudDentalOffice.Portal.Services
+@using CloudDentalOffice.Portal.Models
+@inject IOrganizationService OrganizationService
+@inject ISnackbar Snackbar
+@inject AuthenticationStateProvider AuthStateProvider
+
+<PageTitle>Organization Settings</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Large" Class="mt-4">
+    <MudText Typo="Typo.h4" Class="mb-6">Organization Settings</MudText>
+
+    @if (organization == null)
+    {
+        <MudProgressCircular Indeterminate="true" />
+    }
+    else
+    {
+        <MudPaper Elevation="2" Class="pa-6 mb-6">
+            <MudText Typo="Typo.h6" Class="mb-4">Organization Information</MudText>
+            
+            <MudForm @ref="form" @bind-IsValid="@isValid">
+                <MudGrid>
+                    <MudItem xs="12" md="6">
+                        <MudTextField T="string" Label="Organization Name" Required="true" 
+                                      @bind-Value="organization.Name" />
+                    </MudItem>
+                    <MudItem xs="12" md="6">
+                        <MudTextField T="string" Label="Domain" 
+                                      @bind-Value="organization.Domain" 
+                                      HelperText="Your organization's email domain" />
+                    </MudItem>
+                    <MudItem xs="12" md="6">
+                        <MudTextField T="string" Label="Tenant ID" Disabled="true" 
+                                      Value="@organization.TenantId" />
+                    </MudItem>
+                    <MudItem xs="12" md="6">
+                        <MudTextField T="string" Label="Azure AD Tenant ID" Disabled="true" 
+                                      Value="@organization.AzureAdTenantId" />
+                    </MudItem>
+                    <MudItem xs="12" md="6">
+                        <MudSelect T="string" Label="Plan" @bind-Value="organization.Plan">
+                            <MudSelectItem Value="@("trial")">Trial</MudSelectItem>
+                            <MudSelectItem Value="@("hobby")">Hobby</MudSelectItem>
+                            <MudSelectItem Value="@("pro")">Professional</MudSelectItem>
+                            <MudSelectItem Value="@("enterprise")">Enterprise</MudSelectItem>
+                        </MudSelect>
+                    </MudItem>
+                    <MudItem xs="12" md="6">
+                        <MudSwitch T="bool" Label="Active" @bind-Value="organization.IsActive" Color="Color.Primary" />
+                    </MudItem>
+                    
+                    @if (organization.Plan == "trial" && organization.TrialExpiresAt.HasValue)
+                    {
+                        <MudItem xs="12">
+                            <MudAlert Severity="Severity.Info">
+                                Trial expires on: @organization.TrialExpiresAt.Value.ToLocalTime().ToString("MMMM dd, yyyy")
+                            </MudAlert>
+                        </MudItem>
+                    }
+                </MudGrid>
+
+                <div class="mt-6">
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" 
+                              Disabled="@(!isValid)" OnClick="SaveOrganization">
+                        Save Changes
+                    </MudButton>
+                </div>
+            </MudForm>
+        </MudPaper>
+
+        <MudPaper Elevation="2" Class="pa-6">
+            <MudText Typo="Typo.h6" Class="mb-4">Billing Information</MudText>
+            
+            <MudGrid>
+                <MudItem xs="12" md="6">
+                    <MudTextField T="string" Label="Stripe Customer ID" Disabled="true"
+                                  Value="@organization.StripeCustomerId" />
+                </MudItem>
+                <MudItem xs="12" md="6">
+                    <MudTextField T="string" Label="Stripe Subscription ID" Disabled="true"
+                                  Value="@organization.StripeSubscriptionId" />
+                </MudItem>
+            </MudGrid>
+
+            @if (!string.IsNullOrEmpty(organization.StripeCustomerId))
+            {
+                <div class="mt-4">
+                    <MudButton Variant="Variant.Outlined" Color="Color.Primary" 
+                              Href="https://dashboard.stripe.com" Target="_blank">
+                        View in Stripe Dashboard
+                    </MudButton>
+                </div>
+            }
+        </MudPaper>
+    }
+</MudContainer>
+
+@code {
+    private Organization? organization;
+    private MudForm? form;
+    private bool isValid;
+    private int currentUserId;
+    private string currentTenantId = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+
+        if (user?.Identity?.IsAuthenticated == true)
+        {
+            var tenantIdClaim = user.FindFirst("TenantId");
+            var userIdClaim = user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier);
+
+            if (tenantIdClaim != null && int.TryParse(userIdClaim?.Value, out currentUserId))
+            {
+                currentTenantId = tenantIdClaim.Value;
+                organization = await OrganizationService.GetOrganizationByTenantIdAsync(currentTenantId);
+                
+                if (organization == null)
+                {
+                    Snackbar.Add("Organization not found", Severity.Error);
+                }
+            }
+        }
+    }
+
+    private async Task SaveOrganization()
+    {
+        if (organization == null || form == null) return;
+
+        await form.Validate();
+
+        if (!isValid)
+        {
+            Snackbar.Add("Please fix validation errors", Severity.Error);
+            return;
+        }
+
+        try
+        {
+            await OrganizationService.UpdateOrganizationAsync(organization);
+            Snackbar.Add("Organization settings saved successfully", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error saving organization: {ex.Message}", Severity.Error);
+        }
+    }
+}

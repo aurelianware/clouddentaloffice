@@ -4,12 +4,28 @@
 @inject IAuthService AuthService
 @inject AuthenticationStateProvider AuthStateProvider
 @inject NavigationManager Navigation
+@inject IConfiguration Configuration
 
 <MudContainer MaxWidth="MaxWidth.Small" Class="mt-16">
     <MudPaper Elevation="3" Class="pa-8">
         <MudText Typo="Typo.h4" Align="Align.Center" Class="mb-4">Cloud Dental Office</MudText>
         <MudText Typo="Typo.h6" Align="Align.Center" Class="mb-8">Login</MudText>
 
+        @if (azureAdEnabled)
+        {
+            <!-- Azure AD Sign-In (Primary) -->
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Large"
+                      FullWidth="true" StartIcon="@Icons.Material.Filled.Business"
+                      Href="/MicrosoftIdentity/Account/SignIn" Class="mb-6">
+                Sign in with Microsoft
+            </MudButton>
+
+            <MudDivider Class="mb-6">
+                <MudText Typo="Typo.body2" Color="Color.Secondary">Or use local account</MudText>
+            </MudDivider>
+        }
+
+        <!-- Local Authentication Form -->
         <MudForm @ref="form" @bind-IsValid="@success">
             <MudTextField T="string" Label="Email" Required="true" RequiredError="Email is required!"
                           @bind-Value="email" InputType="InputType.Email" />
@@ -17,7 +33,7 @@
                           @bind-Value="password" InputType="InputType.Password" Class="mt-4" />
 
             <div class="d-flex justify-space-between align-center mt-4">
-                <MudLink Href="/register">Create an account</MudLink>
+                <MudLink Href="/signup">Create an account</MudLink>
                 <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="@(!success)" OnClick="DoLogin">Login</MudButton>
             </div>
             
@@ -31,10 +47,16 @@
 
 @code {
     bool success;
+    bool azureAdEnabled;
     MudForm form = null!;
     string email = string.Empty;
     string password = string.Empty;
     string error = string.Empty;
+
+    protected override void OnInitialized()
+    {
+        azureAdEnabled = Configuration.GetValue("AzureAd:Enabled", false);
+    }
 
     private async Task DoLogin()
     {
@@ -65,3 +87,4 @@
         }
     }
 }
+
