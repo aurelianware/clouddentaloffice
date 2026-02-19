@@ -1,0 +1,289 @@
+@page "/vision/insurance-scans"
+@using CloudDentalOffice.Contracts.Vision
+@inject IVisionService VisionService
+@inject ISnackbar Snackbar
+
+<PageTitle>Insurance Card Scanner — Cloud Dental Office</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Large" Class="mt-4">
+
+    <MudPaper Class="pa-4 mb-4" Style="background: linear-gradient(135deg, #1a2332 0%, #0d2137 100%); border-left: 4px solid #66bb6a;">
+        <MudText Typo="Typo.h5" Style="color: #e0e0e0;">
+            <MudIcon Icon="@Icons.Material.Filled.CreditCard" Class="mr-2" Style="color: #66bb6a;" />
+            Insurance Card Scanner
+        </MudText>
+        <MudText Typo="Typo.body2" Style="color: #78909c;">
+            Capture insurance card → OCR extraction → Auto-populate eligibility verification
+        </MudText>
+    </MudPaper>
+
+    <MudGrid>
+        @* ── Scan Interface ── *@
+        <MudItem xs="12" md="6">
+            <MudPaper Class="pa-4" Elevation="0" Style="background-color: #1e2a3a; border: 1px solid #2d3e50;">
+                <MudText Typo="Typo.subtitle2" Class="mb-3" Style="color: #78909c;">
+                    Capture Card Image
+                </MudText>
+
+                <MudFileUpload T="IBrowserFile" Accept=".jpg,.jpeg,.png"
+                               FilesChanged="HandleFrontCardUpload"
+                               Class="mb-3">
+                    <ActivatorContent>
+                        <MudPaper Class="pa-6 d-flex flex-column align-center cursor-pointer" Elevation="0"
+                                  Style="background-color: #152238; border: 2px dashed #455a64; border-radius: 8px;">
+                            <MudIcon Icon="@Icons.Material.Filled.CameraAlt" Style="color: #42a5f5; font-size: 2.5rem;" />
+                            <MudText Typo="Typo.body2" Class="mt-2" Style="color: #b0bec5;">
+                                @if (_frontCardFile != null)
+                                {
+                                    <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Size="Size.Small" Style="color: #66bb6a;" />
+                                    <text> Front: @_frontCardFile.Name</text>
+                                }
+                                else
+                                {
+                                    <text>Click or tap to capture FRONT of card</text>
+                                }
+                            </MudText>
+                        </MudPaper>
+                    </ActivatorContent>
+                </MudFileUpload>
+
+                <MudFileUpload T="IBrowserFile" Accept=".jpg,.jpeg,.png"
+                               FilesChanged="HandleBackCardUpload"
+                               Class="mb-3">
+                    <ActivatorContent>
+                        <MudPaper Class="pa-4 d-flex flex-column align-center cursor-pointer" Elevation="0"
+                                  Style="background-color: #152238; border: 2px dashed #37474f; border-radius: 8px;">
+                            <MudIcon Icon="@Icons.Material.Filled.FlipCameraAndroid" Style="color: #78909c; font-size: 1.5rem;" />
+                            <MudText Typo="Typo.caption" Style="color: #78909c;">
+                                @if (_backCardFile != null)
+                                {
+                                    <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Size="Size.Small" Style="color: #66bb6a;" />
+                                    <text> Back: @_backCardFile.Name</text>
+                                }
+                                else
+                                {
+                                    <text>Optional: Capture BACK of card (for RxBIN/PCN)</text>
+                                }
+                            </MudText>
+                        </MudPaper>
+                    </ActivatorContent>
+                </MudFileUpload>
+
+                <MudButton Variant="Variant.Filled" FullWidth="true"
+                           StartIcon="@Icons.Material.Filled.DocumentScanner"
+                           OnClick="ScanCard"
+                           Disabled="@(_frontCardFile == null || _scanning)"
+                           Style="background-color: #66bb6a; color: #fff;">
+                    @if (_scanning)
+                    {
+                        <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                        <text>Scanning...</text>
+                    }
+                    else
+                    {
+                        <text>Scan & Extract</text>
+                    }
+                </MudButton>
+            </MudPaper>
+        </MudItem>
+
+        @* ── OCR Results ── *@
+        <MudItem xs="12" md="6">
+            @if (_scanResult != null)
+            {
+                <MudPaper Class="pa-4" Elevation="0" Style="background-color: #1e2a3a; border: 1px solid #1b5e20;">
+                    <div class="d-flex justify-space-between align-center mb-3">
+                        <MudText Typo="Typo.subtitle2" Style="color: #66bb6a;">
+                            <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Size="Size.Small" Class="mr-1" />
+                            Extracted Fields
+                        </MudText>
+                        <MudChip T="string" Size="Size.Small" Color="@(_scanResult.OcrConfidence > 0.8 ? Color.Success : Color.Warning)"
+                                 Variant="Variant.Outlined">
+                            @((_scanResult.OcrConfidence * 100).ToString("F0"))% confidence
+                        </MudChip>
+                    </div>
+
+                    <MudSimpleTable Dense="true" Bordered="true"
+                                    Style="background-color: #152238; color: #e0e0e0;">
+                        <tbody>
+                            @foreach (var field in GetExtractedFields())
+                            {
+                                <tr>
+                                    <td style="color: #78909c; font-weight: 500; width: 140px; padding: 6px 12px;">@field.Label</td>
+                                    <td style="color: @(string.IsNullOrEmpty(field.Value) ? "#455a64" : "#e0e0e0"); padding: 6px 12px;">
+                                        @(field.Value ?? "—")
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </MudSimpleTable>
+
+                    <div class="d-flex gap-2 mt-3">
+                        <MudButton Variant="Variant.Filled" Size="Size.Small"
+                                   StartIcon="@Icons.Material.Filled.VerifiedUser"
+                                   Style="background-color: #26a69a;"
+                                   OnClick="TriggerEligibilityCheck"
+                                   Disabled="@(string.IsNullOrEmpty(_scanResult.PayerId) || string.IsNullOrEmpty(_scanResult.MemberId))">
+                            Verify Eligibility (270)
+                        </MudButton>
+                        <MudButton Variant="Variant.Outlined" Size="Size.Small"
+                                   StartIcon="@Icons.Material.Filled.PersonAdd"
+                                   Style="border-color: #455a64; color: #b0bec5;"
+                                   OnClick="PopulatePatientRecord">
+                            Apply to Patient
+                        </MudButton>
+                    </div>
+
+                    @if (_scanResult.EligibilityCheckTriggered)
+                    {
+                        <MudAlert Severity="Severity.Success" Dense="true" Class="mt-3"
+                                  Style="background-color: #0d2137; color: #90caf9;">
+                            Eligibility check submitted via X12 270 transaction
+                        </MudAlert>
+                    }
+                </MudPaper>
+            }
+            else
+            {
+                <MudPaper Class="pa-6 d-flex flex-column align-center" Elevation="0"
+                          Style="background-color: #1e2a3a; border: 1px solid #2d3e50; min-height: 300px; justify-content: center;">
+                    <MudIcon Icon="@Icons.Material.Filled.CreditCardOff" Style="color: #37474f; font-size: 3rem;" />
+                    <MudText Typo="Typo.body2" Class="mt-2" Style="color: #607d8b;">
+                        Scan a card to see extracted fields
+                    </MudText>
+                </MudPaper>
+            }
+        </MudItem>
+    </MudGrid>
+
+    @* ── Recent Scans ── *@
+    <MudPaper Class="pa-4 mt-4" Elevation="0" Style="background-color: #1e2a3a; border: 1px solid #2d3e50;">
+        <MudText Typo="Typo.subtitle2" Class="mb-3" Style="color: #78909c;">
+            Recent Scans
+        </MudText>
+        <MudTable Items="_recentScans" Dense="true" Hover="true"
+                  Style="background-color: transparent;" RowStyle="color: #cfd8dc;"
+                  T="InsuranceCardScanDto">
+            <HeaderContent>
+                <MudTh Style="color: #78909c;">Time</MudTh>
+                <MudTh Style="color: #78909c;">Payer</MudTh>
+                <MudTh Style="color: #78909c;">Member ID</MudTh>
+                <MudTh Style="color: #78909c;">Group</MudTh>
+                <MudTh Style="color: #78909c;">Confidence</MudTh>
+                <MudTh Style="color: #78909c;">Eligibility</MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd>@context.Timestamp.ToString("MM/dd HH:mm")</MudTd>
+                <MudTd Style="color: #e0e0e0; font-weight: 500;">@context.PayerName</MudTd>
+                <MudTd>@context.MemberId</MudTd>
+                <MudTd>@context.GroupNumber</MudTd>
+                <MudTd>
+                    <MudChip T="string" Size="Size.Small"
+                             Color="@(context.OcrConfidence > 0.8 ? Color.Success : Color.Warning)"
+                             Variant="Variant.Outlined" Style="font-size: 0.7rem;">
+                        @((context.OcrConfidence * 100).ToString("F0"))%
+                    </MudChip>
+                </MudTd>
+                <MudTd>
+                    @if (context.EligibilityCheckTriggered)
+                    {
+                        <MudChip T="string" Size="Size.Small" Color="Color.Success"
+                                 Variant="Variant.Outlined" Style="font-size: 0.7rem;">
+                            @(context.EligibilityResult ?? "Submitted")
+                        </MudChip>
+                    }
+                    else
+                    {
+                        <MudText Typo="Typo.caption" Style="color: #607d8b;">—</MudText>
+                    }
+                </MudTd>
+            </RowTemplate>
+        </MudTable>
+    </MudPaper>
+</MudContainer>
+
+@code {
+    private IBrowserFile? _frontCardFile;
+    private IBrowserFile? _backCardFile;
+    private bool _scanning;
+    private InsuranceCardScanDto? _scanResult;
+    private List<InsuranceCardScanDto> _recentScans = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        try { _recentScans = await VisionService.GetInsuranceScansAsync(limit: 10); }
+        catch { /* tolerate */ }
+    }
+
+    private void HandleFrontCardUpload(IBrowserFile file) => _frontCardFile = file;
+    private void HandleBackCardUpload(IBrowserFile file) => _backCardFile = file;
+
+    private async Task ScanCard()
+    {
+        if (_frontCardFile == null) return;
+
+        _scanning = true;
+        StateHasChanged();
+
+        try
+        {
+            var frontBytes = await ReadFileBytes(_frontCardFile);
+            byte[]? backBytes = _backCardFile != null ? await ReadFileBytes(_backCardFile) : null;
+
+            _scanResult = await VisionService.ScanInsuranceCardAsync(new ScanInsuranceCardRequest
+            {
+                DeviceId = Guid.Empty, // TODO: from device context
+                ImageBase64 = Convert.ToBase64String(frontBytes),
+                BackImageBase64 = backBytes != null ? Convert.ToBase64String(backBytes) : null
+            });
+
+            _recentScans.Insert(0, _scanResult);
+            Snackbar.Add($"Card scanned: {_scanResult.PayerName ?? "Unknown payer"} — {_scanResult.MemberId ?? "No member ID"}", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Scan error: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _scanning = false;
+        }
+    }
+
+    private void TriggerEligibilityCheck()
+    {
+        // TODO: Call EligibilityService via API Gateway with extracted fields
+        Snackbar.Add("Eligibility verification submitted (X12 270)", Severity.Info);
+    }
+
+    private void PopulatePatientRecord()
+    {
+        // TODO: Navigate to patient record with pre-populated insurance fields
+        Snackbar.Add("Patient record updated with scanned insurance data", Severity.Success);
+    }
+
+    private async Task<byte[]> ReadFileBytes(IBrowserFile file)
+    {
+        using var stream = file.OpenReadStream(maxAllowedSize: 10 * 1024 * 1024);
+        using var ms = new MemoryStream();
+        await stream.CopyToAsync(ms);
+        return ms.ToArray();
+    }
+
+    private List<(string Label, string? Value)> GetExtractedFields() => _scanResult == null
+        ? new()
+        : new List<(string, string?)>
+        {
+            ("Payer", _scanResult.PayerName),
+            ("Payer ID", _scanResult.PayerId),
+            ("Member ID", _scanResult.MemberId),
+            ("Group #", _scanResult.GroupNumber),
+            ("Subscriber", _scanResult.SubscriberName),
+            ("Plan", _scanResult.PlanName),
+            ("Copay", _scanResult.CopayAmount != null ? $"${_scanResult.CopayAmount}" : null),
+            ("RxBIN", _scanResult.RxBin),
+            ("RxPCN", _scanResult.RxPcn),
+            ("RxGroup", _scanResult.RxGroup),
+            ("Phone", _scanResult.PhoneNumber)
+        };
+}

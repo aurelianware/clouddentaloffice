@@ -1,0 +1,129 @@
+@using CloudDentalOffice.Contracts.Vision
+
+<MudPaper Class="pa-3 cursor-pointer" Elevation="0"
+          Style="@($"background-color: #152238; border: 1px solid {_borderColor}; border-radius: 8px; transition: border-color 0.2s;")"
+          @onclick="OnClick">
+
+    <div class="d-flex justify-space-between align-center mb-2">
+        <div class="d-flex align-center gap-2">
+            <MudIcon Icon="@LocationIcon" Size="Size.Small" Style="@($"color: {_locationColor};")" />
+            <MudText Typo="Typo.subtitle2" Style="color: #e0e0e0;">@Device.Name</MudText>
+        </div>
+        <div class="d-flex align-center gap-1">
+            <div style="width: 8px; height: 8px; border-radius: 50%; background-color: @_statusDotColor;
+                        @(Device.Status == DeviceStatus.Online ? "animation: pulse 2s infinite;" : "")" />
+            <MudText Typo="Typo.caption" Style="@($"color: {_statusTextColor};")">@Device.Status</MudText>
+        </div>
+    </div>
+
+    <div class="d-flex gap-1 flex-wrap mb-2">
+        <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined"
+                 Style="border-color: #37474f; color: #90a4ae; font-size: 0.6rem;">
+            @Device.Type
+        </MudChip>
+        <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined"
+                 Style="border-color: #37474f; color: #90a4ae; font-size: 0.6rem;">
+            @Device.Location
+        </MudChip>
+        @if (Device.SupportsOcr)
+        {
+            <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined"
+                     Style="border-color: #1b5e20; color: #66bb6a; font-size: 0.6rem;">
+                OCR
+            </MudChip>
+        }
+    </div>
+
+    @if (LatestEvent != null)
+    {
+        <div style="border-top: 1px solid #1e2a3a; padding-top: 6px;">
+            <MudText Typo="Typo.caption" Style="color: #607d8b;">Latest:</MudText>
+            <div class="d-flex justify-space-between align-center">
+                <MudText Typo="Typo.caption" Style="color: #90a4ae;">
+                    @LatestEvent.EventType — @LatestEvent.Detections.Count detections
+                </MudText>
+                <MudText Typo="Typo.caption" Style="color: #607d8b;">
+                    @FormatTimeAgo(LatestEvent.Timestamp)
+                </MudText>
+            </div>
+            @if (LatestEvent.AlertSeverity.HasValue && LatestEvent.AlertSeverity >= AlertSeverity.Medium)
+            {
+                <MudText Typo="Typo.caption" Style="color: #ef5350; font-weight: 500;">
+                    ⚠ @LatestEvent.AlertMessage
+                </MudText>
+            }
+        </div>
+    }
+    else
+    {
+        <MudText Typo="Typo.caption" Style="color: #455a64; border-top: 1px solid #1e2a3a; padding-top: 6px;">
+            No recent events
+        </MudText>
+    }
+
+    @if (Device.LastHeartbeat.HasValue)
+    {
+        <MudText Typo="Typo.caption" Style="color: #455a64; margin-top: 4px;">
+            Heartbeat: @FormatTimeAgo(Device.LastHeartbeat.Value)
+        </MudText>
+    }
+</MudPaper>
+
+@code {
+    [Parameter, EditorRequired] public VisionDeviceDto Device { get; set; } = null!;
+    [Parameter] public VisionEventDto? LatestEvent { get; set; }
+    [Parameter] public EventCallback OnClick { get; set; }
+
+    private string _borderColor => Device.Status switch
+    {
+        DeviceStatus.Online => "#2d3e50",
+        DeviceStatus.Error => "#b71c1c",
+        _ => "#1e2a3a"
+    };
+
+    private string _statusDotColor => Device.Status switch
+    {
+        DeviceStatus.Online => "#66bb6a",
+        DeviceStatus.Error => "#ef5350",
+        DeviceStatus.Maintenance => "#ffa726",
+        _ => "#607d8b"
+    };
+
+    private string _statusTextColor => Device.Status switch
+    {
+        DeviceStatus.Online => "#66bb6a",
+        DeviceStatus.Error => "#ef5350",
+        _ => "#607d8b"
+    };
+
+    private string _locationColor => Device.Location switch
+    {
+        CameraLocation.Operatory => "#42a5f5",
+        CameraLocation.NarcoticsCabinet => "#ef5350",
+        CameraLocation.FrontDesk => "#66bb6a",
+        CameraLocation.WaitingRoom => "#26a69a",
+        CameraLocation.ExteriorEntrance or CameraLocation.ExteriorParking => "#ffa726",
+        _ => "#78909c"
+    };
+
+    private string LocationIcon => Device.Location switch
+    {
+        CameraLocation.Operatory => Icons.Material.Filled.MedicalInformation,
+        CameraLocation.NarcoticsCabinet => Icons.Material.Filled.MedicalServices,
+        CameraLocation.FrontDesk => Icons.Material.Filled.Desk,
+        CameraLocation.WaitingRoom => Icons.Material.Filled.Weekend,
+        CameraLocation.ExteriorEntrance => Icons.Material.Filled.DoorFront,
+        CameraLocation.ExteriorParking => Icons.Material.Filled.LocalParking,
+        CameraLocation.Hallway => Icons.Material.Filled.DirectionsWalk,
+        _ => Icons.Material.Filled.Videocam
+    };
+
+    private static string FormatTimeAgo(DateTime timestamp)
+    {
+        var elapsed = DateTime.UtcNow - timestamp;
+        return elapsed.TotalMinutes < 1 ? "just now"
+            : elapsed.TotalMinutes < 60 ? $"{(int)elapsed.TotalMinutes}m ago"
+            : elapsed.TotalHours < 24 ? $"{(int)elapsed.TotalHours}h ago"
+            : $"{(int)elapsed.TotalDays}d ago";
+    }
+}

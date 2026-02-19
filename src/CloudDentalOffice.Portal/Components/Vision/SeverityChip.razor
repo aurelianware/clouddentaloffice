@@ -1,0 +1,37 @@
+@using CloudDentalOffice.Contracts.Vision
+
+<MudTooltip Text="@Message" Disabled="@(string.IsNullOrEmpty(Message))">
+    <MudChip T="string" Size="Size.Small" Variant="Variant.Filled"
+             Style="@($"background-color: {BgColor}; color: {TextColor}; font-size: 0.65rem; font-weight: 600;")">
+        @ChipText
+    </MudChip>
+</MudTooltip>
+
+@code {
+    [Parameter, EditorRequired] public AlertSeverity Severity { get; set; }
+    [Parameter] public string? Message { get; set; }
+
+    private string BgColor => Severity switch
+    {
+        AlertSeverity.Critical => "#b71c1c",
+        AlertSeverity.High => "#c62828",
+        AlertSeverity.Medium => "#e65100",
+        AlertSeverity.Low => "#1565c0",
+        _ => "#37474f"
+    };
+
+    private string TextColor => Severity switch
+    {
+        AlertSeverity.Info => "#90a4ae",
+        _ => "#ffffff"
+    };
+
+    private string ChipText => Severity switch
+    {
+        AlertSeverity.Critical => "CRITICAL",
+        AlertSeverity.High => "HIGH",
+        AlertSeverity.Medium => "MEDIUM",
+        AlertSeverity.Low => "LOW",
+        _ => "INFO"
+    };
+}

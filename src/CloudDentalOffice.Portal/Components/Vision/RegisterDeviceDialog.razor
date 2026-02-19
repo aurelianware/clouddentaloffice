@@ -1,0 +1,123 @@
+@using CloudDentalOffice.Contracts.Vision
+@inject IVisionService VisionService
+@inject ISnackbar Snackbar
+
+<MudDialog @bind-Visible="IsOpen"
+           Options="@(new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true })">
+    <TitleContent>
+        <MudText Typo="Typo.h6" Style="color: #e0e0e0;">
+            <MudIcon Icon="@Icons.Material.Filled.AddCircle" Class="mr-2" Style="color: #42a5f5;" />
+            Register privaseeAI Device
+        </MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudTextField @bind-Value="_name" Label="Device Name" Variant="Variant.Outlined"
+                      Placeholder="e.g., Operatory 1 Camera" Class="mb-3"
+                      Style="color: #e0e0e0;" Required="true" />
+
+        <MudSelect @bind-Value="_type" Label="Device Type" Variant="Variant.Outlined"
+                   Style="color: #e0e0e0;" Class="mb-3">
+            <MudSelectItem Value="DeviceType.IpCamera">IP Camera</MudSelectItem>
+            <MudSelectItem Value="DeviceType.Tablet">Tablet (PWA)</MudSelectItem>
+            <MudSelectItem Value="DeviceType.MobileIos">iPhone</MudSelectItem>
+            <MudSelectItem Value="DeviceType.MobileAndroid">Android</MudSelectItem>
+            <MudSelectItem Value="DeviceType.RaspberryPi">Raspberry Pi</MudSelectItem>
+            <MudSelectItem Value="DeviceType.UsbWebcam">USB Webcam</MudSelectItem>
+            <MudSelectItem Value="DeviceType.DesktopBrowser">Desktop Browser</MudSelectItem>
+        </MudSelect>
+
+        <MudSelect @bind-Value="_location" Label="Camera Location" Variant="Variant.Outlined"
+                   Style="color: #e0e0e0;" Class="mb-3">
+            <MudSelectItem Value="CameraLocation.Operatory">Operatory</MudSelectItem>
+            <MudSelectItem Value="CameraLocation.FrontDesk">Front Desk</MudSelectItem>
+            <MudSelectItem Value="CameraLocation.WaitingRoom">Waiting Room</MudSelectItem>
+            <MudSelectItem Value="CameraLocation.NarcoticsCabinet">Narcotics Cabinet</MudSelectItem>
+            <MudSelectItem Value="CameraLocation.Hallway">Hallway</MudSelectItem>
+            <MudSelectItem Value="CameraLocation.ExteriorEntrance">Exterior Entrance</MudSelectItem>
+            <MudSelectItem Value="CameraLocation.ExteriorParking">Exterior / Parking</MudSelectItem>
+            <MudSelectItem Value="CameraLocation.Lab">Lab</MudSelectItem>
+            <MudSelectItem Value="CameraLocation.Sterilization">Sterilization</MudSelectItem>
+            <MudSelectItem Value="CameraLocation.Other">Other</MudSelectItem>
+        </MudSelect>
+
+        <MudTextField @bind-Value="_locationName" Label="Location Label (optional)" Variant="Variant.Outlined"
+                      Placeholder="e.g., Op 1, Cabinet A" Class="mb-3" Style="color: #e0e0e0;" />
+
+        <MudTextField @bind-Value="_ipAddress" Label="IP Address (optional)" Variant="Variant.Outlined"
+                      Placeholder="192.168.1.100" Class="mb-3" Style="color: #e0e0e0;" />
+
+        <MudCheckBox @bind-Value="_supportsOcr" Label="OCR Capable (insurance card scanning)"
+                     Color="Color.Info" Style="color: #b0bec5;" />
+
+        @if (_location == CameraLocation.NarcoticsCabinet)
+        {
+            <MudAlert Severity="Severity.Warning" Dense="true" Class="mt-3"
+                      Style="background-color: #2a1f0d; color: #ffcc80;">
+                <MudIcon Icon="@Icons.Material.Filled.Security" Size="Size.Small" Class="mr-1" />
+                Cabinet cameras require badge reader integration for DEA compliance.
+                Vision-verified access logs will be cross-referenced with PrescriptionService.
+            </MudAlert>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="@(() => IsOpen = false)" Style="color: #78909c;">Cancel</MudButton>
+        <MudButton Variant="Variant.Filled" OnClick="Register"
+                   Disabled="@(string.IsNullOrEmpty(_name) || _registering)"
+                   Style="background-color: #42a5f5;">
+            @if (_registering)
+            {
+                <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-1" />
+            }
+            Register Device
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [Parameter] public bool IsOpen { get; set; }
+    [Parameter] public EventCallback<bool> IsOpenChanged { get; set; }
+    [Parameter] public EventCallback<VisionDeviceDto> OnDeviceRegistered { get; set; }
+
+    private string _name = "";
+    private DeviceType _type = DeviceType.IpCamera;
+    private CameraLocation _location = CameraLocation.Operatory;
+    private string? _locationName;
+    private string? _ipAddress;
+    private bool _supportsOcr;
+    private bool _registering;
+
+    private async Task Register()
+    {
+        _registering = true;
+        try
+        {
+            var device = await VisionService.RegisterDeviceAsync(new RegisterDeviceRequest
+            {
+                Name = _name,
+                Type = _type,
+                Location = _location,
+                LocationName = _locationName,
+                IpAddress = _ipAddress,
+                SupportsOcr = _supportsOcr
+            });
+
+            await OnDeviceRegistered.InvokeAsync(device);
+            IsOpen = false;
+            await IsOpenChanged.InvokeAsync(false);
+
+            // Reset form
+            _name = "";
+            _locationName = null;
+            _ipAddress = null;
+            _supportsOcr = false;
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Registration failed: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _registering = false;
+        }
+    }
+}

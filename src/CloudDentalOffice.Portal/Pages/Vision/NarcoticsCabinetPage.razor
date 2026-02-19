@@ -1,0 +1,247 @@
+@page "/vision/cabinet"
+@using CloudDentalOffice.Contracts.Vision
+@inject IVisionService VisionService
+@inject ISnackbar Snackbar
+
+<PageTitle>Narcotics Cabinet — Cloud Dental Office</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-4">
+
+    @* ── Header ── *@
+    <MudPaper Class="pa-4 mb-4" Style="background: linear-gradient(135deg, #1a2332 0%, #2d1b1b 100%); border-left: 4px solid #ef5350;">
+        <MudGrid>
+            <MudItem xs="12" sm="6">
+                <MudText Typo="Typo.h5" Style="color: #e0e0e0;">
+                    <MudIcon Icon="@Icons.Material.Filled.MedicalServices" Class="mr-2" Style="color: #ef5350;" />
+                    Controlled Substance Access Log
+                </MudText>
+                <MudText Typo="Typo.body2" Style="color: #90a4ae;">
+                    DEA Compliance · 21 CFR 1304 · Vision-Verified Access Control
+                </MudText>
+            </MudItem>
+            <MudItem xs="12" sm="6" Class="d-flex align-center justify-end gap-2">
+                <MudButton Variant="Variant.Outlined" Size="Size.Small"
+                           StartIcon="@Icons.Material.Filled.FileDownload"
+                           Style="border-color: #455a64; color: #b0bec5;"
+                           OnClick="ExportAuditLog">
+                    Export for DEA
+                </MudButton>
+                <MudDateRangePicker @bind-DateRange="_dateRange"\n                                    @bind-DateRange:after="OnDateRangeChanged"
+                                    Variant="Variant.Outlined"
+                                    Dense="true"
+                                    Style="max-width: 280px; color: #e0e0e0;" />
+            </MudItem>
+        </MudGrid>
+    </MudPaper>
+
+    @* ── Summary Cards ── *@
+    <MudGrid Class="mb-4">
+        <MudItem xs="6" sm="3">
+            <MudPaper Class="pa-3" Elevation="0" Style="background-color: #1e2a3a; border: 1px solid #2d3e50; text-align: center;">
+                <MudText Typo="Typo.h4" Style="color: #66bb6a;">@_totalAccesses</MudText>
+                <MudText Typo="Typo.caption" Style="color: #78909c;">Total Accesses</MudText>
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="6" sm="3">
+            <MudPaper Class="pa-3" Elevation="0" Style="background-color: #1e2a3a; border: 1px solid #2d3e50; text-align: center;">
+                <MudText Typo="Typo.h4" Style="color: #42a5f5;">@_verifiedAccesses</MudText>
+                <MudText Typo="Typo.caption" Style="color: #78909c;">Identity Verified</MudText>
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="6" sm="3">
+            <MudPaper Class="pa-3" Elevation="0" Style="background-color: #1e2a3a; border: 1px solid #2d3e50; text-align: center;">
+                <MudText Typo="Typo.h4" Style="@($"color: {(_alertCount > 0 ? "#ef5350" : "#66bb6a")};")">@_alertCount</MudText>
+                <MudText Typo="Typo.caption" Style="color: #78909c;">Alerts Triggered</MudText>
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="6" sm="3">
+            <MudPaper Class="pa-3" Elevation="0" Style="background-color: #1e2a3a; border: 1px solid #2d3e50; text-align: center;">
+                <MudText Typo="Typo.h4" Style="@($"color: {(_afterHoursCount > 0 ? "#ffa726" : "#66bb6a")};")">@_afterHoursCount</MudText>
+                <MudText Typo="Typo.caption" Style="color: #78909c;">After-Hours</MudText>
+            </MudPaper>
+        </MudItem>
+    </MudGrid>
+
+    @* ── Access Log Table ── *@
+    <MudPaper Elevation="0" Style="background-color: #1e2a3a; border: 1px solid #2d3e50;">
+        <MudToolBar Dense="true" Style="background-color: #152238;">
+            <MudText Typo="Typo.subtitle1" Style="color: #b0bec5;">
+                Access Timeline
+            </MudText>
+            <MudSpacer />
+            <MudToggleGroup T="string" @bind-Value="_severityFilter" Style="border-color: #455a64;">
+                <MudToggleItem Value="@("all")" Text="All" />
+                <MudToggleItem Value="@("alerts")" Text="Alerts Only" />
+                <MudToggleItem Value="@("critical")" Text="Critical" />
+            </MudToggleGroup>
+        </MudToolBar>
+
+        @if (_loading)
+        {
+            <MudProgressLinear Color="Color.Error" Indeterminate="true" Style="height: 2px;" />
+        }
+
+        <MudTable Items="@FilteredLogs" Hover="true" Dense="true"
+                  Style="background-color: transparent;" RowStyle="color: #cfd8dc;"
+                  T="CabinetAccessLogDto">
+            <HeaderContent>
+                <MudTh Style="color: #78909c;">Time</MudTh>
+                <MudTh Style="color: #78909c;">Provider</MudTh>
+                <MudTh Style="color: #78909c;">Badge</MudTh>
+                <MudTh Style="color: #78909c;">Duration</MudTh>
+                <MudTh Style="color: #78909c;">Active Rx</MudTh>
+                <MudTh Style="color: #78909c;">Appointment</MudTh>
+                <MudTh Style="color: #78909c;">Compliance</MudTh>
+                <MudTh Style="color: #78909c;">Severity</MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd DataLabel="Time">
+                    <MudText Typo="Typo.body2" Style="color: #e0e0e0;">
+                        @context.Timestamp.ToString("MM/dd HH:mm")
+                    </MudText>
+                    @if (context.IsAfterHours)
+                    {
+                        <MudChip T="string" Size="Size.Small" Color="Color.Warning"
+                                 Variant="Variant.Outlined" Style="font-size: 0.6rem;">
+                            AFTER HOURS
+                        </MudChip>
+                    }
+                </MudTd>
+                <MudTd DataLabel="Provider">
+                    <MudText Typo="Typo.body2" Style="@($"color: {(context.IdentityVerified ? "#e0e0e0" : "#ef5350")};")">
+                        @(context.ProviderName ?? "UNIDENTIFIED")
+                    </MudText>
+                </MudTd>
+                <MudTd DataLabel="Badge">
+                    @if (context.IdentityVerified)
+                    {
+                        <MudIcon Icon="@Icons.Material.Filled.Badge" Size="Size.Small" Style="color: #66bb6a;" />
+                        <MudText Typo="Typo.caption" Style="color: #90a4ae;">@context.BadgeId</MudText>
+                    }
+                    else
+                    {
+                        <MudIcon Icon="@Icons.Material.Filled.Warning" Size="Size.Small" Style="color: #ef5350;" />
+                        <MudText Typo="Typo.caption" Style="color: #ef5350;">No badge</MudText>
+                    }
+                </MudTd>
+                <MudTd DataLabel="Duration">
+                    <MudText Typo="Typo.body2" Style="@($"color: {(context.Duration.TotalSeconds > 60 ? "#ffa726" : "#90a4ae")};")">
+                        @FormatDuration(context.Duration)
+                    </MudText>
+                </MudTd>
+                <MudTd DataLabel="Active Rx">
+                    @if (context.HasActiveRx)
+                    {
+                        <MudTooltip Text="@context.PrescriptionDrugName">
+                            <MudIcon Icon="@Icons.Material.Filled.Medication" Size="Size.Small" Style="color: #66bb6a;" />
+                        </MudTooltip>
+                    }
+                    else
+                    {
+                        <MudIcon Icon="@Icons.Material.Filled.Close" Size="Size.Small" Style="color: #607d8b;" />
+                    }
+                </MudTd>
+                <MudTd DataLabel="Appointment">
+                    @if (context.HasActiveAppointment)
+                    {
+                        <MudTooltip Text="@context.AppointmentPatientName">
+                            <MudIcon Icon="@Icons.Material.Filled.EventAvailable" Size="Size.Small" Style="color: #66bb6a;" />
+                        </MudTooltip>
+                    }
+                    else
+                    {
+                        <MudIcon Icon="@Icons.Material.Filled.EventBusy" Size="Size.Small" Style="color: #607d8b;" />
+                    }
+                </MudTd>
+                <MudTd DataLabel="Compliance">
+                    <div class="d-flex gap-1">
+                        <MudTooltip Text="Identity Verified">
+                            <MudIcon Icon="@(context.IdentityVerified ? Icons.Material.Filled.CheckCircle : Icons.Material.Filled.Cancel)"
+                                     Size="Size.Small"
+                                     Style="@($"color: {(context.IdentityVerified ? "#66bb6a" : "#ef5350")};")"
+                                     />
+                        </MudTooltip>
+                        <MudTooltip Text="Two-Person Witness">
+                            <MudIcon Icon="@(context.TwoPersonWitnessVerified ? Icons.Material.Filled.Group : Icons.Material.Filled.PersonOff)"
+                                     Size="Size.Small"
+                                     Style="@($"color: {(context.TwoPersonWitnessVerified ? "#66bb6a" : "#ffa726")};")"
+                                     />
+                        </MudTooltip>
+                    </div>
+                </MudTd>
+                <MudTd DataLabel="Severity">
+                    <SeverityChip Severity="context.Severity" Message="@context.AlertMessage" />
+                </MudTd>
+            </RowTemplate>
+            <NoRecordsContent>
+                <MudText Typo="Typo.body2" Style="color: #607d8b;" Class="pa-4">
+                    No cabinet access events in selected date range
+                </MudText>
+            </NoRecordsContent>
+        </MudTable>
+    </MudPaper>
+</MudContainer>
+
+@code {
+    private bool _loading = true;
+    private string _severityFilter = "all";
+    private DateRange _dateRange = new(DateTime.Today.AddDays(-7), DateTime.Today);
+
+    private List<CabinetAccessLogDto> _logs = new();
+    private int _totalAccesses;
+    private int _verifiedAccesses;
+    private int _alertCount;
+    private int _afterHoursCount;
+
+    private IEnumerable<CabinetAccessLogDto> FilteredLogs => _severityFilter switch
+    {
+        "alerts" => _logs.Where(l => l.Severity >= AlertSeverity.Medium),
+        "critical" => _logs.Where(l => l.Severity >= AlertSeverity.High),
+        _ => _logs
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        _loading = true;
+        try
+        {
+            _logs = await VisionService.GetCabinetAccessLogsAsync(
+                from: _dateRange.Start,
+                to: _dateRange.End?.AddDays(1));
+
+            _totalAccesses = _logs.Count;
+            _verifiedAccesses = _logs.Count(l => l.IdentityVerified);
+            _alertCount = _logs.Count(l => l.Severity >= AlertSeverity.Medium);
+            _afterHoursCount = _logs.Count(l => l.IsAfterHours);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error loading cabinet logs: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task OnDateRangeChanged()
+    {
+        await LoadData();
+    }
+
+    private void ExportAuditLog()
+    {
+        // TODO: Generate CSV/PDF export for DEA inspection
+        Snackbar.Add("Export functionality coming soon", Severity.Info);
+    }
+
+    private static string FormatDuration(TimeSpan duration) =>
+        duration.TotalMinutes >= 1
+            ? $"{(int)duration.TotalMinutes}m {duration.Seconds}s"
+            : $"{duration.Seconds}s";
+}

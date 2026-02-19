@@ -1,0 +1,110 @@
+@using CloudDentalOffice.Contracts.Vision
+
+<MudPaper Class="@($"pa-2 {Class}")" Elevation="0"
+          Style="@($"background-color: #152238; border-left: 3px solid {_borderColor}; border-radius: 4px;")">
+    <div class="d-flex justify-space-between align-center">
+        <div class="d-flex align-center gap-1">
+            <MudIcon Icon="@EventIcon" Size="Size.Small" Style="@($"color: {_borderColor};")" />
+            @if (Compact)
+            {
+                <MudText Typo="Typo.caption" Style="color: #b0bec5;">
+                    @Event.EventType
+                </MudText>
+            }
+            else
+            {
+                <MudText Typo="Typo.body2" Style="color: #e0e0e0;">
+                    @Event.EventType
+                </MudText>
+            }
+        </div>
+        <MudText Typo="Typo.caption" Style="color: #607d8b;">
+            @FormatTime(Event.Timestamp)
+        </MudText>
+    </div>
+
+    @if (Event.Detections.Any())
+    {
+        <div class="d-flex gap-1 flex-wrap mt-1">
+            @foreach (var det in Event.Detections.Take(4))
+            {
+                <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined"
+                         Style="@($"border-color: {GetDetectionColor(det.DetectionClass)}; color: {GetDetectionColor(det.DetectionClass)}; font-size: 0.6rem; height: 18px;")">
+                    @det.DetectionClass @((det.Confidence * 100).ToString("F0"))%
+                </MudChip>
+            }
+            @if (Event.Detections.Count > 4)
+            {
+                <MudText Typo="Typo.caption" Style="color: #607d8b;">
+                    +@(Event.Detections.Count - 4) more
+                </MudText>
+            }
+        </div>
+    }
+
+    @if (Event.AlertMessage != null)
+    {
+        <MudText Typo="Typo.caption" Class="mt-1"
+                 Style="@($"color: {(Event.AlertSeverity >= AlertSeverity.High ? "#ef5350" : "#ffa726")};")">            @Event.AlertMessage
+        </MudText>
+    }
+
+    @if (!Compact && Event.PatientName != null)
+    {
+        <MudText Typo="Typo.caption" Style="color: #78909c;" Class="mt-1">
+            Patient: @Event.PatientName · @Event.DeviceName
+        </MudText>
+    }
+</MudPaper>
+
+@code {
+    [Parameter, EditorRequired] public VisionEventDto Event { get; set; } = null!;
+    [Parameter] public bool Compact { get; set; }
+    [Parameter] public string? Class { get; set; }
+
+    private string _borderColor => Event.AlertSeverity switch
+    {
+        AlertSeverity.Critical => "#d32f2f",
+        AlertSeverity.High => "#ef5350",
+        AlertSeverity.Medium => "#ffa726",
+        AlertSeverity.Low => "#42a5f5",
+        _ => "#37474f"
+    };
+
+    private string EventIcon => Event.EventType switch
+    {
+        VisionEventType.Detection => Icons.Material.Filled.CenterFocusStrong,
+        VisionEventType.CabinetAccess => Icons.Material.Filled.MedicalServices,
+        VisionEventType.ConsentCapture => Icons.Material.Filled.Verified,
+        VisionEventType.InsuranceCardScan => Icons.Material.Filled.CreditCard,
+        VisionEventType.ProcedureObservation => Icons.Material.Filled.Biotech,
+        VisionEventType.MotionAlert => Icons.Material.Filled.DirectionsRun,
+        VisionEventType.DeviceHeartbeat => Icons.Material.Filled.FavoriteBorder,
+        VisionEventType.SystemAlert => Icons.Material.Filled.Warning,
+        _ => Icons.Material.Filled.Circle
+    };
+
+    private static string GetDetectionColor(DetectionClass cls) => cls switch
+    {
+        DetectionClass.Person => "#ef5350",
+        DetectionClass.Handpiece or DetectionClass.DentalMirror or DetectionClass.Explorer
+            or DetectionClass.ScalerCurette => "#42a5f5",
+        DetectionClass.ForcepsExtraction or DetectionClass.Elevator => "#ffa726",
+        DetectionClass.SyringeAnesthetic or DetectionClass.SyringeIrrigation => "#ce93d8",
+        DetectionClass.SutureKit => "#f48fb1",
+        DetectionClass.InsuranceCard or DetectionClass.ConsentForm => "#66bb6a",
+        DetectionClass.CabinetDoorOpen => "#ef5350",
+        DetectionClass.CabinetDoorClosed => "#66bb6a",
+        DetectionClass.BadgeScan => "#42a5f5",
+        DetectionClass.MedicationVial => "#ffa726",
+        _ => "#78909c"
+    };
+
+    private static string FormatTime(DateTime ts)
+    {
+        var elapsed = DateTime.UtcNow - ts;
+        return elapsed.TotalSeconds < 60 ? $"{(int)elapsed.TotalSeconds}s"
+            : elapsed.TotalMinutes < 60 ? $"{(int)elapsed.TotalMinutes}m"
+            : ts.ToString("HH:mm");
+    }
+}
