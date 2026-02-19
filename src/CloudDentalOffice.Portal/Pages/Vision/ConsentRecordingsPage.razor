@@ -1,0 +1,178 @@
+@page "/vision/consent"
+@using CloudDentalOffice.Contracts.Vision
+@inject IVisionService VisionService
+@inject ISnackbar Snackbar
+
+<PageTitle>Consent Recordings — Cloud Dental Office</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Large" Class="mt-4">
+    <MudPaper Class="pa-4 mb-4" Style="background: linear-gradient(135deg, #1a2332 0%, #0d2137 100%); border-left: 4px solid #42a5f5;">
+        <MudText Typo="Typo.h5" Style="color: #e0e0e0;">
+            <MudIcon Icon="@Icons.Material.Filled.Verified" Class="mr-2" Style="color: #42a5f5;" />
+            Consent Recordings
+        </MudText>
+        <MudText Typo="Typo.body2" Style="color: #78909c;">
+            Video-verified informed consent · Tamper-evident · Patient chart linked
+        </MudText>
+    </MudPaper>
+
+    <MudTable Items="_recordings" Hover="true" Dense="true"
+              Style="background-color: #1e2a3a; border: 1px solid #2d3e50;"
+              RowStyle="color: #cfd8dc;" T="ConsentRecordingDto">
+        <ToolBarContent>
+            <MudText Typo="Typo.subtitle1" Style="color: #b0bec5;">Recordings</MudText>
+            <MudSpacer />
+            <MudButton Variant="Variant.Outlined" Size="Size.Small"
+                       StartIcon="@Icons.Material.Filled.FiberManualRecord"
+                       Style="border-color: #ef5350; color: #ef5350;"
+                       OnClick="@(() => _showStartRecording = true)">
+                Start Recording
+            </MudButton>
+        </ToolBarContent>
+        <HeaderContent>
+            <MudTh Style="color: #78909c;">Patient</MudTh>
+            <MudTh Style="color: #78909c;">Type</MudTh>
+            <MudTh Style="color: #78909c;">Date</MudTh>
+            <MudTh Style="color: #78909c;">Duration</MudTh>
+            <MudTh Style="color: #78909c;">Status</MudTh>
+            <MudTh Style="color: #78909c;">Verification</MudTh>
+            <MudTh Style="color: #78909c;">Actions</MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd>
+                <MudText Typo="Typo.body2" Style="color: #e0e0e0; font-weight: 500;">@context.PatientName</MudText>
+                <MudText Typo="Typo.caption" Style="color: #78909c;">Dr. @context.ProviderName</MudText>
+            </MudTd>
+            <MudTd>
+                <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined"
+                         Style="border-color: #455a64; color: #b0bec5; font-size: 0.7rem;">
+                    @context.ConsentType
+                </MudChip>
+            </MudTd>
+            <MudTd>@context.StartedAt.ToString("MM/dd/yy HH:mm")</MudTd>
+            <MudTd>@(context.Duration?.ToString(@"m\:ss") ?? "—")</MudTd>
+            <MudTd>
+                <MudChip T="string" Size="Size.Small"
+                         Color="@(context.Status == ConsentStatus.Captured ? Color.Success
+                             : context.Status == ConsentStatus.InProgress ? Color.Warning
+                             : Color.Default)"
+                         Variant="Variant.Outlined" Style="font-size: 0.7rem;">
+                    @context.Status
+                </MudChip>
+            </MudTd>
+            <MudTd>
+                <div class="d-flex gap-1">
+                    <MudTooltip Text="Patient Detected">
+                        <MudIcon Icon="@(context.PatientDetected ? Icons.Material.Filled.Person : Icons.Material.Filled.PersonOff)"
+                                 Size="Size.Small"
+                                 Style="@($"color: {(context.PatientDetected ? "#66bb6a" : "#ef5350")};")"
+                                 />
+                    </MudTooltip>
+                    <MudTooltip Text="Consent Form Detected">
+                        <MudIcon Icon="@(context.ConsentFormDetected ? Icons.Material.Filled.Description : Icons.Material.Filled.FilePresent)"
+                                 Size="Size.Small"
+                                 Style="@($"color: {(context.ConsentFormDetected ? "#66bb6a" : "#ffa726")};")"
+                                 />
+                    </MudTooltip>
+                    <MudTooltip Text="Provider Present">
+                        <MudIcon Icon="@(context.ProviderDetected ? Icons.Material.Filled.MedicalServices : Icons.Material.Filled.PersonOff)"
+                                 Size="Size.Small"
+                                 Style="@($"color: {(context.ProviderDetected ? "#66bb6a" : "#ffa726")};")"
+                                 />
+                    </MudTooltip>
+                </div>
+            </MudTd>
+            <MudTd>
+                @if (!string.IsNullOrEmpty(context.VideoUrl))
+                {
+                    <MudIconButton Icon="@Icons.Material.Filled.PlayCircle" Size="Size.Small"
+                                   Style="color: #42a5f5;" Title="Play Recording" />
+                }
+                @if (context.Status == ConsentStatus.InProgress)
+                {
+                    <MudIconButton Icon="@Icons.Material.Filled.Stop" Size="Size.Small"
+                                   Style="color: #ef5350;" Title="Stop Recording"
+                                   OnClick="@(() => CompleteRecording(context.Id))" />
+                }
+            </MudTd>
+        </RowTemplate>
+        <NoRecordsContent>
+            <MudText Typo="Typo.body2" Style="color: #607d8b;" Class="pa-4">
+                No consent recordings yet
+            </MudText>
+        </NoRecordsContent>
+    </MudTable>
+
+    @* ── Start Recording Dialog (simplified) ── *@
+    <MudDialog @bind-Visible="_showStartRecording"
+               Options="@(new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true })">
+        <TitleContent>
+            <MudText Typo="Typo.h6" Style="color: #e0e0e0;">Start Consent Recording</MudText>
+        </TitleContent>
+        <DialogContent>
+            <MudSelect @bind-Value="_newConsentType" Label="Consent Type" Variant="Variant.Outlined"
+                       Style="color: #e0e0e0;" Class="mb-3">
+                <MudSelectItem Value="@("General Treatment")">General Treatment</MudSelectItem>
+                <MudSelectItem Value="@("Extraction")">Extraction</MudSelectItem>
+                <MudSelectItem Value="@("Sedation")">Sedation / Anesthesia</MudSelectItem>
+                <MudSelectItem Value="@("Implant")">Implant Surgery</MudSelectItem>
+                <MudSelectItem Value="@("Orthodontic")">Orthodontic Treatment</MudSelectItem>
+                <MudSelectItem Value="@("Root Canal")">Endodontic / Root Canal</MudSelectItem>
+            </MudSelect>
+            <MudAlert Severity="Severity.Info" Dense="true"
+                      Style="background-color: #0d2137; color: #90caf9;">
+                Recording will capture video from the operatory camera with patient and form detection verification.
+                Non-relevant faces will be automatically blurred.
+            </MudAlert>
+        </DialogContent>
+        <DialogActions>
+            <MudButton OnClick="@(() => _showStartRecording = false)" Style="color: #78909c;">Cancel</MudButton>
+            <MudButton Variant="Variant.Filled" StartIcon="@Icons.Material.Filled.FiberManualRecord"
+                       Style="background-color: #ef5350;" OnClick="StartRecording">
+                Start Recording
+            </MudButton>
+        </DialogActions>
+    </MudDialog>
+</MudContainer>
+
+@code {
+    private List<ConsentRecordingDto> _recordings = new();
+    private bool _showStartRecording;
+    private string _newConsentType = "General Treatment";
+
+    protected override async Task OnInitializedAsync()
+    {
+        try { _recordings = await VisionService.GetConsentRecordingsAsync(limit: 50); }
+        catch (Exception ex) { Snackbar.Add($"Error: {ex.Message}", Severity.Error); }
+    }
+
+    private async Task StartRecording()
+    {
+        try
+        {
+            var recording = await VisionService.StartConsentRecordingAsync(new StartConsentRecordingRequest
+            {
+                DeviceId = Guid.Empty, // TODO: select operatory camera
+                PatientId = Guid.Empty, // TODO: from patient context
+                ProviderId = Guid.Empty, // TODO: from auth context
+                ConsentType = _newConsentType
+            });
+            _recordings.Insert(0, recording);
+            _showStartRecording = false;
+            Snackbar.Add("Consent recording started", Severity.Success);
+        }
+        catch (Exception ex) { Snackbar.Add($"Error: {ex.Message}", Severity.Error); }
+    }
+
+    private async Task CompleteRecording(Guid id)
+    {
+        try
+        {
+            var updated = await VisionService.CompleteConsentRecordingAsync(id);
+            var idx = _recordings.FindIndex(r => r.Id == id);
+            if (idx >= 0) _recordings[idx] = updated;
+            Snackbar.Add("Recording completed and saved", Severity.Success);
+        }
+        catch (Exception ex) { Snackbar.Add($"Error: {ex.Message}", Severity.Error); }
+    }
+}

@@ -79,6 +79,9 @@
                 <MudNavLink Href="/vision/cabinet" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Lock">
                     Cabinet Access
                 </MudNavLink>
+                <MudNavLink Href="/vision/clinical-notes" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.EditNote">
+                    Clinical Notes
+                </MudNavLink>
             </MudNavGroup>
             
             <!-- EDI & Claims -->
@@ -97,9 +100,6 @@
                 </MudNavLink>
                 <MudNavLink Href="/prior-auth" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Approval">
                     Prior Auth (278)
-                </MudNavLink>
-                <MudNavLink Href="/enrollment" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.PersonAdd">
-                    Enrollment (834)
                 </MudNavLink>
                 <MudNavLink Href="/remittance" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Payment">
                     Remittance (835)
@@ -123,6 +123,18 @@
                         Style="border-left: 3px solid transparent; transition: all 0.3s ease;">
                 Providers
             </MudNavLink>
+            
+            <!-- Admin (for Admin role only) -->
+            <AuthorizeView Roles="Admin">
+                <MudNavGroup Title="Administration" Icon="@Icons.Material.Filled.AdminPanelSettings" Expanded="false">
+                    <MudNavLink Href="/admin/organization/settings" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Business">
+                        Organization Settings
+                    </MudNavLink>
+                    <MudNavLink Href="/admin/users" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.People">
+                        User Management
+                    </MudNavLink>
+                </MudNavGroup>
+            </AuthorizeView>
             
             <!-- Settings -->
             <MudNavLink Href="/settings" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Settings"

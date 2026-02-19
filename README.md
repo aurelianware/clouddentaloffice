@@ -173,6 +173,7 @@ The VisionService supports detection of:
 │                   Portal UI — AI Vision Pages                  │
 │  • Vision Dashboard  • Device Management  • Events & Alerts    │
 │  • Insurance Scans   • Consent Recording  • Cabinet Access     │
+│  • Clinical Notes                                              │
 └───────────────────────────────────────────────────────────────┘
 ```
 

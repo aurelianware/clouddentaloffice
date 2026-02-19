@@ -1,0 +1,226 @@
+@page "/vision/clinical-notes"
+@using CloudDentalOffice.Contracts.Vision
+@inject IVisionService VisionService
+@inject ISnackbar Snackbar
+
+<PageTitle>Clinical Notes — Cloud Dental Office</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Large" Class="mt-4">
+    <MudPaper Class="pa-4 mb-4" Style="background: linear-gradient(135deg, #1a2332 0%, #2a1f0d 100%); border-left: 4px solid #ffa726;">
+        <MudText Typo="Typo.h5" Style="color: #e0e0e0;">
+            <MudIcon Icon="@Icons.Material.Filled.EditNote" Class="mr-2" Style="color: #ffa726;" />
+            AI-Assisted Clinical Notes
+        </MudText>
+        <MudText Typo="Typo.body2" Style="color: #78909c;">
+            Vision-observed procedures · LLM-drafted notes · Provider review required
+        </MudText>
+    </MudPaper>
+
+    @* ── Notes List ── *@
+    <MudGrid>
+        <MudItem xs="12" md="@(_selectedNote == null ? 12 : 5)">
+            <MudPaper Elevation="0" Style="background-color: #1e2a3a; border: 1px solid #2d3e50;">
+                <MudToolBar Dense="true" Style="background-color: #152238;">
+                    <MudText Typo="Typo.subtitle1" Style="color: #b0bec5;">Draft Notes</MudText>
+                    <MudSpacer />
+                    <MudToggleGroup T="string" @bind-Value="_statusFilter" Style="border-color: #455a64;">
+                        <MudToggleItem Value="@("pending")" Text="Pending Review" />
+                        <MudToggleItem Value="@("approved")" Text="Approved" />
+                        <MudToggleItem Value="@("all")" Text="All" />
+                    </MudToggleGroup>
+                </MudToolBar>
+
+                <MudList T="ClinicalNoteDraftDto" Dense="true" Style="background-color: transparent;">
+                    @foreach (var note in FilteredNotes)
+                    {
+                        <MudListItem OnClick="@(() => _selectedNote = note)"
+                                     Style="@($"border-left: 3px solid {(note.ApprovedByProvider ? "#66bb6a" : "#ffa726")}; margin: 4px 8px; background-color: {(_selectedNote?.Id == note.Id ? "#253040" : "transparent")}; border-radius: 4px;")">
+                            <div class="d-flex justify-space-between align-center">
+                                <div>
+                                    <MudText Typo="Typo.body2" Style="color: #e0e0e0; font-weight: 500;">
+                                        @(note.CdtCode ?? "—") @(note.ProcedureName ?? "Procedure Note")
+                                    </MudText>
+                                    <MudText Typo="Typo.caption" Style="color: #78909c;">
+                                        @note.ObservationStart.ToString("MM/dd/yy HH:mm") ·
+                                        @note.Observations.Count observations
+                                    </MudText>
+                                </div>
+                                <div>
+                                    @if (note.ApprovedByProvider)
+                                    {
+                                        <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Size="Size.Small" Style="color: #66bb6a;" />
+                                    }
+                                    else
+                                    {
+                                        <MudChip T="string" Size="Size.Small" Color="Color.Warning"
+                                                 Variant="Variant.Outlined" Style="font-size: 0.65rem;">
+                                            REVIEW
+                                        </MudChip>
+                                    }
+                                </div>
+                            </div>
+                        </MudListItem>
+                    }
+                    @if (!FilteredNotes.Any())
+                    {
+                        <MudListItem>
+                            <MudText Typo="Typo.body2" Style="color: #607d8b; text-align: center;" Class="pa-4">
+                                No notes match the current filter
+                            </MudText>
+                        </MudListItem>
+                    }
+                </MudList>
+            </MudPaper>
+        </MudItem>
+
+        @* ── Note Detail / Review ── *@
+        @if (_selectedNote != null)
+        {
+            <MudItem xs="12" md="7">
+                <MudPaper Class="pa-4" Elevation="0"
+                          Style="@($"background-color: #1e2a3a; border: 1px solid {(_selectedNote.ApprovedByProvider ? "#1b5e20" : "#e65100")};")">
+
+                    <div class="d-flex justify-space-between align-center mb-3">
+                        <div>
+                            <MudText Typo="Typo.h6" Style="color: #e0e0e0;">
+                                @(_selectedNote.CdtCode ?? "—") @(_selectedNote.ProcedureName ?? "Procedure Note")
+                            </MudText>
+                            <MudText Typo="Typo.caption" Style="color: #78909c;">
+                                Observed @_selectedNote.ObservationStart.ToString("MM/dd/yy HH:mm")
+                                – @_selectedNote.ObservationEnd.ToString("HH:mm")
+                            </MudText>
+                        </div>
+                        <MudIconButton Icon="@Icons.Material.Filled.Close" Size="Size.Small"
+                                       Style="color: #78909c;" OnClick="@(() => _selectedNote = null)" />
+                    </div>
+
+                    @* ── Observation Timeline ── *@
+                    @if (_selectedNote.Observations.Any())
+                    {
+                        <MudText Typo="Typo.subtitle2" Class="mb-2" Style="color: #78909c;">
+                            <MudIcon Icon="@Icons.Material.Filled.Timeline" Size="Size.Small" Class="mr-1" />
+                            Procedure Observations
+                        </MudText>
+                        <MudPaper Class="pa-2 mb-3" Elevation="0" Style="background-color: #152238; max-height: 200px; overflow-y: auto;">
+                            @foreach (var obs in _selectedNote.Observations)
+                            {
+                                <div class="d-flex align-center gap-2 pa-1" style="border-bottom: 1px solid #1e2a3a;">
+                                    <MudText Typo="Typo.caption" Style="color: #607d8b; min-width: 50px;">
+                                        @obs.Timestamp.ToString("HH:mm:ss")
+                                    </MudText>
+                                    <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined"
+                                             Style="border-color: #455a64; color: #b0bec5; font-size: 0.65rem;">
+                                        @obs.DetectedInstrument
+                                    </MudChip>
+                                    <MudText Typo="Typo.caption" Style="color: #90a4ae;">
+                                        @obs.InferredAction
+                                    </MudText>
+                                    <MudSpacer />
+                                    <MudText Typo="Typo.caption" Style="color: #607d8b;">
+                                        @((obs.Confidence * 100).ToString("F0"))%
+                                    </MudText>
+                                </div>
+                            }
+                        </MudPaper>
+                    }
+
+                    @* ── AI-Generated Note ── *@
+                    <MudText Typo="Typo.subtitle2" Class="mb-2" Style="color: #78909c;">
+                        <MudIcon Icon="@Icons.Material.Filled.AutoAwesome" Size="Size.Small" Class="mr-1" Style="color: #ffa726;" />
+                        AI-Generated Note
+                    </MudText>
+
+                    @if (_selectedNote.ApprovedByProvider)
+                    {
+                        <MudPaper Class="pa-3 mb-3" Elevation="0"
+                                  Style="background-color: #152238; border-left: 3px solid #1b5e20;">
+                            <MudText Typo="Typo.body2" Style="color: #c8e6c9; white-space: pre-wrap;">
+                                @_selectedNote.DraftNoteText
+                            </MudText>
+                        </MudPaper>
+                        <MudAlert Severity="Severity.Success" Dense="true"
+                                  Style="background-color: #0d2137; color: #81c784;">
+                            <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Size="Size.Small" Class="mr-1" />
+                            Approved by provider on @(_selectedNote.ApprovedAt?.ToString("MM/dd/yy HH:mm"))
+                        </MudAlert>
+                    }
+                    else
+                    {
+                        <MudTextField @bind-Value="_editedNoteText"
+                                      Lines="8" Variant="Variant.Outlined"
+                                      Style="color: #e0e0e0; background-color: #152238;"
+                                      Placeholder="AI-generated note text..."
+                                      Class="mb-3" />
+
+                        <MudAlert Severity="Severity.Warning" Dense="true" Class="mb-3"
+                                  Style="background-color: #2a1f0d; color: #ffcc80;">
+                            <MudIcon Icon="@Icons.Material.Filled.Warning" Size="Size.Small" Class="mr-1" />
+                            This note was AI-generated from vision observations. Provider review and approval required before saving to patient chart.
+                        </MudAlert>
+
+                        <div class="d-flex gap-2 justify-end">
+                            <MudButton Variant="Variant.Outlined" Size="Size.Small"
+                                       StartIcon="@Icons.Material.Filled.Refresh"
+                                       Style="border-color: #455a64; color: #b0bec5;"
+                                       OnClick="RegenerateNote">
+                                Regenerate
+                            </MudButton>
+                            <MudButton Variant="Variant.Filled" Size="Size.Small"
+                                       StartIcon="@Icons.Material.Filled.CheckCircle"
+                                       Style="background-color: #66bb6a; color: #fff;"
+                                       OnClick="ApproveNote">
+                                Approve & Save to Chart
+                            </MudButton>
+                        </div>
+                    }
+                </MudPaper>
+            </MudItem>
+        }
+    </MudGrid>
+</MudContainer>
+
+@code {
+    private List<ClinicalNoteDraftDto> _notes = new();
+    private ClinicalNoteDraftDto? _selectedNote;
+    private string _statusFilter = "pending";
+    private string _editedNoteText = "";
+
+    private IEnumerable<ClinicalNoteDraftDto> FilteredNotes => _statusFilter switch
+    {
+        "pending" => _notes.Where(n => !n.ApprovedByProvider),
+        "approved" => _notes.Where(n => n.ApprovedByProvider),
+        _ => _notes
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        try { _notes = await VisionService.GetClinicalNotesAsync(limit: 50); }
+        catch (Exception ex) { Snackbar.Add($"Error: {ex.Message}", Severity.Error); }
+    }
+
+    private void SelectNote(ClinicalNoteDraftDto note)
+    {
+        _selectedNote = note;
+        _editedNoteText = note.DraftNoteText ?? "";
+    }
+
+    private async Task ApproveNote()
+    {
+        if (_selectedNote == null) return;
+        try
+        {
+            var approved = await VisionService.ApproveClinicalNoteAsync(_selectedNote.Id);
+            var idx = _notes.FindIndex(n => n.Id == _selectedNote.Id);
+            if (idx >= 0) _notes[idx] = approved;
+            _selectedNote = approved;
+            Snackbar.Add("Clinical note approved and saved to patient chart", Severity.Success);
+        }
+        catch (Exception ex) { Snackbar.Add($"Error: {ex.Message}", Severity.Error); }
+    }
+
+    private void RegenerateNote()
+    {
+        // TODO: call Azure OpenAI to regenerate with different prompt
+        Snackbar.Add("Note regeneration requires Azure OpenAI configuration", Severity.Info);
+    }
+}
