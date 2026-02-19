@@ -86,3 +86,17 @@ public class BillingStatement
     public decimal TotalPayments { get; set; }
     public decimal Balance { get; set; }
 }
+
+public interface IOrganizationService
+{
+    Task<Organization?> GetOrganizationByIdAsync(int organizationId);
+    Task<Organization?> GetOrganizationByTenantIdAsync(string tenantId);
+    Task<Organization?> GetOrganizationByAzureAdTenantIdAsync(string azureAdTenantId);
+    Task<Organization> CreateOrganizationAsync(Organization organization);
+    Task<Organization> UpdateOrganizationAsync(Organization organization);
+    Task<List<User>> GetOrganizationUsersAsync(int organizationId);
+    Task<User> InviteUserAsync(int organizationId, string email, string role, int invitedByUserId);
+    Task RemoveUserAsync(int organizationId, int userId);
+    Task<bool> CanUserInviteAsync(int userId);
+    Task UpdateOrganizationSettingsAsync(int organizationId, string settingsJson);
+}
