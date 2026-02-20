@@ -401,19 +401,7 @@ spec:
                   name: cdo-app-secrets
                   key: ConnectionStrings__PrescriptionDb
             - name: ErxProvider
-              value: DoseSpot
-            - name: DoseSpot__ClinicId
-              valueFrom:
-                secretKeyRef:
-                  name: cdo-app-secrets
-                  key: DoseSpot__ClinicId
-            - name: DoseSpot__ClinicKey
-              valueFrom:
-                secretKeyRef:
-                  name: cdo-app-secrets
-                  key: DoseSpot__ClinicKey
-            - name: DoseSpot__UseSandbox
-              value: "false"
+              value: Mock
 ---
 apiVersion: v1
 kind: Service
@@ -459,31 +447,11 @@ spec:
                   name: cdo-app-secrets
                   key: ConnectionStrings__VisionDb
             - name: OcrProvider
-              value: AzureAiVision
+              value: Mock
             - name: CorrelationProvider
-              value: Live
+              value: Mock
             - name: ApiGatewayUrl
               value: http://api-gateway:5200
-            - name: AzureAiVision__Endpoint
-              valueFrom:
-                secretKeyRef:
-                  name: cdo-app-secrets
-                  key: AzureAiVision__Endpoint
-            - name: AzureAiVision__ApiKey
-              valueFrom:
-                secretKeyRef:
-                  name: cdo-app-secrets
-                  key: AzureAiVision__ApiKey
-            - name: AzureBlobStorage__AccountName
-              valueFrom:
-                secretKeyRef:
-                  name: cdo-app-secrets
-                  key: AzureBlobStorage__AccountName
-            - name: AzureBlobStorage__SasToken
-              valueFrom:
-                secretKeyRef:
-                  name: cdo-app-secrets
-                  key: AzureBlobStorage__SasToken
 ---
 apiVersion: v1
 kind: Service
