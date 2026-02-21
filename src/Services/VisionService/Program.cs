@@ -144,14 +144,22 @@ app.MapVisionEndpoints();
 app.MapHub<VisionHub>("/hubs/vision");
 app.MapHealthChecks("/health");
 
-// ── Database Init (dev only) ────────────────────────────────────────────────
+// ── Database Init ───────────────────────────────────────────────────────────
 
-if (app.Environment.IsDevelopment())
+try
 {
     using var scope = app.Services.CreateScope();
     var db = scope.ServiceProvider.GetRequiredService<VisionDbContext>();
+    var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+    
+    logger.LogInformation("Ensuring database is created...");
     await db.Database.EnsureCreatedAsync();
-    // TODO: Replace with EF Core migrations for production
+    logger.LogInformation("Database initialization completed successfully");
+}
+catch (Exception ex)
+{
+    var logger = app.Services.GetRequiredService<ILogger<Program>>();
+    logger.LogError(ex, "Failed to initialize database. Service will continue but may fail health checks.");
 }
 
 app.Run();

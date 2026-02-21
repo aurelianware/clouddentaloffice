@@ -115,14 +115,32 @@ builder.Services.AddCors(options =>
 
 var app = builder.Build();
 
-// ── Database initialization (dev only) ──────────────────────────────────────
+// ── Database initialization ─────────────────────────────────────────────────
 
-if (app.Environment.IsDevelopment())
+try
 {
     using var scope = app.Services.CreateScope();
     var db = scope.ServiceProvider.GetRequiredService<PrescriptionDbContext>();
+    var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+    
+    logger.LogInformation("Ensuring database is created...");
     await db.Database.EnsureCreatedAsync();
+    logger.LogInformation("Database initialization completed successfully");
+}
+catch (Exception ex)
+{
+    var logger = app.Services.GetRequiredService<ILogger<Program>>();
+    logger.LogError(ex, "Failed to initialize database. Service will continue but may fail health checks.");
+}
 
+if (app.Environment.IsDevelopment())
+{
+    app.UseSwagger();
+    app.UseSwaggerUI();
+}
+else
+{
+    // Enable Swagger in production for API documentation
     app.UseSwagger();
     app.UseSwaggerUI();
 }

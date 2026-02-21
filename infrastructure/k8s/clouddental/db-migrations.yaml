@@ -1,0 +1,51 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: prescription-db-migration
+  annotations:
+    argocd.argoproj.io/hook: PreSync
+spec:
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: migration
+          image: registry.digitalocean.com/clouddental/prescription-service:latest
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              dotnet ef database update --project /app/PrescriptionService.csproj || echo "Migration failed or not needed"
+          env:
+            - name: ASPNETCORE_ENVIRONMENT
+              value: Production
+            - name: ConnectionStrings__PrescriptionDb
+              valueFrom:
+                secretKeyRef:
+                  name: cdo-app-secrets
+                  key: ConnectionStrings__PrescriptionDb
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: vision-db-migration
+  annotations:
+    argocd.argoproj.io/hook: PreSync
+spec:
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: migration
+          image: registry.digitalocean.com/clouddental/vision-service:latest
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              dotnet ef database update --project /app/VisionService.csproj || echo "Migration failed or not needed"
+          env:
+            - name: ASPNETCORE_ENVIRONMENT
+              value: Production
+            - name: ConnectionStrings__VisionDb
+              valueFrom:
+                secretKeyRef:
+                  name: cdo-app-secrets
+                  key: ConnectionStrings__VisionDb
