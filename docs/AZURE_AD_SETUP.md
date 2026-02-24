@@ -47,7 +47,7 @@ The system now supports two authentication modes:
    - **Supported account types**: `Accounts in any organizational directory (Any Azure AD directory - Multitenant)`
    - **Redirect URI**: 
      - Platform: `Web`
-     - URI: `https://yourdomain.com/signin-oidc` (for production)
+     - URI: `https://yportal.clouddentaloffice.com/signin-oidc` (for production)
      - Add `https://localhost:7001/signin-oidc` for development
 
 ### 1.2 Configure API Permissions

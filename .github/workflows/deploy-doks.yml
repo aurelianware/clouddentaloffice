@@ -1,9 +1,10 @@
 name: Deploy to DOKS
 
 on:
-  push:
-    branches:
-      - main
+  # Disabled — uncomment to re-enable DOKS deployment
+  # push:
+  #   branches:
+  #     - main
   workflow_dispatch:
 
 permissions:

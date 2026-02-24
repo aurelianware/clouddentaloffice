@@ -1,0 +1,224 @@
+name: Deploy to Azure Container Apps
+
+# Runs on every push to main (alongside the existing deploy-doks.yml pipeline).
+# Requires a one-time infrastructure setup — see infrastructure/azure/README below.
+#
+# Required GitHub repository secrets:
+#   AZURE_CLIENT_ID        – App Registration / service principal client ID (used for OIDC login)
+#   AZURE_TENANT_ID        – Azure AD tenant ID
+#   AZURE_SUBSCRIPTION_ID  – Azure subscription ID
+#   AZURE_RESOURCE_GROUP   – Resource group containing the Container Apps (e.g. cdo-rg)
+#   ACR_NAME               – Azure Container Registry name (e.g. cdoacr from Bicep output)
+#   ACR_LOGIN_SERVER       – ACR login server (e.g. cdoacr.azurecr.io from Bicep output)
+#
+# One-time infrastructure setup (run locally, not in CI):
+#   az group create --name cdo-rg --location eastus
+#   az deployment group create \
+#     --resource-group cdo-rg \
+#     --template-file infrastructure/azure/main.bicep \
+#     --parameters @infrastructure/azure/parameters.bicepparam
+#
+# After the first Bicep deploy, note the outputs:
+#   acrName, acrLoginServer → set as ACR_NAME / ACR_LOGIN_SERVER secrets
+#   portalFqdn              → your app's public URL
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  IMAGE_TAG: ${{ github.sha }}
+  RESOURCE_GROUP: ${{ secrets.AZURE_RESOURCE_GROUP }}
+
+permissions:
+  id-token: write   # Required for OIDC token exchange with Azure
+  contents: read
+
+jobs:
+  build-and-deploy:
+    name: Build, Push & Deploy
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Authenticate to Azure using OIDC (no long-lived credentials stored)
+      # Pre-requisite: configure federated credential on your App Registration:
+      #   Subject: repo:<org>/<repo>:ref:refs/heads/main
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Login to Azure Container Registry
+        run: az acr login --name ${{ secrets.ACR_NAME }}
+
+      # ── Build & push all service images ──────────────────────────────────────
+
+      - name: Build and push portal
+        run: |
+          docker build -f infrastructure/docker/Portal.Dockerfile \
+            -t ${{ secrets.ACR_LOGIN_SERVER }}/portal:${{ env.IMAGE_TAG }} \
+            -t ${{ secrets.ACR_LOGIN_SERVER }}/portal:latest .
+          docker push ${{ secrets.ACR_LOGIN_SERVER }}/portal:${{ env.IMAGE_TAG }}
+          docker push ${{ secrets.ACR_LOGIN_SERVER }}/portal:latest
+
+      - name: Build and push api-gateway
+        run: |
+          docker build -f infrastructure/docker/ApiGateway.Dockerfile \
+            -t ${{ secrets.ACR_LOGIN_SERVER }}/api-gateway:${{ env.IMAGE_TAG }} \
+            -t ${{ secrets.ACR_LOGIN_SERVER }}/api-gateway:latest .
+          docker push ${{ secrets.ACR_LOGIN_SERVER }}/api-gateway:${{ env.IMAGE_TAG }}
+          docker push ${{ secrets.ACR_LOGIN_SERVER }}/api-gateway:latest
+
+      - name: Build and push patient-service
+        run: |
+          docker build -f infrastructure/docker/PatientService.Dockerfile \
+            -t ${{ secrets.ACR_LOGIN_SERVER }}/patient-service:${{ env.IMAGE_TAG }} \
+            -t ${{ secrets.ACR_LOGIN_SERVER }}/patient-service:latest .
+          docker push ${{ secrets.ACR_LOGIN_SERVER }}/patient-service:${{ env.IMAGE_TAG }}
+          docker push ${{ secrets.ACR_LOGIN_SERVER }}/patient-service:latest
+
+      - name: Build and push scheduling-service
+        run: |
+          docker build -f infrastructure/docker/SchedulingService.Dockerfile \
+            -t ${{ secrets.ACR_LOGIN_SERVER }}/scheduling-service:${{ env.IMAGE_TAG }} \
+            -t ${{ secrets.ACR_LOGIN_SERVER }}/scheduling-service:latest .
+          docker push ${{ secrets.ACR_LOGIN_SERVER }}/scheduling-service:${{ env.IMAGE_TAG }}
+          docker push ${{ secrets.ACR_LOGIN_SERVER }}/scheduling-service:latest
+
+      - name: Build and push claims-service
+        run: |
+          docker build -f infrastructure/docker/ClaimsService.Dockerfile \
+            -t ${{ secrets.ACR_LOGIN_SERVER }}/claims-service:${{ env.IMAGE_TAG }} \
+            -t ${{ secrets.ACR_LOGIN_SERVER }}/claims-service:latest .
+          docker push ${{ secrets.ACR_LOGIN_SERVER }}/claims-service:${{ env.IMAGE_TAG }}
+          docker push ${{ secrets.ACR_LOGIN_SERVER }}/claims-service:latest
+
+      - name: Build and push eligibility-service
+        run: |
+          docker build -f infrastructure/docker/EligibilityService.Dockerfile \
+            -t ${{ secrets.ACR_LOGIN_SERVER }}/eligibility-service:${{ env.IMAGE_TAG }} \
+            -t ${{ secrets.ACR_LOGIN_SERVER }}/eligibility-service:latest .
+          docker push ${{ secrets.ACR_LOGIN_SERVER }}/eligibility-service:${{ env.IMAGE_TAG }}
+          docker push ${{ secrets.ACR_LOGIN_SERVER }}/eligibility-service:latest
+
+      - name: Build and push era-service
+        run: |
+          docker build -f infrastructure/docker/EraService.Dockerfile \
+            -t ${{ secrets.ACR_LOGIN_SERVER }}/era-service:${{ env.IMAGE_TAG }} \
+            -t ${{ secrets.ACR_LOGIN_SERVER }}/era-service:latest .
+          docker push ${{ secrets.ACR_LOGIN_SERVER }}/era-service:${{ env.IMAGE_TAG }}
+          docker push ${{ secrets.ACR_LOGIN_SERVER }}/era-service:latest
+
+      - name: Build and push auth-service
+        run: |
+          docker build -f infrastructure/docker/AuthService.Dockerfile \
+            -t ${{ secrets.ACR_LOGIN_SERVER }}/auth-service:${{ env.IMAGE_TAG }} \
+            -t ${{ secrets.ACR_LOGIN_SERVER }}/auth-service:latest .
+          docker push ${{ secrets.ACR_LOGIN_SERVER }}/auth-service:${{ env.IMAGE_TAG }}
+          docker push ${{ secrets.ACR_LOGIN_SERVER }}/auth-service:latest
+
+      - name: Build and push prescription-service
+        run: |
+          docker build -f infrastructure/docker/PrescriptionService.Dockerfile \
+            -t ${{ secrets.ACR_LOGIN_SERVER }}/prescription-service:${{ env.IMAGE_TAG }} \
+            -t ${{ secrets.ACR_LOGIN_SERVER }}/prescription-service:latest .
+          docker push ${{ secrets.ACR_LOGIN_SERVER }}/prescription-service:${{ env.IMAGE_TAG }}
+          docker push ${{ secrets.ACR_LOGIN_SERVER }}/prescription-service:latest
+
+      - name: Build and push vision-service
+        run: |
+          docker build -f infrastructure/docker/VisionService.Dockerfile \
+            -t ${{ secrets.ACR_LOGIN_SERVER }}/vision-service:${{ env.IMAGE_TAG }} \
+            -t ${{ secrets.ACR_LOGIN_SERVER }}/vision-service:latest .
+          docker push ${{ secrets.ACR_LOGIN_SERVER }}/vision-service:${{ env.IMAGE_TAG }}
+          docker push ${{ secrets.ACR_LOGIN_SERVER }}/vision-service:latest
+
+      # ── Update Container Apps with new image tags ─────────────────────────────
+      # `az containerapp update` updates only the image; all other config (secrets,
+      # env vars, ingress) is preserved from the Bicep-managed state.
+
+      - name: Update portal
+        run: |
+          az containerapp update \
+            --name portal \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --image ${{ secrets.ACR_LOGIN_SERVER }}/portal:${{ env.IMAGE_TAG }}
+
+      - name: Update api-gateway
+        run: |
+          az containerapp update \
+            --name api-gateway \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --image ${{ secrets.ACR_LOGIN_SERVER }}/api-gateway:${{ env.IMAGE_TAG }}
+
+      - name: Update patient-service
+        run: |
+          az containerapp update \
+            --name patient-service \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --image ${{ secrets.ACR_LOGIN_SERVER }}/patient-service:${{ env.IMAGE_TAG }}
+
+      - name: Update scheduling-service
+        run: |
+          az containerapp update \
+            --name scheduling-service \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --image ${{ secrets.ACR_LOGIN_SERVER }}/scheduling-service:${{ env.IMAGE_TAG }}
+
+      - name: Update claims-service
+        run: |
+          az containerapp update \
+            --name claims-service \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --image ${{ secrets.ACR_LOGIN_SERVER }}/claims-service:${{ env.IMAGE_TAG }}
+
+      - name: Update eligibility-service
+        run: |
+          az containerapp update \
+            --name eligibility-service \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --image ${{ secrets.ACR_LOGIN_SERVER }}/eligibility-service:${{ env.IMAGE_TAG }}
+
+      - name: Update era-service
+        run: |
+          az containerapp update \
+            --name era-service \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --image ${{ secrets.ACR_LOGIN_SERVER }}/era-service:${{ env.IMAGE_TAG }}
+
+      - name: Update auth-service
+        run: |
+          az containerapp update \
+            --name auth-service \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --image ${{ secrets.ACR_LOGIN_SERVER }}/auth-service:${{ env.IMAGE_TAG }}
+
+      - name: Update prescription-service
+        run: |
+          az containerapp update \
+            --name prescription-service \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --image ${{ secrets.ACR_LOGIN_SERVER }}/prescription-service:${{ env.IMAGE_TAG }}
+
+      - name: Update vision-service
+        run: |
+          az containerapp update \
+            --name vision-service \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --image ${{ secrets.ACR_LOGIN_SERVER }}/vision-service:${{ env.IMAGE_TAG }}
+
+      # ── Verify deployment ─────────────────────────────────────────────────────
+
+      - name: Verify portal is running
+        run: |
+          az containerapp show \
+            --name portal \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --query "properties.latestRevisionFqdn" \
+            --output tsv
