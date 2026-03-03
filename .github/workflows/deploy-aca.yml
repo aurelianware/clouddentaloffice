@@ -54,6 +54,30 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
+      # Phase 1 — Deploy core infrastructure (ACR, Container App Environment, Managed Identity).
+      # Does NOT create Container Apps — images must exist first.
+      - name: Deploy infrastructure (Bicep)
+        run: |
+          az deployment group create \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --template-file infrastructure/azure/main.bicep \
+            --mode Incremental
+
+      # Capture infra outputs for use in later steps
+      - name: Get infrastructure outputs
+        id: infra
+        run: |
+          ENVIRONMENT_ID=$(az deployment group show \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --name main \
+            --query properties.outputs.environmentId.value -o tsv)
+          IDENTITY_ID=$(az deployment group show \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --name main \
+            --query properties.outputs.identityId.value -o tsv)
+          echo "environment_id=$ENVIRONMENT_ID" >> $GITHUB_OUTPUT
+          echo "identity_id=$IDENTITY_ID" >> $GITHUB_OUTPUT
+
       - name: Login to Azure Container Registry
         run: az acr login --name ${{ secrets.ACR_NAME }}
 
@@ -139,79 +163,22 @@ jobs:
           docker push ${{ secrets.ACR_LOGIN_SERVER }}/vision-service:${{ env.IMAGE_TAG }}
           docker push ${{ secrets.ACR_LOGIN_SERVER }}/vision-service:latest
 
-      # ── Update Container Apps with new image tags ─────────────────────────────
-      # `az containerapp update` updates only the image; all other config (secrets,
-      # env vars, ingress) is preserved from the Bicep-managed state.
-
-      - name: Update portal
+      # Phase 2 — Deploy Container Apps now that images exist in ACR.
+      # Creates apps on first run, updates image tag on subsequent runs.
+      - name: Deploy Container Apps (Bicep)
         run: |
-          az containerapp update \
-            --name portal \
+          az deployment group create \
             --resource-group ${{ env.RESOURCE_GROUP }} \
-            --image ${{ secrets.ACR_LOGIN_SERVER }}/portal:${{ env.IMAGE_TAG }}
-
-      - name: Update api-gateway
-        run: |
-          az containerapp update \
-            --name api-gateway \
-            --resource-group ${{ env.RESOURCE_GROUP }} \
-            --image ${{ secrets.ACR_LOGIN_SERVER }}/api-gateway:${{ env.IMAGE_TAG }}
-
-      - name: Update patient-service
-        run: |
-          az containerapp update \
-            --name patient-service \
-            --resource-group ${{ env.RESOURCE_GROUP }} \
-            --image ${{ secrets.ACR_LOGIN_SERVER }}/patient-service:${{ env.IMAGE_TAG }}
-
-      - name: Update scheduling-service
-        run: |
-          az containerapp update \
-            --name scheduling-service \
-            --resource-group ${{ env.RESOURCE_GROUP }} \
-            --image ${{ secrets.ACR_LOGIN_SERVER }}/scheduling-service:${{ env.IMAGE_TAG }}
-
-      - name: Update claims-service
-        run: |
-          az containerapp update \
-            --name claims-service \
-            --resource-group ${{ env.RESOURCE_GROUP }} \
-            --image ${{ secrets.ACR_LOGIN_SERVER }}/claims-service:${{ env.IMAGE_TAG }}
-
-      - name: Update eligibility-service
-        run: |
-          az containerapp update \
-            --name eligibility-service \
-            --resource-group ${{ env.RESOURCE_GROUP }} \
-            --image ${{ secrets.ACR_LOGIN_SERVER }}/eligibility-service:${{ env.IMAGE_TAG }}
-
-      - name: Update era-service
-        run: |
-          az containerapp update \
-            --name era-service \
-            --resource-group ${{ env.RESOURCE_GROUP }} \
-            --image ${{ secrets.ACR_LOGIN_SERVER }}/era-service:${{ env.IMAGE_TAG }}
-
-      - name: Update auth-service
-        run: |
-          az containerapp update \
-            --name auth-service \
-            --resource-group ${{ env.RESOURCE_GROUP }} \
-            --image ${{ secrets.ACR_LOGIN_SERVER }}/auth-service:${{ env.IMAGE_TAG }}
-
-      - name: Update prescription-service
-        run: |
-          az containerapp update \
-            --name prescription-service \
-            --resource-group ${{ env.RESOURCE_GROUP }} \
-            --image ${{ secrets.ACR_LOGIN_SERVER }}/prescription-service:${{ env.IMAGE_TAG }}
-
-      - name: Update vision-service
-        run: |
-          az containerapp update \
-            --name vision-service \
-            --resource-group ${{ env.RESOURCE_GROUP }} \
-            --image ${{ secrets.ACR_LOGIN_SERVER }}/vision-service:${{ env.IMAGE_TAG }}
+            --template-file infrastructure/azure/apps.bicep \
+            --mode Incremental \
+            --parameters \
+              acrLoginServer=${{ secrets.ACR_LOGIN_SERVER }} \
+              identityId=${{ steps.infra.outputs.identity_id }} \
+              environmentId=${{ steps.infra.outputs.environment_id }} \
+              imageTag=${{ env.IMAGE_TAG }} \
+              postgresHost=${{ secrets.POSTGRES_HOST }} \
+              postgresAdminPassword=${{ secrets.POSTGRES_ADMIN_PASSWORD }} \
+              jwtKey=${{ secrets.JWT_KEY }}
 
       # ── Verify deployment ─────────────────────────────────────────────────────
 

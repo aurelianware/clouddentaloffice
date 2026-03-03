@@ -71,7 +71,7 @@ resource portal 'Microsoft.App/containerApps@2023-05-01' = {
         {
           name: 'portal'
           image: '${acrLoginServer}/portal:${imageTag}'
-          resources: { cpu: '0.5', memory: '1Gi' }
+          resources: { cpu: json('0.5'), memory: '1Gi' }
           env: [
             { name: 'ASPNETCORE_ENVIRONMENT', value: 'Production' }
             // ACA internal ingress: api-gateway is reachable at http://api-gateway (port 80)
@@ -111,7 +111,7 @@ resource apiGateway 'Microsoft.App/containerApps@2023-05-01' = {
         {
           name: 'api-gateway'
           image: '${acrLoginServer}/api-gateway:${imageTag}'
-          resources: { cpu: '0.25', memory: '0.5Gi' }
+          resources: { cpu: json('0.25'), memory: '0.5Gi' }
           env: [
             { name: 'ASPNETCORE_ENVIRONMENT', value: 'Production' }
             // YARP cluster destinations override — internal ACA services use http://<name> (port 80)
@@ -155,7 +155,7 @@ resource patientService 'Microsoft.App/containerApps@2023-05-01' = {
         {
           name: 'patient-service'
           image: '${acrLoginServer}/patient-service:${imageTag}'
-          resources: { cpu: '0.25', memory: '0.5Gi' }
+          resources: { cpu: json('0.25'), memory: '0.5Gi' }
           env: [
             { name: 'ASPNETCORE_ENVIRONMENT', value: 'Production' }
             { name: 'DatabaseProvider', value: 'PostgreSQL' }
@@ -192,7 +192,7 @@ resource schedulingService 'Microsoft.App/containerApps@2023-05-01' = {
         {
           name: 'scheduling-service'
           image: '${acrLoginServer}/scheduling-service:${imageTag}'
-          resources: { cpu: '0.25', memory: '0.5Gi' }
+          resources: { cpu: json('0.25'), memory: '0.5Gi' }
           env: [
             { name: 'ASPNETCORE_ENVIRONMENT', value: 'Production' }
             { name: 'DatabaseProvider', value: 'PostgreSQL' }
@@ -229,7 +229,7 @@ resource claimsService 'Microsoft.App/containerApps@2023-05-01' = {
         {
           name: 'claims-service'
           image: '${acrLoginServer}/claims-service:${imageTag}'
-          resources: { cpu: '0.25', memory: '0.5Gi' }
+          resources: { cpu: json('0.25'), memory: '0.5Gi' }
           env: [
             { name: 'ASPNETCORE_ENVIRONMENT', value: 'Production' }
             { name: 'DatabaseProvider', value: 'PostgreSQL' }
@@ -263,7 +263,7 @@ resource eligibilityService 'Microsoft.App/containerApps@2023-05-01' = {
         {
           name: 'eligibility-service'
           image: '${acrLoginServer}/eligibility-service:${imageTag}'
-          resources: { cpu: '0.25', memory: '0.5Gi' }
+          resources: { cpu: json('0.25'), memory: '0.5Gi' }
           env: [
             { name: 'ASPNETCORE_ENVIRONMENT', value: 'Production' }
           ]
@@ -295,7 +295,7 @@ resource eraService 'Microsoft.App/containerApps@2023-05-01' = {
         {
           name: 'era-service'
           image: '${acrLoginServer}/era-service:${imageTag}'
-          resources: { cpu: '0.25', memory: '0.5Gi' }
+          resources: { cpu: json('0.25'), memory: '0.5Gi' }
           env: [
             { name: 'ASPNETCORE_ENVIRONMENT', value: 'Production' }
           ]
@@ -330,7 +330,7 @@ resource authService 'Microsoft.App/containerApps@2023-05-01' = {
         {
           name: 'auth-service'
           image: '${acrLoginServer}/auth-service:${imageTag}'
-          resources: { cpu: '0.25', memory: '0.5Gi' }
+          resources: { cpu: json('0.25'), memory: '0.5Gi' }
           env: [
             { name: 'ASPNETCORE_ENVIRONMENT', value: 'Production' }
             { name: 'Jwt__Key', secretRef: 'jwt-key' }
@@ -368,7 +368,7 @@ resource prescriptionService 'Microsoft.App/containerApps@2023-05-01' = {
         {
           name: 'prescription-service'
           image: '${acrLoginServer}/prescription-service:${imageTag}'
-          resources: { cpu: '0.25', memory: '0.5Gi' }
+          resources: { cpu: json('0.25'), memory: '0.5Gi' }
           env: [
             { name: 'ASPNETCORE_ENVIRONMENT', value: 'Production' }
             { name: 'DatabaseProvider', value: 'PostgreSQL' }
@@ -422,7 +422,7 @@ resource visionService 'Microsoft.App/containerApps@2023-05-01' = {
         {
           name: 'vision-service'
           image: '${acrLoginServer}/vision-service:${imageTag}'
-          resources: { cpu: '0.25', memory: '0.5Gi' }
+          resources: { cpu: json('0.25'), memory: '0.5Gi' }
           env: [
             { name: 'ASPNETCORE_ENVIRONMENT', value: 'Production' }
             { name: 'DatabaseProvider', value: 'PostgreSQL' }

@@ -1,3 +1,6 @@
+# Azure secrets — never commit filled-in parameter files
+infrastructure/azure/parameters.bicepparam
+
 # Build outputs
 bin/
 obj/
