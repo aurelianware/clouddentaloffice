@@ -69,6 +69,7 @@ var authBuilder = builder.Services.AddAuthentication(options =>
     if (azureAdEnabled)
     {
         // Azure AD is primary authentication for Blazor Server
+        // AddMicrosoftIdentityWebApp (below) registers the Cookies scheme internally
         options.DefaultScheme = CookieAuthenticationDefaults.AuthenticationScheme;
         options.DefaultChallengeScheme = OpenIdConnectDefaults.AuthenticationScheme;
     }
@@ -78,16 +79,24 @@ var authBuilder = builder.Services.AddAuthentication(options =>
         options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
         options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
     }
-})
-.AddCookie(CookieAuthenticationDefaults.AuthenticationScheme, options =>
+});
+
+// Only register Cookies scheme explicitly when Azure AD is disabled.
+// When Azure AD is enabled, AddMicrosoftIdentityWebApp registers "Cookies" internally —
+// registering it here too causes "Scheme already exists: Cookies" at startup.
+if (!azureAdEnabled)
 {
-    options.LoginPath = "/Account/Login";
-    options.LogoutPath = "/Account/Logout";
-    options.AccessDeniedPath = "/Account/AccessDenied";
-    options.ExpireTimeSpan = TimeSpan.FromHours(8);
-    options.SlidingExpiration = true;
-})
-.AddJwtBearer(options =>
+    authBuilder.AddCookie(CookieAuthenticationDefaults.AuthenticationScheme, options =>
+    {
+        options.LoginPath = "/Account/Login";
+        options.LogoutPath = "/Account/Logout";
+        options.AccessDeniedPath = "/Account/AccessDenied";
+        options.ExpireTimeSpan = TimeSpan.FromHours(8);
+        options.SlidingExpiration = true;
+    });
+}
+
+authBuilder.AddJwtBearer(options =>
 {
     options.TokenValidationParameters = new TokenValidationParameters
     {
