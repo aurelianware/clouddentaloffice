@@ -113,7 +113,9 @@ portable Kubernetes resources, an in-cluster PostgreSQL instance, and local imag
 it does not depend on Azure or DigitalOcean services.
 
 Prerequisites: Docker, `kubectl`, and a running local cluster. The helper recognizes
-a kind cluster named `docker-desktop` by default and loads images into it.
+a kind cluster named `docker-desktop` by default and loads images into it. The helper
+generates the local database password and JWT signing key directly in the cluster;
+these credentials are not stored in the repository.
 
 ```bash
 ./scripts/deploy-local-k8s.sh

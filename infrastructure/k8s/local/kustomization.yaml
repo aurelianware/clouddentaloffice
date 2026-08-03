@@ -7,10 +7,13 @@ resources:
   - ../clouddental
   - postgres.yaml
   - portal-pvc.yaml
-  - secrets.yaml
 
 patches:
   - path: portal-local.yaml
+  - path: portal-connection-local.yaml
+    target:
+      kind: Deployment
+      name: portal
   - path: service-ports-local.yaml
   - path: ingress-delete.yaml
 

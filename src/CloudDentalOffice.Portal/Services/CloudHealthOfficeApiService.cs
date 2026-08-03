@@ -2,6 +2,7 @@ using CloudDentalOffice.Portal.Data;
 using CloudDentalOffice.Portal.Models;
 using Microsoft.EntityFrameworkCore;
 using System.Net.Http.Headers;
+using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json.Serialization;
 
@@ -41,6 +42,9 @@ public class CloudHealthOfficeApiService : ICloudHealthOfficeApiService
         if (string.IsNullOrEmpty(payer.ApiEndpoint))
             throw new InvalidOperationException($"Payer {payer.PayerName} has no API endpoint configured");
 
+        if (string.IsNullOrWhiteSpace(claim.TenantId))
+            throw new InvalidOperationException($"Claim {claim.ClaimNumber} has no tenant ID");
+
         // Load full claim with all relationships
         var fullClaim = await _context.Claims
             .Include(c => c.Patient)
@@ -52,6 +56,9 @@ public class CloudHealthOfficeApiService : ICloudHealthOfficeApiService
 
         if (fullClaim == null)
             throw new InvalidOperationException($"Claim {claim.ClaimNumber} not found");
+
+        if (string.IsNullOrWhiteSpace(fullClaim.TenantId))
+            throw new InvalidOperationException($"Claim {fullClaim.ClaimNumber} has no tenant ID");
 
         var x12 = await _x12Service.Generate837DTransactionAsync(fullClaim);
 

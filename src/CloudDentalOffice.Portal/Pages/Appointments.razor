@@ -222,14 +222,14 @@
         }
     }
 
-    private async Task<IEnumerable<Patient>> SearchPatients(string searchString, CancellationToken token)
+    private Task<IEnumerable<Patient>> SearchPatients(string searchString, CancellationToken token)
     {
         if (string.IsNullOrWhiteSpace(searchString))
-            return _allPatients.Take(10);
+            return Task.FromResult<IEnumerable<Patient>>(_allPatients.Take(10));
 
-        return _allPatients
+        return Task.FromResult<IEnumerable<Patient>>(_allPatients
             .Where(p => p.FullName.Contains(searchString, StringComparison.OrdinalIgnoreCase))
-            .Take(10);
+            .Take(10));
     }
 
     private async Task OnPatientSelected(Patient? patient)

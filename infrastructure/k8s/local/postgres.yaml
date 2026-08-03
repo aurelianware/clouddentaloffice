@@ -21,7 +21,10 @@ spec:
             - name: POSTGRES_USER
               value: cdo
             - name: POSTGRES_PASSWORD
-              value: cdo_dev_password
+              valueFrom:
+                secretKeyRef:
+                  name: cdo-app-secrets
+                  key: Postgres__Password
             - name: POSTGRES_DB
               value: cdo_portal
           readinessProbe:

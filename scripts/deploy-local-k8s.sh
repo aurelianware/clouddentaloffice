@@ -19,6 +19,34 @@ services=(
   "vision-service:VisionService"
 )
 
+kubectl create namespace "$NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
+
+if ! kubectl get secret cdo-app-secrets -n "$NAMESPACE" >/dev/null 2>&1; then
+  postgres_password="$(openssl rand -hex 24)"
+  jwt_key="$(openssl rand -base64 48 | tr -d '\n')"
+
+  kubectl create secret generic cdo-app-secrets \
+    --namespace "$NAMESPACE" \
+    --from-literal="Postgres__Password=$postgres_password" \
+    --from-literal="ConnectionStrings__DefaultConnection=Host=postgres;Database=cdo_portal;Username=cdo;Password=$postgres_password" \
+    --from-literal="ConnectionStrings__PatientDb=Host=postgres;Database=cdo_patients;Username=cdo;Password=$postgres_password" \
+    --from-literal="ConnectionStrings__SchedulingDb=Host=postgres;Database=cdo_scheduling;Username=cdo;Password=$postgres_password" \
+    --from-literal="ConnectionStrings__ClaimsDb=Host=postgres;Database=cdo_claims;Username=cdo;Password=$postgres_password" \
+    --from-literal="ConnectionStrings__PrescriptionDb=Host=postgres;Database=cdo_prescriptions;Username=cdo;Password=$postgres_password" \
+    --from-literal="ConnectionStrings__VisionDb=Host=postgres;Database=cdo_vision;Username=cdo;Password=$postgres_password" \
+    --from-literal="Jwt__Key=$jwt_key" \
+    --from-literal="Jwt__Issuer=CloudDentalOffice" \
+    --from-literal="Jwt__Audience=CloudDentalOffice"
+elif [[ -z "$(kubectl get secret cdo-app-secrets -n "$NAMESPACE" -o jsonpath='{.data.Postgres__Password}')" ]]; then
+  # Preserve the password used by an existing local database when upgrading an older overlay.
+  existing_connection="$(kubectl get secret cdo-app-secrets -n "$NAMESPACE" \
+    -o jsonpath='{.data.ConnectionStrings__DefaultConnection}' | base64 --decode)"
+  postgres_password="${existing_connection##*Password=}"
+  postgres_password="${postgres_password%%;*}"
+  kubectl patch secret cdo-app-secrets -n "$NAMESPACE" --type merge \
+    -p "{\"stringData\":{\"Postgres__Password\":\"$postgres_password\"}}"
+fi
+
 if [[ "$SKIP_BUILD" != "true" ]]; then
   for entry in "${services[@]}"; do
     image="${entry%%:*}"

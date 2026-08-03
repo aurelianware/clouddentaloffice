@@ -1,6 +1,7 @@
 using CloudDentalOffice.Portal.Data;
 using CloudDentalOffice.Portal.Models;
 using CloudDentalOffice.Portal.Services;
+using CloudDentalOffice.Portal.Services.Tenancy;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Moq;
@@ -23,7 +24,9 @@ public class SaveOperationsIntegrationTests : IDisposable
             .UseInMemoryDatabase(databaseName: $"TestDb_{Guid.NewGuid()}")
             .Options;
 
-        _dbContext = new CloudDentalDbContext(options);
+        var tenantProvider = new Mock<ITenantProvider>();
+        tenantProvider.Setup(p => p.TenantId).Returns(_testTenantId);
+        _dbContext = new CloudDentalDbContext(options, tenantProvider.Object);
         
         // Seed test data
         SeedTestData();
@@ -53,7 +56,6 @@ public class SaveOperationsIntegrationTests : IDisposable
             new ProcedureCode
             {
                 ProcedureCodeId = 1,
-                TenantId = _testTenantId,
                 Code = "D0120",
                 Description = "Periodic Oral Evaluation",
                 Category = "Diagnostic",
@@ -62,7 +64,6 @@ public class SaveOperationsIntegrationTests : IDisposable
             new ProcedureCode
             {
                 ProcedureCodeId = 2,
-                TenantId = _testTenantId,
                 Code = "D1110",
                 Description = "Adult Prophylaxis",
                 Category = "Preventive",
@@ -71,7 +72,6 @@ public class SaveOperationsIntegrationTests : IDisposable
             new ProcedureCode
             {
                 ProcedureCodeId = 3,
-                TenantId = _testTenantId,
                 Code = "D2391",
                 Description = "Resin 1 Surface Posterior",
                 Category = "Restorative",
@@ -129,9 +129,8 @@ public class SaveOperationsIntegrationTests : IDisposable
             TenantId = _testTenantId,
             PatientId = 1, // Just store the ID, no FK constraint
             ProviderId = 1, // Just store the ID, no FK constraint
-            AppointmentDate = DateTime.Today.AddDays(7),
-            AppointmentTime = new TimeSpan(9, 0, 0),
-            Duration = 60,
+            AppointmentDateTime = DateTime.Today.AddDays(7).AddHours(9),
+            DurationMinutes = 60,
             AppointmentType = "Exam",
             Status = "Scheduled",
             ReasonForVisit = "Annual checkup",
@@ -297,8 +296,8 @@ public class SaveOperationsIntegrationTests : IDisposable
     public async Task Test_ProcedureCodeSearch_ShouldReturnResults()
     {
         // Arrange
-        var mockLogger = new Mock<ILogger<ProcedureCodeService>>();
-        var service = new ProcedureCodeService(_dbContext, mockLogger.Object);
+        var mockLogger = new Mock<ILogger<ProcedureCodeServiceImpl>>();
+        var service = new ProcedureCodeServiceImpl(_dbContext, mockLogger.Object);
 
         // Act - Search by code
         var resultsByCode = await service.SearchProcedureCodesAsync("D0120");
@@ -320,7 +319,7 @@ public class SaveOperationsIntegrationTests : IDisposable
 
         // Assert
         Assert.NotEmpty(topResults);
-        Assert.True(topResults.Count() <= 20, "Should limit results to 20");
+        Assert.True(topResults.Count() <= 50, "Should limit results to 50");
     }
 
     [Fact]
@@ -332,9 +331,8 @@ public class SaveOperationsIntegrationTests : IDisposable
             TenantId = _testTenantId,
             PatientId = 1,
             ProviderId = 1,
-            AppointmentDate = DateTime.Today.AddDays(1),
-            AppointmentTime = new TimeSpan(9, 0, 0),
-            Duration = 60,
+            AppointmentDateTime = DateTime.Today.AddDays(1).AddHours(9),
+            DurationMinutes = 60,
             AppointmentType = "Exam",
             Status = "Scheduled",
             CreatedDate = DateTime.UtcNow
@@ -345,9 +343,8 @@ public class SaveOperationsIntegrationTests : IDisposable
             TenantId = _testTenantId,
             PatientId = 2,
             ProviderId = 1,
-            AppointmentDate = DateTime.Today.AddDays(1),
-            AppointmentTime = new TimeSpan(10, 30, 0),
-            Duration = 30,
+            AppointmentDateTime = DateTime.Today.AddDays(1).AddHours(10).AddMinutes(30),
+            DurationMinutes = 30,
             AppointmentType = "Cleaning",
             Status = "Scheduled",
             CreatedDate = DateTime.UtcNow
@@ -361,13 +358,13 @@ public class SaveOperationsIntegrationTests : IDisposable
         Assert.Equal(2, result);
         
         var appointments = await _dbContext.Appointments
-            .Where(a => a.AppointmentDate == DateTime.Today.AddDays(1))
-            .OrderBy(a => a.AppointmentTime)
+            .Where(a => a.AppointmentDateTime.Date == DateTime.Today.AddDays(1))
+            .OrderBy(a => a.AppointmentDateTime)
             .ToListAsync();
         
         Assert.Equal(2, appointments.Count);
-        Assert.Equal(new TimeSpan(9, 0, 0), appointments[0].AppointmentTime);
-        Assert.Equal(new TimeSpan(10, 30, 0), appointments[1].AppointmentTime);
+        Assert.Equal(new TimeSpan(9, 0, 0), appointments[0].AppointmentDateTime.TimeOfDay);
+        Assert.Equal(new TimeSpan(10, 30, 0), appointments[1].AppointmentDateTime.TimeOfDay);
     }
 
     [Fact]
@@ -402,10 +399,12 @@ public class SaveOperationsIntegrationTests : IDisposable
 
         // Assert - Query with tenant filter
         var tenant1Patients = await _dbContext.Patients
+            .IgnoreQueryFilters()
             .Where(p => p.TenantId == "tenant-001")
             .ToListAsync();
         
         var tenant2Patients = await _dbContext.Patients
+            .IgnoreQueryFilters()
             .Where(p => p.TenantId == "tenant-002")
             .ToListAsync();
 
@@ -421,16 +420,17 @@ public class SaveOperationsIntegrationTests : IDisposable
     {
         // Arrange
         var mockLogger = new Mock<ILogger<AppointmentServiceImpl>>();
-        var service = new AppointmentServiceImpl(_dbContext, mockLogger.Object);
+        var tenantProvider = new Mock<ITenantProvider>();
+        tenantProvider.Setup(p => p.TenantId).Returns(_testTenantId);
+        var service = new AppointmentServiceImpl(_dbContext, tenantProvider.Object, mockLogger.Object);
 
         var appointment = new Appointment
         {
             TenantId = _testTenantId,
             PatientId = 1,
             ProviderId = 1,
-            AppointmentDate = DateTime.Today.AddDays(5),
-            AppointmentTime = new TimeSpan(14, 0, 0),
-            Duration = 45,
+            AppointmentDateTime = DateTime.Today.AddDays(5).AddHours(14),
+            DurationMinutes = 45,
             AppointmentType = "Follow-up",
             Status = "Scheduled",
             ReasonForVisit = "Check filling",

@@ -7,20 +7,6 @@ spec:
     spec:
       containers:
         - name: portal
-          env:
-            - name: ASPNETCORE_ENVIRONMENT
-              value: Production
-            - name: AzureAd__Enabled
-              value: "false"
-            - name: Database__Provider
-              value: Sqlite
-            - name: ConnectionStrings__DefaultConnection
-              value: Data Source=/data/clouddental.db
-              valueFrom: null
-            - name: CloudHealthOffice__BaseUrl
-              value: http://claims-service.cloudhealthoffice.svc.cluster.local/
-            - name: Microservices__Patient__Enabled
-              value: "false"
           volumeMounts:
             - name: portal-data
               mountPath: /data

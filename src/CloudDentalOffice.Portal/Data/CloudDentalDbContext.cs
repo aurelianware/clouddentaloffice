@@ -10,6 +10,7 @@ namespace CloudDentalOffice.Portal.Data;
 public class CloudDentalDbContext : DbContext
 {
     private readonly ITenantProvider _tenantProvider;
+    private string CurrentTenantId => _tenantProvider.TenantId;
 
     public CloudDentalDbContext(DbContextOptions<CloudDentalDbContext> options)
         : this(options, null)
@@ -62,7 +63,7 @@ public class CloudDentalDbContext : DbContext
             entity.HasIndex(e => e.Email);
             entity.HasIndex(e => new { e.LastName, e.FirstName });
             entity.HasIndex(e => e.TenantId);
-            entity.HasQueryFilter(e => e.TenantId == _tenantProvider.TenantId);
+            entity.HasQueryFilter(e => e.TenantId == CurrentTenantId);
         });
 
         // PatientInsurance configuration
@@ -80,7 +81,7 @@ public class CloudDentalDbContext : DbContext
 
             entity.HasIndex(e => e.MemberId);
             entity.HasIndex(e => e.TenantId);
-            entity.HasQueryFilter(e => e.TenantId == _tenantProvider.TenantId);
+            entity.HasQueryFilter(e => e.TenantId == CurrentTenantId);
         });
 
         // InsurancePlan configuration
@@ -89,7 +90,7 @@ public class CloudDentalDbContext : DbContext
             entity.HasIndex(e => e.PayerId);
             entity.HasIndex(e => e.PayerName);
             entity.HasIndex(e => e.TenantId);
-            entity.HasQueryFilter(e => e.TenantId == _tenantProvider.TenantId);
+            entity.HasQueryFilter(e => e.TenantId == CurrentTenantId);
         });
 
         // User configuration
@@ -97,7 +98,7 @@ public class CloudDentalDbContext : DbContext
         {
             entity.HasIndex(e => e.Email).IsUnique();
             entity.HasIndex(e => e.TenantId);
-            entity.HasQueryFilter(e => e.TenantId == _tenantProvider.TenantId);
+            entity.HasQueryFilter(e => e.TenantId == CurrentTenantId);
         });
 
         // Provider configuration
@@ -106,7 +107,7 @@ public class CloudDentalDbContext : DbContext
             entity.HasIndex(e => e.NPI).IsUnique();
             entity.HasIndex(e => new { e.LastName, e.FirstName });
             entity.HasIndex(e => e.TenantId);
-            entity.HasQueryFilter(e => e.TenantId == _tenantProvider.TenantId);
+            entity.HasQueryFilter(e => e.TenantId == CurrentTenantId);
         });
 
         // Appointment configuration
@@ -119,7 +120,7 @@ public class CloudDentalDbContext : DbContext
             entity.HasIndex(e => e.AppointmentDateTime);
             entity.HasIndex(e => new { e.AppointmentDateTime, e.ProviderId });
             entity.HasIndex(e => e.TenantId);
-            entity.HasQueryFilter(e => e.TenantId == _tenantProvider.TenantId);
+            entity.HasQueryFilter(e => e.TenantId == CurrentTenantId);
         });
 
         // TreatmentPlan configuration
@@ -131,7 +132,7 @@ public class CloudDentalDbContext : DbContext
 
             entity.HasIndex(e => e.Status);
             entity.HasIndex(e => e.TenantId);
-            entity.HasQueryFilter(e => e.TenantId == _tenantProvider.TenantId);
+            entity.HasQueryFilter(e => e.TenantId == CurrentTenantId);
         });
 
         // PlannedProcedure configuration
@@ -145,7 +146,7 @@ public class CloudDentalDbContext : DbContext
             // NOTE: ClaimProcedure relationship removed - claims data in separate microservice database
             entity.HasIndex(e => e.ClaimProcedureId);
             entity.HasIndex(e => e.TenantId);
-            entity.HasQueryFilter(e => e.TenantId == _tenantProvider.TenantId);
+            entity.HasQueryFilter(e => e.TenantId == CurrentTenantId);
         });
 
         // Claim configuration
@@ -164,7 +165,7 @@ public class CloudDentalDbContext : DbContext
             entity.HasIndex(e => e.Status);
             entity.HasIndex(e => e.SubmittedDate);
             entity.HasIndex(e => e.TenantId);
-            entity.HasQueryFilter(e => e.TenantId == _tenantProvider.TenantId);
+            entity.HasQueryFilter(e => e.TenantId == CurrentTenantId);
         });
 
         // ClaimProcedure configuration
@@ -177,7 +178,7 @@ public class CloudDentalDbContext : DbContext
 
             entity.HasIndex(e => e.CDTCode);
             entity.HasIndex(e => e.TenantId);
-            entity.HasQueryFilter(e => e.TenantId == _tenantProvider.TenantId);
+            entity.HasQueryFilter(e => e.TenantId == CurrentTenantId);
         });
 
         // ProcedureCode configuration
@@ -199,7 +200,7 @@ public class CloudDentalDbContext : DbContext
             entity.HasIndex(e => e.ServiceDate);
             entity.HasIndex(e => e.CDTCode);
             entity.HasIndex(e => e.TenantId);
-            entity.HasQueryFilter(e => e.TenantId == _tenantProvider.TenantId);
+            entity.HasQueryFilter(e => e.TenantId == CurrentTenantId);
         });
         
         ConfigureTenantEntity<Procedure>(modelBuilder);
@@ -214,7 +215,7 @@ public class CloudDentalDbContext : DbContext
             entity.HasIndex(e => e.NoteDate);
             entity.HasIndex(e => e.NoteType);
             entity.HasIndex(e => e.TenantId);
-            entity.HasQueryFilter(e => e.TenantId == _tenantProvider.TenantId);
+            entity.HasQueryFilter(e => e.TenantId == CurrentTenantId);
         });
 
         ConfigureTenantEntity<ClinicalNote>(modelBuilder);
