@@ -1,0 +1,65 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          ports:
+            - containerPort: 5432
+          env:
+            - name: POSTGRES_USER
+              value: cdo
+            - name: POSTGRES_PASSWORD
+              value: cdo_dev_password
+            - name: POSTGRES_DB
+              value: cdo_portal
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "cdo", "-d", "cdo_portal"]
+            initialDelaySeconds: 5
+            periodSeconds: 3
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+            - name: init
+              mountPath: /docker-entrypoint-initdb.d
+      volumes:
+        - name: data
+          emptyDir: {}
+        - name: init
+          configMap:
+            name: postgres-init
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-init
+data:
+  01-databases.sql: |
+    CREATE DATABASE cdo_patients;
+    CREATE DATABASE cdo_scheduling;
+    CREATE DATABASE cdo_claims;
+    CREATE DATABASE cdo_prescriptions;
+    CREATE DATABASE cdo_vision;
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+spec:
+  selector:
+    app: postgres
+  ports:
+    - port: 5432
+      targetPort: 5432

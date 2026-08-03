@@ -4,6 +4,8 @@
 @using MudBlazor
 @inject IAppointmentService AppointmentService
 @inject IPatientService PatientService
+@inject IProviderService ProviderService
+@inject PatientContextService PatientContext
 @inject NavigationManager Navigation
 @inject IDialogService DialogService
 @inject ISnackbar Snackbar
@@ -23,10 +25,17 @@
                 </MudText>
                 @if (_selectedPatient != null)
                 {
-                    <MudButton Variant="Variant.Text" Color="Color.Default" Size="Size.Small" 
-                               OnClick="@(() => Navigation.NavigateTo("/appointments"))" Class="mt-1">
-                        View All Appointments
+                    <MudButton Variant="Variant.Text" Color="Color.Default" Size="Size.Small"
+                               OnClick="ClearPatientSelection" StartIcon="@Icons.Material.Filled.Clear" Class="mt-1">
+                        Change Patient
                     </MudButton>
+                }
+                else
+                {
+                    <MudAutocomplete T="Patient" Value="_selectedPatient" Label="Select Patient (optional)"
+                                     SearchFunc="@SearchPatients" ToStringFunc="@(p => p?.FullName ?? "")"
+                                     Variant="Variant.Outlined" Dense="true" Clearable="true"
+                                     ValueChanged="@OnPatientSelected" Class="mt-2" />
                 }
             </div>
             <MudStack Row="true" Spacing="2">
@@ -80,10 +89,10 @@
                         </MudText>
                     </MudTd>
                     <MudTd DataLabel="Patient">
-                        <MudText Typo="Typo.body2">Patient @context.PatientId</MudText>
+                        <MudText Typo="Typo.body2">@GetPatientName(context.PatientId)</MudText>
                     </MudTd>
                     <MudTd DataLabel="Provider">
-                        <MudText Typo="Typo.body2">Provider @context.ProviderId</MudText>
+                        <MudText Typo="Typo.body2">@GetProviderName(context.ProviderId)</MudText>
                     </MudTd>
                     <MudTd DataLabel="Type">
                         <MudText Typo="Typo.body2">@context.AppointmentType</MudText>
@@ -130,6 +139,9 @@
     public int? PatientId { get; set; }
     
     private List<Appointment> _appointments = new();
+    private Dictionary<int, string> _patientNames = new();
+    private Dictionary<int, string> _providerNames = new();
+    private List<Patient> _allPatients = new();
     private Patient? _selectedPatient = null;
     private bool _loading = true;
     private DateTime? _selectedDate = DateTime.Today;
@@ -137,19 +149,45 @@
 
     protected override async Task OnInitializedAsync()
     {
-        if (PatientId.HasValue)
+        var patientToLoad = PatientId ?? PatientContext.PatientId;
+        if (patientToLoad.HasValue)
         {
             try
             {
-                _selectedPatient = await PatientService.GetPatientByIdAsync(PatientId.Value.ToString());
+                _selectedPatient = await PatientService.GetPatientByIdAsync(patientToLoad.Value.ToString());
+                if (_selectedPatient != null)
+                    PatientContext.Select(_selectedPatient);
             }
             catch (Exception ex)
             {
                 Snackbar.Add($"Error loading patient: {ex.Message}", Severity.Error);
             }
         }
+        await LoadDisplayNames();
         await LoadAppointments();
     }
+
+    private async Task LoadDisplayNames()
+    {
+        try
+        {
+            _allPatients = await PatientService.GetPatientsAsync();
+            _patientNames = _allPatients.ToDictionary(p => p.PatientId, p => p.FullName);
+
+            var providers = await ProviderService.GetProvidersAsync();
+            _providerNames = providers.ToDictionary(p => p.ProviderId, p => p.FullName);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error loading appointment names: {ex.Message}", Severity.Warning);
+        }
+    }
+
+    private string GetPatientName(int patientId) =>
+        _patientNames.TryGetValue(patientId, out var name) ? name : "Unknown patient";
+
+    private string GetProviderName(int providerId) =>
+        _providerNames.TryGetValue(providerId, out var name) ? name : "Unknown provider";
 
     private async Task LoadAppointments()
     {
@@ -163,9 +201,9 @@
                 var allAppointments = await AppointmentService.GetAppointmentsAsync(_selectedDate.Value);
                 
                 // Filter by patient if specified
-                if (PatientId.HasValue)
+                if (_selectedPatient != null)
                 {
-                    _appointments = allAppointments.Where(a => a.PatientId == PatientId.Value).ToList();
+                    _appointments = allAppointments.Where(a => a.PatientId == _selectedPatient.PatientId).ToList();
                 }
                 else
                 {
@@ -184,6 +222,35 @@
         }
     }
 
+    private async Task<IEnumerable<Patient>> SearchPatients(string searchString, CancellationToken token)
+    {
+        if (string.IsNullOrWhiteSpace(searchString))
+            return _allPatients.Take(10);
+
+        return _allPatients
+            .Where(p => p.FullName.Contains(searchString, StringComparison.OrdinalIgnoreCase))
+            .Take(10);
+    }
+
+    private async Task OnPatientSelected(Patient? patient)
+    {
+        _selectedPatient = patient;
+        if (patient == null)
+            PatientContext.Clear();
+        else
+            PatientContext.Select(patient);
+
+        await LoadAppointments();
+    }
+
+    private async Task ClearPatientSelection()
+    {
+        PatientId = null;
+        _selectedPatient = null;
+        PatientContext.Clear();
+        await LoadAppointments();
+    }
+
     private async Task OnDateChanged(DateTime? date)
     {
         _selectedDate = date;
@@ -194,9 +261,9 @@
     {
         var parameters = new DialogParameters<AddEditAppointmentDialog>();
         
-        if (PatientId.HasValue)
+        if (_selectedPatient != null)
         {
-            parameters.Add(x => x.PreselectedPatientId, PatientId.Value);
+            parameters.Add(x => x.PreselectedPatientId, _selectedPatient.PatientId);
         }
 
         var options = new DialogOptions 

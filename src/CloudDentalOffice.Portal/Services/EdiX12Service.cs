@@ -110,7 +110,8 @@ public class EdiX12Service : IEdiX12Service
         var claimAmount = fullClaim.TotalChargeAmount.ToString("F2");
         var placeOfService = "11"; // Office
         x12.Append($"CLM{ELEMENT_SEPARATOR}{fullClaim.ClaimNumber}{ELEMENT_SEPARATOR}{claimAmount}{ELEMENT_SEPARATOR}{ELEMENT_SEPARATOR}{ELEMENT_SEPARATOR}{placeOfService}:B:1{ELEMENT_SEPARATOR}Y{ELEMENT_SEPARATOR}A{ELEMENT_SEPARATOR}Y{ELEMENT_SEPARATOR}Y{SEGMENT_TERMINATOR}");
-        x12.Append($"DTP{ELEMENT_SEPARATOR}472{ELEMENT_SEPARATOR}RD8{ELEMENT_SEPARATOR}{fullClaim.ServiceDateFrom:yyyyMMdd}-{fullClaim.ServiceDateTo:yyyyMMdd}{SEGMENT_TERMINATOR}");
+        var serviceDateTo = fullClaim.ServiceDateTo ?? fullClaim.ServiceDateFrom;
+        x12.Append($"DTP{ELEMENT_SEPARATOR}472{ELEMENT_SEPARATOR}RD8{ELEMENT_SEPARATOR}{fullClaim.ServiceDateFrom:yyyyMMdd}-{serviceDateTo:yyyyMMdd}{SEGMENT_TERMINATOR}");
 
         // 2310A Loop - Rendering Provider (same as billing for now)
         x12.Append($"NM1{ELEMENT_SEPARATOR}82{ELEMENT_SEPARATOR}1{ELEMENT_SEPARATOR}{providerName}{ELEMENT_SEPARATOR}{ELEMENT_SEPARATOR}{ELEMENT_SEPARATOR}{ELEMENT_SEPARATOR}{ELEMENT_SEPARATOR}XX{ELEMENT_SEPARATOR}{providerNPI}{SEGMENT_TERMINATOR}");

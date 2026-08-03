@@ -75,6 +75,46 @@ a:hover {
   text-shadow: 0 0 8px var(--cyan-glow);
 }
 
+/* === NOTIFICATIONS === */
+.mud-snackbar {
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.65);
+}
+
+.mud-snackbar,
+.mud-snackbar .mud-snackbar-content-message,
+.mud-snackbar .mud-snackbar-icon,
+.mud-snackbar .mud-snackbar-content-action,
+.mud-snackbar .mud-snackbar-content-action button {
+  color: #ffffff !important;
+}
+
+.mud-snackbar.mud-info {
+  background-color: #005a70 !important;
+  border-color: #00d9ff;
+}
+
+.mud-snackbar.mud-success {
+  background-color: #12612f !important;
+  border-color: #41e879;
+}
+
+.mud-snackbar.mud-warning {
+  background-color: #6b4800 !important;
+  border-color: #ffc247;
+}
+
+.mud-snackbar.mud-error {
+  background-color: #8b1e2d !important;
+  border-color: #ff7082;
+}
+
+.mud-snackbar .mud-snackbar-content-message {
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+}
+
 /* === CIRCUIT PATTERN BACKGROUND === */
 .circuit-veins {
   background-image: 

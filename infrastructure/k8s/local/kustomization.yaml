@@ -1,0 +1,47 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: clouddental
+
+resources:
+  - ../clouddental
+  - postgres.yaml
+  - portal-pvc.yaml
+  - secrets.yaml
+
+patches:
+  - path: portal-local.yaml
+  - path: service-ports-local.yaml
+  - path: ingress-delete.yaml
+
+images:
+  - name: registry.digitalocean.com/clouddental/portal
+    newName: clouddentaloffice/portal
+    newTag: local
+  - name: registry.digitalocean.com/clouddental/api-gateway
+    newName: clouddentaloffice/api-gateway
+    newTag: local
+  - name: registry.digitalocean.com/clouddental/patient-service
+    newName: clouddentaloffice/patient-service
+    newTag: local
+  - name: registry.digitalocean.com/clouddental/scheduling-service
+    newName: clouddentaloffice/scheduling-service
+    newTag: local
+  - name: registry.digitalocean.com/clouddental/claims-service
+    newName: clouddentaloffice/claims-service
+    newTag: local
+  - name: registry.digitalocean.com/clouddental/eligibility-service
+    newName: clouddentaloffice/eligibility-service
+    newTag: local
+  - name: registry.digitalocean.com/clouddental/era-service
+    newName: clouddentaloffice/era-service
+    newTag: local
+  - name: registry.digitalocean.com/clouddental/auth-service
+    newName: clouddentaloffice/auth-service
+    newTag: local
+  - name: registry.digitalocean.com/clouddental/prescription-service
+    newName: clouddentaloffice/prescription-service
+    newTag: local
+  - name: registry.digitalocean.com/clouddental/vision-service
+    newName: clouddentaloffice/vision-service
+    newTag: local

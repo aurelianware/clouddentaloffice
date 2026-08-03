@@ -51,6 +51,8 @@ builder.Services.Configure<Microsoft.AspNetCore.SignalR.HubOptions>(options =>
 builder.Services.AddMudServices(config =>
 {
     config.SnackbarConfiguration.PositionClass = Defaults.Classes.Position.BottomRight;
+    config.SnackbarConfiguration.ShowCloseIcon = true;
+    config.SnackbarConfiguration.VisibleStateDuration = 5000;
 });
 
 // Add custom theme provider
@@ -251,22 +253,34 @@ builder.Services.AddScoped<ITenantProvider, BlazorTenantProvider>();
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection") 
     ?? builder.Configuration["Database:ConnectionString"]
     ?? "Server=localhost,1433;Database=CloudDentalOffice;User Id=sa;Password=YourStrong@Password123;TrustServerCertificate=True";
+var databaseProvider = builder.Configuration["Database:Provider"]
+    ?? (builder.Environment.IsDevelopment() ? "Sqlite" : "PostgreSQL");
 
 builder.Services.AddDbContext<CloudDentalDbContext>(options =>
 {
-    if (builder.Environment.IsDevelopment())
+    if (databaseProvider.Equals("Sqlite", StringComparison.OrdinalIgnoreCase))
     {
         options.UseSqlite(connectionString);
-        options.EnableSensitiveDataLogging();
-        options.EnableDetailedErrors();
+        if (builder.Environment.IsDevelopment())
+        {
+            options.EnableSensitiveDataLogging();
+            options.EnableDetailedErrors();
+        }
     }
-    else
+    else if (databaseProvider.Equals("PostgreSQL", StringComparison.OrdinalIgnoreCase))
     {
-        // Production: Use PostgreSQL (DigitalOcean Managed DB)
         options.UseNpgsql(connectionString, pgOptions => 
         {
             pgOptions.EnableRetryOnFailure(maxRetryCount: 10, maxRetryDelay: TimeSpan.FromSeconds(30), errorCodesToAdd: null);
         });
+    }
+    else if (databaseProvider.Equals("SqlServer", StringComparison.OrdinalIgnoreCase))
+    {
+        options.UseSqlServer(connectionString);
+    }
+    else
+    {
+        throw new InvalidOperationException($"Unsupported database provider '{databaseProvider}'.");
     }
 });
 
@@ -321,6 +335,7 @@ builder.Services.AddHttpClient<CloudDentalOffice.Contracts.Vision.IVisionService
 
 // Remaining services still use monolith mode (migrate one at a time)
 builder.Services.AddScoped<IClaimService, ClaimServiceImpl>();
+builder.Services.AddScoped<PatientContextService>();
 builder.Services.AddScoped<IAppointmentService, AppointmentServiceImpl>();
 builder.Services.AddScoped<ITreatmentPlanService, TreatmentPlanService>();
 builder.Services.AddScoped<IEdiService, EdiService>();
@@ -362,6 +377,9 @@ using (var scope = app.Services.CreateScope())
         // Seed initial data
         logger.LogInformation("Initializing database with seed data...");
         CloudDentalOffice.Portal.Data.DbInitializer.Initialize(dbContext);
+        CloudDentalOffice.Portal.Data.DbInitializer.ConfigureDemoPayer(
+            dbContext,
+            builder.Configuration["CloudHealthOffice:BaseUrl"]);
         logger.LogInformation("Database initialization completed");
         
         // Seed claims for demo tenant
