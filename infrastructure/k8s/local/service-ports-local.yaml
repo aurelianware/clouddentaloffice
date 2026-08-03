@@ -1,0 +1,25 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: prescription-service
+spec:
+  template:
+    spec:
+      containers:
+        - name: prescription-service
+          env:
+            - name: ASPNETCORE_URLS
+              value: http://+:5107
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vision-service
+spec:
+  template:
+    spec:
+      containers:
+        - name: vision-service
+          env:
+            - name: ASPNETCORE_URLS
+              value: http://+:5108

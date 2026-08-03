@@ -1,6 +1,7 @@
 @page "/patients"
 @using CloudDentalOffice.Portal.Models
 @inject IPatientService PatientService
+@inject PatientContextService PatientContext
 @inject NavigationManager Navigation
 @inject IDialogService DialogService
 @inject ISnackbar Snackbar
@@ -82,15 +83,15 @@
                     <MudTd DataLabel="Actions">
                         <MudMenu Icon="@Icons.Material.Filled.MoreVert" Size="Size.Small" Color="Color.Default">
                             <MudMenuItem Icon="@Icons.Material.Filled.Event" 
-                                        OnClick="@(() => Navigation.NavigateTo($"/appointments/{context.PatientId}"))">
+                                        OnClick="@(() => OpenPatientWorkflow(context, "appointments"))">
                                 Appointments
                             </MudMenuItem>
                             <MudMenuItem Icon="@Icons.Material.Filled.Assignment" 
-                                        OnClick="@(() => Navigation.NavigateTo($"/treatment-plans/{context.PatientId}"))">
+                                        OnClick="@(() => OpenPatientWorkflow(context, "treatment-plans"))">
                                 Treatment Plans
                             </MudMenuItem>
                             <MudMenuItem Icon="@Icons.Material.Filled.Medication" 
-                                        OnClick="@(() => Navigation.NavigateTo($"/chart/{context.PatientId}"))">
+                                        OnClick="@(() => OpenPatientWorkflow(context, "chart"))">
                                 Clinical Chart
                             </MudMenuItem>
                             <MudDivider />
@@ -205,5 +206,11 @@
     {
         // Navigate to detailed patient view (to be implemented)
         Snackbar.Add($"Viewing details for {patient.FullName}", Severity.Info);
+    }
+
+    private void OpenPatientWorkflow(Patient patient, string workflow)
+    {
+        PatientContext.Select(patient);
+        Navigation.NavigateTo($"/{workflow}/{patient.PatientId}");
     }
 }

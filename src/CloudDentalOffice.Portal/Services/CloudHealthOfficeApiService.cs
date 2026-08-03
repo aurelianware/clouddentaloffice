@@ -3,14 +3,14 @@ using CloudDentalOffice.Portal.Models;
 using Microsoft.EntityFrameworkCore;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
-using System.Text.Json;
+using System.Text;
 using System.Text.Json.Serialization;
 
 namespace CloudDentalOffice.Portal.Services;
 
 /// <summary>
 /// Client for CloudHealthOffice REST API
-/// Sends claims as JSON payloads instead of X12 files
+/// Sends generated X12 837D files to CloudHealthOffice's canonical raw-837 ingress.
 /// </summary>
 public interface ICloudHealthOfficeApiService
 {
@@ -21,15 +21,18 @@ public interface ICloudHealthOfficeApiService
 public class CloudHealthOfficeApiService : ICloudHealthOfficeApiService
 {
     private readonly CloudDentalDbContext _context;
+    private readonly IEdiX12Service _x12Service;
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly ILogger<CloudHealthOfficeApiService> _logger;
 
     public CloudHealthOfficeApiService(
         CloudDentalDbContext context,
+        IEdiX12Service x12Service,
         IHttpClientFactory httpClientFactory,
         ILogger<CloudHealthOfficeApiService> logger)
     {
         _context = context;
+        _x12Service = x12Service;
         _httpClientFactory = httpClientFactory;
         _logger = logger;
     }
@@ -38,6 +41,9 @@ public class CloudHealthOfficeApiService : ICloudHealthOfficeApiService
     {
         if (string.IsNullOrEmpty(payer.ApiEndpoint))
             throw new InvalidOperationException($"Payer {payer.PayerName} has no API endpoint configured");
+
+        if (string.IsNullOrWhiteSpace(claim.TenantId))
+            throw new InvalidOperationException($"Claim {claim.ClaimNumber} has no tenant ID");
 
         // Load full claim with all relationships
         var fullClaim = await _context.Claims
@@ -51,59 +57,10 @@ public class CloudHealthOfficeApiService : ICloudHealthOfficeApiService
         if (fullClaim == null)
             throw new InvalidOperationException($"Claim {claim.ClaimNumber} not found");
 
-        // Build JSON payload
-        var payload = new Claim837DRequest
-        {
-            ClaimNumber = fullClaim.ClaimNumber,
-            ServiceDateFrom = fullClaim.ServiceDateFrom,
-            ServiceDateTo = fullClaim.ServiceDateTo,
-            TotalChargeAmount = fullClaim.TotalChargeAmount,
-            PlaceOfService = "11", // Office
-            Patient = new PatientInfo
-            {
-                FirstName = fullClaim.Patient?.FirstName ?? "",
-                LastName = fullClaim.Patient?.LastName ?? "",
-                DateOfBirth = fullClaim.Patient?.DateOfBirth ?? DateTime.MinValue,
-                Gender = fullClaim.Patient?.Gender ?? "Unknown",
-                Address1 = fullClaim.Patient?.Address1,
-                City = fullClaim.Patient?.City,
-                State = fullClaim.Patient?.State,
-                ZipCode = fullClaim.Patient?.ZipCode,
-                Phone = fullClaim.Patient?.PrimaryPhone
-            },
-            Subscriber = new SubscriberInfo
-            {
-                MemberId = fullClaim.PatientInsurance?.MemberId ?? fullClaim.Patient?.PatientId.ToString() ?? "",
-                GroupNumber = fullClaim.PatientInsurance?.GroupNumber,
-                RelationshipToPatient = "Self" // TODO: Handle dependents
-            },
-            Provider = new ProviderInfo
-            {
-                NPI = fullClaim.Provider?.NPI ?? "",
-                FirstName = fullClaim.Provider?.FirstName ?? "",
-                LastName = fullClaim.Provider?.LastName ?? "",
-                TaxId = "123456789", // TODO: Store in Provider model
-                Address1 = "123 Dental Plaza",
-                City = "Anytown",
-                State = "CA",
-                ZipCode = "90210",
-                Phone = "5555551234"
-            },
-            Payer = new PayerInfo
-            {
-                PayerId = fullClaim.PatientInsurance?.InsurancePlan?.EdiPayerId ?? fullClaim.PatientInsurance?.InsurancePlan?.PayerId ?? "",
-                PayerName = fullClaim.PatientInsurance?.InsurancePlan?.PayerName ?? ""
-            },
-            Procedures = fullClaim.Procedures.Select(p => new ProcedureInfo
-            {
-                ProcedureCode = p.CDTCode,
-                Description = p.Description,
-                ServiceDate = p.ServiceDate,
-                ChargeAmount = p.ChargeAmount,
-                ToothNumber = p.ToothNumber,
-                DiagnosisCodePointers = null // TODO: Add DiagnosisCodePointers field to ClaimProcedure
-            }).ToList()
-        };
+        if (string.IsNullOrWhiteSpace(fullClaim.TenantId))
+            throw new InvalidOperationException($"Claim {fullClaim.ClaimNumber} has no tenant ID");
+
+        var x12 = await _x12Service.Generate837DTransactionAsync(fullClaim);
 
         _logger.LogInformation("Submitting claim {ClaimNumber} to CloudHealthOffice API: {Endpoint}",
             fullClaim.ClaimNumber, payer.ApiEndpoint);
@@ -113,6 +70,7 @@ public class CloudHealthOfficeApiService : ICloudHealthOfficeApiService
             var client = _httpClientFactory.CreateClient();
             client.BaseAddress = new Uri(payer.ApiEndpoint);
             client.Timeout = TimeSpan.FromSeconds(30);
+            client.DefaultRequestHeaders.Add("X-Tenant-ID", fullClaim.TenantId);
 
             // Add authentication
             if (!string.IsNullOrEmpty(payer.ApiKeyEncrypted))
@@ -129,21 +87,31 @@ public class CloudHealthOfficeApiService : ICloudHealthOfficeApiService
                 }
             }
 
-            // POST to /api/claims/837d
-            var response = await client.PostAsJsonAsync("/api/claims/837d", payload);
+            using var form = new MultipartFormDataContent();
+            using var file = new ByteArrayContent(Encoding.UTF8.GetBytes(x12));
+            file.Headers.ContentType = new MediaTypeHeaderValue("text/plain");
+            form.Add(file, "file", $"837D_{fullClaim.ClaimNumber}.x12");
+
+            var response = await client.PostAsync("api/v1/claims/import/raw837", form);
 
             if (response.IsSuccessStatusCode)
             {
-                var result = await response.Content.ReadFromJsonAsync<CloudHealthOfficeResponse>();
+                var import = await response.Content.ReadFromJsonAsync<Raw837ImportResponse>();
+                var claimResult = import?.Results.FirstOrDefault();
+                var result = new CloudHealthOfficeResponse
+                {
+                    Success = claimResult?.Success == true,
+                    Message = claimResult?.Success == true
+                        ? "837D accepted by CloudHealthOffice for adjudication"
+                        : "CloudHealthOffice rejected the 837D claim",
+                    TrackingId = claimResult?.ClaimId,
+                    Errors = claimResult?.Errors
+                };
                 
                 _logger.LogInformation("Successfully submitted claim {ClaimNumber} to CloudHealthOffice. Tracking ID: {TrackingId}",
-                    fullClaim.ClaimNumber, result?.TrackingId);
+                    fullClaim.ClaimNumber, result.TrackingId);
 
-                return result ?? new CloudHealthOfficeResponse
-                {
-                    Success = true,
-                    Message = "Claim submitted successfully"
-                };
+                return result;
             }
             else
             {
@@ -186,8 +154,7 @@ public class CloudHealthOfficeApiService : ICloudHealthOfficeApiService
                 }
             }
 
-            // Test endpoint - /api/health or /api/ping
-            var response = await client.GetAsync("/api/health");
+            var response = await client.GetAsync("health/live");
             return response.IsSuccessStatusCode;
         }
         catch (Exception ex)
@@ -216,141 +183,25 @@ public class CloudHealthOfficeApiService : ICloudHealthOfficeApiService
     }
 }
 
-// DTOs for CloudHealthOffice API
-
-public class Claim837DRequest
+public class Raw837ImportResponse
 {
-    [JsonPropertyName("claimNumber")]
-    public string ClaimNumber { get; set; } = string.Empty;
+    [JsonPropertyName("succeededCount")]
+    public int SucceededCount { get; set; }
 
-    [JsonPropertyName("serviceDateFrom")]
-    public DateTime ServiceDateFrom { get; set; }
-
-    [JsonPropertyName("serviceDateTo")]
-    public DateTime? ServiceDateTo { get; set; }
-
-    [JsonPropertyName("totalChargeAmount")]
-    public decimal TotalChargeAmount { get; set; }
-
-    [JsonPropertyName("placeOfService")]
-    public string PlaceOfService { get; set; } = string.Empty;
-
-    [JsonPropertyName("patient")]
-    public PatientInfo Patient { get; set; } = new();
-
-    [JsonPropertyName("subscriber")]
-    public SubscriberInfo Subscriber { get; set; } = new();
-
-    [JsonPropertyName("provider")]
-    public ProviderInfo Provider { get; set; } = new();
-
-    [JsonPropertyName("payer")]
-    public PayerInfo Payer { get; set; } = new();
-
-    [JsonPropertyName("procedures")]
-    public List<ProcedureInfo> Procedures { get; set; } = new();
+    [JsonPropertyName("results")]
+    public List<Raw837ClaimResponse> Results { get; set; } = [];
 }
 
-public class PatientInfo
+public class Raw837ClaimResponse
 {
-    [JsonPropertyName("firstName")]
-    public string FirstName { get; set; } = string.Empty;
+    [JsonPropertyName("success")]
+    public bool Success { get; set; }
 
-    [JsonPropertyName("lastName")]
-    public string LastName { get; set; } = string.Empty;
+    [JsonPropertyName("claimId")]
+    public string? ClaimId { get; set; }
 
-    [JsonPropertyName("dateOfBirth")]
-    public DateTime? DateOfBirth { get; set; }
-
-    [JsonPropertyName("gender")]
-    public string Gender { get; set; } = string.Empty;
-
-    [JsonPropertyName("address1")]
-    public string? Address1 { get; set; }
-
-    [JsonPropertyName("city")]
-    public string? City { get; set; }
-
-    [JsonPropertyName("state")]
-    public string? State { get; set; }
-
-    [JsonPropertyName("zipCode")]
-    public string? ZipCode { get; set; }
-
-    [JsonPropertyName("phone")]
-    public string? Phone { get; set; }
-}
-
-public class SubscriberInfo
-{
-    [JsonPropertyName("memberId")]
-    public string MemberId { get; set; } = string.Empty;
-
-    [JsonPropertyName("groupNumber")]
-    public string? GroupNumber { get; set; }
-
-    [JsonPropertyName("relationshipToPatient")]
-    public string RelationshipToPatient { get; set; } = "Self";
-}
-
-public class ProviderInfo
-{
-    [JsonPropertyName("npi")]
-    public string NPI { get; set; } = string.Empty;
-
-    [JsonPropertyName("firstName")]
-    public string FirstName { get; set; } = string.Empty;
-
-    [JsonPropertyName("lastName")]
-    public string LastName { get; set; } = string.Empty;
-
-    [JsonPropertyName("taxId")]
-    public string TaxId { get; set; } = string.Empty;
-
-    [JsonPropertyName("address1")]
-    public string Address1 { get; set; } = string.Empty;
-
-    [JsonPropertyName("city")]
-    public string City { get; set; } = string.Empty;
-
-    [JsonPropertyName("state")]
-    public string State { get; set; } = string.Empty;
-
-    [JsonPropertyName("zipCode")]
-    public string ZipCode { get; set; } = string.Empty;
-
-    [JsonPropertyName("phone")]
-    public string Phone { get; set; } = string.Empty;
-}
-
-public class PayerInfo
-{
-    [JsonPropertyName("payerId")]
-    public string PayerId { get; set; } = string.Empty;
-
-    [JsonPropertyName("payerName")]
-    public string PayerName { get; set; } = string.Empty;
-}
-
-public class ProcedureInfo
-{
-    [JsonPropertyName("procedureCode")]
-    public string ProcedureCode { get; set; } = string.Empty;
-
-    [JsonPropertyName("description")]
-    public string? Description { get; set; }
-
-    [JsonPropertyName("serviceDate")]
-    public DateTime ServiceDate { get; set; }
-
-    [JsonPropertyName("chargeAmount")]
-    public decimal ChargeAmount { get; set; }
-
-    [JsonPropertyName("toothNumber")]
-    public string? ToothNumber { get; set; }
-
-    [JsonPropertyName("diagnosisCodePointers")]
-    public string? DiagnosisCodePointers { get; set; }
+    [JsonPropertyName("errors")]
+    public List<string> Errors { get; set; } = [];
 }
 
 public class CloudHealthOfficeResponse

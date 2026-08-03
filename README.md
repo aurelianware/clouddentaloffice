@@ -106,6 +106,57 @@ dotnet run --project src/CloudDentalOffice.Portal
 
 Each service defaults to SQLite for local dev — no database setup required.
 
+### Local Kubernetes
+
+CloudDentalOffice runs in its own `clouddental` namespace. The local overlay uses
+portable Kubernetes resources, an in-cluster PostgreSQL instance, and local images;
+it does not depend on Azure or DigitalOcean services.
+
+Prerequisites: Docker, `kubectl`, and a running local cluster. The helper recognizes
+a kind cluster named `docker-desktop` by default and loads images into it. The helper
+generates the local database password and JWT signing key directly in the cluster;
+these credentials are not stored in the repository.
+
+```bash
+./scripts/deploy-local-k8s.sh
+kubectl port-forward -n clouddental service/portal 5000:5000
+```
+
+Then open http://localhost:5000 and sign in with
+`demo@clouddentaloffice.com` / `Password123!`.
+
+Useful overrides:
+
+```bash
+# Re-apply manifests without rebuilding images
+SKIP_BUILD=true ./scripts/deploy-local-k8s.sh
+
+# Use another kind cluster name
+KIND_CLUSTER_NAME=my-cluster ./scripts/deploy-local-k8s.sh
+```
+
+The manifests are under `infrastructure/k8s/local`. The reusable application
+manifests remain under `infrastructure/k8s/clouddental` for cloud deployments.
+
+#### CloudHealthOffice claim flow
+
+The local portal configures the demo payer to submit to the CloudHealthOffice
+claims service in the separate `cloudhealthoffice` namespace:
+
+```text
+CloudDentalOffice (clouddental)
+  -> generate ASC X12 005010X224A2 837D
+  -> POST multipart file to claims-service.cloudhealthoffice.svc.cluster.local
+  -> /api/v1/claims/import/raw837
+  -> CloudHealthOffice validation and adjudication pipeline
+```
+
+Override `CloudHealthOffice__BaseUrl` in the portal deployment when the payer
+platform uses a different namespace or an external URL. CloudHealthOffice must
+contain matching member, provider, and benefit configuration for the submitted
+claim to adjudicate successfully; otherwise its raw-837 response is shown as a
+claim-submission rejection in CloudDentalOffice.
+
 ---
 
 ## EDI / Payer Interoperability

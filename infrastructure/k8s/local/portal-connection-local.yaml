@@ -1,0 +1,32 @@
+- op: replace
+  path: /spec/template/spec/containers/0/env
+  value:
+    - name: ASPNETCORE_ENVIRONMENT
+      value: Production
+    - name: ApiGateway__BaseUrl
+      value: http://api-gateway:5200
+    - name: Microservices__Patient__Enabled
+      value: "false"
+    - name: ConnectionStrings__DefaultConnection
+      value: Data Source=/data/clouddental.db
+    - name: Jwt__Key
+      valueFrom:
+        secretKeyRef:
+          name: cdo-app-secrets
+          key: Jwt__Key
+    - name: Jwt__Issuer
+      valueFrom:
+        secretKeyRef:
+          name: cdo-app-secrets
+          key: Jwt__Issuer
+    - name: Jwt__Audience
+      valueFrom:
+        secretKeyRef:
+          name: cdo-app-secrets
+          key: Jwt__Audience
+    - name: AzureAd__Enabled
+      value: "false"
+    - name: Database__Provider
+      value: Sqlite
+    - name: CloudHealthOffice__BaseUrl
+      value: http://claims-service.cloudhealthoffice.svc.cluster.local/

@@ -3,6 +3,8 @@
 @using CloudDentalOffice.Portal.Models
 @inject ITreatmentPlanService TreatmentPlanService
 @inject IPatientService PatientService
+@inject IProviderService ProviderService
+@inject PatientContextService PatientContext
 @inject NavigationManager Navigation
 @inject IDialogService DialogService
 @inject ISnackbar Snackbar
@@ -86,7 +88,7 @@
                         </MudText>
                     </MudTd>
                     <MudTd DataLabel="Provider">
-                        <MudText Typo="Typo.body2">Provider @context.ProviderId</MudText>
+                        <MudText Typo="Typo.body2">@GetProviderName(context.ProviderId)</MudText>
                     </MudTd>
                     <MudTd DataLabel="Status">
                         @{
@@ -145,6 +147,7 @@
     
     private List<TreatmentPlan> _treatmentPlans = new();
     private List<Patient> _allPatients = new();
+    private Dictionary<int, string> _providerNames = new();
     private Patient? _selectedPatient = null;
     private bool _loading = false;
     private string? _errorMessage = null;
@@ -152,15 +155,17 @@
     protected override async Task OnInitializedAsync()
     {
         await LoadPatients();
+        await LoadProviders();
         
-        // If PatientId is provided, load that patient
-        if (PatientId.HasValue)
+        var patientToLoad = PatientId ?? PatientContext.PatientId;
+        if (patientToLoad.HasValue)
         {
             try
             {
-                _selectedPatient = await PatientService.GetPatientByIdAsync(PatientId.Value.ToString());
+                _selectedPatient = await PatientService.GetPatientByIdAsync(patientToLoad.Value.ToString());
                 if (_selectedPatient != null)
                 {
+                    PatientContext.Select(_selectedPatient);
                     await LoadTreatmentPlans();
                 }
             }
@@ -171,6 +176,22 @@
             }
         }
     }
+
+    private async Task LoadProviders()
+    {
+        try
+        {
+            var providers = await ProviderService.GetProvidersAsync();
+            _providerNames = providers.ToDictionary(p => p.ProviderId, p => p.FullName);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error loading provider names: {ex.Message}", Severity.Warning);
+        }
+    }
+
+    private string GetProviderName(int providerId) =>
+        _providerNames.TryGetValue(providerId, out var name) ? name : "Unknown provider";
 
     private async Task LoadPatients()
     {
@@ -200,7 +221,12 @@
         _selectedPatient = patient;
         if (patient != null)
         {
+            PatientContext.Select(patient);
             await LoadTreatmentPlans();
+        }
+        else
+        {
+            PatientContext.Clear();
         }
     }
 
@@ -228,6 +254,8 @@
     private void ClearPatientSelection()
     {
         _selectedPatient = null;
+        PatientId = null;
+        PatientContext.Clear();
         _treatmentPlans.Clear();
     }
 

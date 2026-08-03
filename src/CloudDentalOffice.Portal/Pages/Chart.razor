@@ -3,6 +3,7 @@
 @using CloudDentalOffice.Portal.Models
 @using CloudDentalOffice.Portal.Services
 @inject IPatientService PatientService
+@inject PatientContextService PatientContext
 @inject IClinicalChartService ClinicalChartService
 @inject NavigationManager Navigation
 @inject IDialogService DialogService
@@ -324,14 +325,15 @@
     {
         await LoadPatients();
         
-        // If PatientId is provided, load that patient
-        if (PatientId.HasValue)
+        var patientToLoad = PatientId ?? PatientContext.PatientId;
+        if (patientToLoad.HasValue)
         {
             try
             {
-                _selectedPatient = await PatientService.GetPatientByIdAsync(PatientId.Value.ToString());
+                _selectedPatient = await PatientService.GetPatientByIdAsync(patientToLoad.Value.ToString());
                 if (_selectedPatient != null)
                 {
+                    PatientContext.Select(_selectedPatient);
                     await LoadPatientChartData(_selectedPatient.PatientId);
                     Snackbar.Add($"Viewing chart for {_selectedPatient.FullName}", Severity.Info);
                 }
@@ -389,14 +391,21 @@
         _selectedPatient = patient;
         if (patient != null)
         {
+            PatientContext.Select(patient);
             await LoadPatientChartData(patient.PatientId);
             Snackbar.Add($"Viewing chart for {patient.FullName}", Severity.Info);
+        }
+        else
+        {
+            PatientContext.Clear();
         }
     }
 
     private void ClearPatientSelection()
     {
         _selectedPatient = null;
+        PatientId = null;
+        PatientContext.Clear();
         _completedProcedures.Clear();
         _plannedProcedures.Clear();
         _clinicalNotes.Clear();
@@ -424,7 +433,10 @@
         }
         else
         {
-            Snackbar.Add($"Tooth #{toothNum}: No procedures", Severity.Info);
+            Snackbar.Add(
+                $"No procedures are recorded for tooth #{toothNum}. Use Record Procedure to add one.",
+                Severity.Info,
+                config => config.VisibleStateDuration = 4000);
         }
     }
 

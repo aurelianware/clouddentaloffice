@@ -1,0 +1,16 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: portal
+spec:
+  template:
+    spec:
+      containers:
+        - name: portal
+          volumeMounts:
+            - name: portal-data
+              mountPath: /data
+      volumes:
+        - name: portal-data
+          persistentVolumeClaim:
+            claimName: portal-data

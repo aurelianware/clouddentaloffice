@@ -214,7 +214,7 @@
                             <MudPaper Class="pa-2" Style="background: rgba(0, 255, 136, 0.05);">
                                 <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center">
                                     <div>
-                                        <MudText Typo="Typo.body2" Style="color: #00ffff;">Patient @apt.PatientId</MudText>
+                                        <MudText Typo="Typo.body2" Style="color: #00ffff;">@GetPatientName(apt.PatientId)</MudText>
                                         <MudText Typo="Typo.caption" Style="color: #b0b0b0;">
                                             @apt.AppointmentDateTime.ToString("MMM dd, h:mm tt") - @apt.AppointmentType
                                         </MudText>
@@ -260,7 +260,7 @@
                             <MudPaper Class="pa-2" Style="background: rgba(255, 170, 0, 0.05);">
                                 <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center">
                                     <div>
-                                        <MudText Typo="Typo.body2" Style="color: #00ffff;">Patient @plan.PatientId</MudText>
+                                        <MudText Typo="Typo.body2" Style="color: #00ffff;">@GetPatientName(plan.PatientId)</MudText>
                                         <MudText Typo="Typo.caption" Style="color: #b0b0b0;">
                                             @(plan.Title ?? "Treatment Plan") - @plan.TotalEstimatedCost.ToString("C")
                                         </MudText>
@@ -365,6 +365,7 @@
     // Recent data
     private List<Appointment> _recentAppointments = new();
     private List<TreatmentPlan> _recentTreatmentPlans = new();
+    private Dictionary<int, string> _patientNames = new();
     
     private bool _loading = true;
 
@@ -388,6 +389,7 @@
             // Sequential execution to avoid DbContext concurrency issues
             // DbContext is NOT thread-safe and cannot handle parallel operations
             var patients = await PatientService.GetPatientsAsync();
+            _patientNames = patients.ToDictionary(p => p.PatientId, p => p.FullName);
             var appointments = await AppointmentService.GetAppointmentsAsync(DateTime.Today);
             var claims = await ClaimService.GetClaimsAsync();
             var treatmentPlans = await TreatmentPlanService.GetAllTreatmentPlansAsync();
@@ -445,6 +447,9 @@
             _loading = false;
         }
     }
+
+    private string GetPatientName(int patientId) =>
+        _patientNames.TryGetValue(patientId, out var name) ? name : "Unknown patient";
     
     private Color GetAppointmentStatusColor(string status)
     {

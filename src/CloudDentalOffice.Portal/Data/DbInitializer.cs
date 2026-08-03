@@ -154,6 +154,27 @@ public static class DbInitializer
         context.SaveChanges();
     }
 
+    public static void ConfigureDemoPayer(CloudDentalDbContext context, string? cloudHealthOfficeUrl)
+    {
+        if (string.IsNullOrWhiteSpace(cloudHealthOfficeUrl))
+        {
+            return;
+        }
+
+        var payer = context.InsurancePlans.IgnoreQueryFilters()
+            .FirstOrDefault(p => p.TenantId == "demo" && p.PayerId == "00001");
+        if (payer == null)
+        {
+            return;
+        }
+
+        payer.EdiEnabled = true;
+        payer.EdiSubmissionType = "API";
+        payer.ApiEndpoint = cloudHealthOfficeUrl.TrimEnd('/') + "/";
+        payer.EdiPayerId ??= payer.PayerId;
+        context.SaveChanges();
+    }
+
     public static void SeedClaims(CloudDentalDbContext context, string tenantId = "demo")
     {
         // Check if claims already exist for this tenant
