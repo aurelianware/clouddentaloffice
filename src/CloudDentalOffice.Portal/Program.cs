@@ -375,9 +375,20 @@ using (var scope = app.Services.CreateScope())
     {
         logger.LogInformation("Applying database migrations...");
         
-        // Apply migrations in all environments
-        logger.LogInformation("Running database migrations...");
-        dbContext.Database.Migrate();
+        // Historical migrations were generated against SQLite and cannot be
+        // replayed safely by Npgsql. Fresh production environments create the
+        // current model directly until provider-specific migrations are
+        // baselined. Existing environments should explicitly enable migrations.
+        if (builder.Configuration.GetValue("Database:UseMigrations", app.Environment.IsDevelopment()))
+        {
+            logger.LogInformation("Running database migrations...");
+            dbContext.Database.Migrate();
+        }
+        else
+        {
+            logger.LogInformation("Creating the current database model without historical migrations...");
+            dbContext.Database.EnsureCreated();
+        }
         
         logger.LogInformation("Database setup completed successfully");
         

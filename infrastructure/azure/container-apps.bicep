@@ -81,6 +81,8 @@ resource portal 'Microsoft.App/containerApps@2023-05-01' = {
           resources: { cpu: json('0.5'), memory: '1Gi' }
           env: [
             { name: 'ASPNETCORE_ENVIRONMENT', value: 'Production' }
+            { name: 'Database__Provider', value: 'PostgreSQL' }
+            { name: 'Database__UseMigrations', value: 'false' }
             // ACA internal ingress: api-gateway is reachable at http://api-gateway (port 80)
             { name: 'ApiGateway__BaseUrl', value: 'http://api-gateway' }
             { name: 'Microservices__Patient__Enabled', value: 'true' }
