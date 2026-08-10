@@ -10,9 +10,11 @@
     <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="8.0.0" />
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="8.0.0" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="8.0.0" />
+    <PackageReference Include="Azure.Messaging.ServiceBus" Version="7.18.1" />
     <PackageReference Include="Swashbuckle.AspNetCore" Version="6.5.0" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\Shared\CloudDentalOffice.Contracts\CloudDentalOffice.Contracts.csproj" />
+    <ProjectReference Include="..\..\Shared\CloudDentalOffice.Messaging\CloudDentalOffice.Messaging.csproj" />
   </ItemGroup>
 </Project>

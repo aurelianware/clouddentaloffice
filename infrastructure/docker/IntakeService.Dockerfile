@@ -6,18 +6,18 @@ WORKDIR /src
 COPY ["Directory.Build.props", "."]
 COPY ["src/Shared/CloudDentalOffice.Contracts/CloudDentalOffice.Contracts.csproj", "src/Shared/CloudDentalOffice.Contracts/"]
 COPY ["src/Shared/CloudDentalOffice.Messaging/CloudDentalOffice.Messaging.csproj", "src/Shared/CloudDentalOffice.Messaging/"]
-COPY ["src/Services/SchedulingService/SchedulingService.csproj", "src/Services/SchedulingService/"]
-RUN dotnet restore "src/Services/SchedulingService/SchedulingService.csproj"
+COPY ["src/Services/IntakeService/IntakeService.csproj", "src/Services/IntakeService/"]
+RUN dotnet restore "src/Services/IntakeService/IntakeService.csproj"
 COPY . .
-WORKDIR "/src/src/Services/SchedulingService"
-RUN dotnet build "SchedulingService.csproj" -c Release -o /app/build
+WORKDIR "/src/src/Services/IntakeService"
+RUN dotnet build "IntakeService.csproj" -c Release -o /app/build
 
 FROM build AS publish
-RUN dotnet publish "SchedulingService.csproj" -c Release -o /app/publish /p:UseAppHost=false
+RUN dotnet publish "IntakeService.csproj" -c Release -o /app/publish /p:UseAppHost=false
 
 FROM base AS final
 WORKDIR /app
 COPY --from=publish /app/publish .
-ENV ASPNETCORE_URLS=http://+:5102
-EXPOSE 5102
-ENTRYPOINT ["dotnet", "SchedulingService.dll"]
+ENV ASPNETCORE_URLS=http://+:5109
+EXPOSE 5109
+ENTRYPOINT ["dotnet", "IntakeService.dll"]

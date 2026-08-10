@@ -63,11 +63,128 @@ Cloud Dental Office uses a **microservices architecture** with each bounded cont
 | **AuthService** | 5106 | JWT authentication, OpenID Connect, multi-tenant identity |
 | **PrescriptionService** | 5107 | e-Prescribing with DoseSpot integration, EPCS compliance, Surescripts certified |
 | **VisionService** | 5108 | AI vision platform — privaseeAI integration, insurance card OCR (Azure AI Vision), narcotics cabinet monitoring, consent recording, clinical note generation |
+| **IntakeService** | 5109 | Public, internet-facing booking intake. Authenticates + validates website booking requests and publishes events to Service Bus. **No database, no PHI.** |
 
 ### Shared Libraries
 
 - **CloudDentalOffice.Contracts** — DTOs, integration events, and API contracts shared across services
 - **CloudDentalOffice.EdiCommon** — Clean-room X12 EDI parser and generators (837D, 270/271, 835)
+- **CloudDentalOffice.Messaging** — Service Bus event-publishing abstraction (`IEventPublisher`)
+
+---
+
+## Public Website Booking Intake
+
+Practice websites (e.g. [3rd Set Smiles](https://github.com/aurelianware/3rdsetsmiles))
+submit appointment requests through a **dedicated public service** that never
+touches the database or any PHI. This keeps the internet-facing surface provably
+free of patient data.
+
+```
+Internet ─▶ IntakeService  (auth + validate + rate-limit; NO DB, NO PHI)
+                  │ publishes BookingRequestedEvent
+                  ▼
+          Service Bus topic  ──▶ SchedulingService consumer (private) ─▶ writes appointment
+Private  ─▶ ApiGateway ─▶ all PHI endpoints (never internet-exposed)
+```
+
+**IntakeService** (the only internet-facing component) exposes:
+
+```
+POST /api/public/booking-requests
+```
+
+- **Disabled by default** — returns `404` unless `PublicBooking:Enabled` is `true`.
+- **Requires an API key** — `Authorization: Bearer <key>` or `X-Api-Key: <key>`,
+  compared in constant time. Missing/wrong key → `401`.
+- **Rate limited** — fixed window, 5 requests/minute per client IP (keyed on
+  `X-Forwarded-For`).
+- **No database access.** It validates the request and publishes a
+  `BookingRequestedEvent` to Service Bus, then returns `202 Accepted`
+  (`{ status, eventId }`). It cannot read appointments or PHI.
+
+Request body (`PublicBookingRequest`):
+
+```jsonc
+{
+  "name": "Jane Doe",           // required
+  "phone": "480-555-0100",      // required
+  "email": "jane@example.com",  // optional
+  "preferredStart": "2026-08-20T21:00:00Z", // required, UTC ISO-8601 (or offset), must be future
+  "durationMinutes": 60,        // optional; consumer falls back to PublicBooking:DefaultDurationMinutes
+  "reason": "New patient exam", // optional
+  "message": "Second choice: Friday" // optional
+}
+```
+
+`preferredStart` must carry a timezone (UTC `Z` or an explicit offset); a value
+with no timezone is rejected.
+
+**SchedulingService** runs a `BookingRequestConsumer` (a `BackgroundService`) that
+subscribes to the topic on the private network and creates the appointment:
+
+- Resolves provider, location, and the placeholder "web intake" patient
+  **server-side** from `PublicBooking` config — these identifiers never leave the
+  private tier.
+- Records the appointment as `Requested` (a new `AppointmentStatus`) — unconfirmed
+  until staff confirm, rather than landing on the calendar as `Scheduled`.
+- Dead-letters messages it can't process (bad body, or misconfigured
+  provider/patient/duration) so nothing is silently lost.
+
+### Failure behavior (the website keeps working)
+
+The topic decouples the website from the scheduler:
+
+- **SchedulingService down / deploying:** IntakeService still returns `202` and
+  the event waits durably in the `scheduling` subscription until the consumer
+  comes back and processes it. **No booking is lost and the website is
+  unaffected.**
+- **Service Bus unreachable, or not configured:** IntakeService returns `503`
+  (rather than a false `202`), so the calling website falls back to its own
+  delivery path (e.g. email).
+- IntakeService has no database, so a scheduling-database outage cannot affect
+  the public endpoint at all.
+
+### Configuration
+
+**IntakeService** (`PublicBooking` + `ServiceBus` sections):
+
+| Key | Purpose |
+|-----|---------|
+| `PublicBooking:Enabled` | Master switch (default `false`). |
+| `PublicBooking:ApiKey` | Shared secret the website sends. **Required when enabled.** |
+| `ServiceBus:ConnectionString` | Service Bus namespace connection string. Empty → events are logged and dropped. |
+| `ServiceBus:BookingTopic` | Topic to publish to (default `booking-requests`). |
+
+**SchedulingService** (`PublicBooking` + `ServiceBus` sections):
+
+| Key | Purpose |
+|-----|---------|
+| `PublicBooking:ProviderId` | GUID of the default provider. |
+| `PublicBooking:LocationId` | GUID of the location (blank/zero → null). |
+| `PublicBooking:PatientId` | GUID of a shared "Web Booking" placeholder patient. |
+| `PublicBooking:DefaultDurationMinutes` | Appointment length when the request omits one (default `60`). |
+| `PublicBooking:RequireApiKeyForReads` | When `true`, `GET /api/appointments*` also require the API key (default `false`). |
+| `ServiceBus:ConnectionString` | Same namespace as IntakeService. Empty → the consumer stays idle. |
+| `ServiceBus:BookingTopic` / `ServiceBus:BookingSubscription` | Defaults `booking-requests` / `scheduling`. |
+
+Environment-variable form uses double underscores, e.g. `PublicBooking__ApiKey`,
+`ServiceBus__ConnectionString`. You must create the topic and the `scheduling`
+subscription in your Service Bus namespace.
+
+### Deployment boundary (important)
+
+Expose **only IntakeService** to the internet (TLS + the API key at the edge).
+Keep `api-gateway` and every PHI-bearing service — including `SchedulingService`
+and its anonymous `GET /api/appointments*` reads — on the **private** network.
+Because IntakeService has no database and communicates outbound only to Service
+Bus, the public surface carries no PHI even if the public endpoint is probed.
+
+If (against this guidance) `SchedulingService` is ever reachable from the
+internet, set `PublicBooking:RequireApiKeyForReads=true` as defense-in-depth so
+its reads require the API key (the Portal must then present the key on its
+scheduling calls). CORS is **not** required — the website calls IntakeService
+server-to-server.
 
 ---
 
