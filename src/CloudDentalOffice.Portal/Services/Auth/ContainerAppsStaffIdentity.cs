@@ -9,12 +9,14 @@ public sealed record StaffAccessEntry(string Email, string Role);
 public static class ContainerAppsStaffIdentity
 {
     public const string PrincipalHeader = "X-MS-CLIENT-PRINCIPAL";
+    private const int MaxPrincipalHeaderLength = 32768;
     public const string AuthenticationType = "AzureContainerAppsGoogle";
 
     public static ClaimsPrincipal? Resolve(HttpContext context, IConfiguration configuration)
     {
         var encoded = context.Request.Headers[PrincipalHeader].FirstOrDefault();
         if (string.IsNullOrWhiteSpace(encoded)) return null;
+        if (encoded.Length > MaxPrincipalHeaderLength) return null;
 
         ClientPrincipal? source;
         try
@@ -23,7 +25,7 @@ public static class ContainerAppsStaffIdentity
                 Convert.FromBase64String(encoded),
                 new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
         }
-        catch (Exception) when (encoded.Length < 32768)
+        catch (Exception)
         {
             return null;
         }

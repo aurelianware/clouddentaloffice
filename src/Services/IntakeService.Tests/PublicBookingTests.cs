@@ -45,6 +45,21 @@ public sealed class PublicBookingTests
     }
 
     [Fact]
+    public void ValidationAcceptsEmailWithSurroundingWhitespace()
+    {
+        var request = new PublicBookingRequest
+        {
+            Name = "Sam",
+            Phone = "4805550100",
+            Email = "  sam@example.com  ",
+            PreferredStart = DateTime.UtcNow.AddDays(1),
+            PatientRelationship = PatientRelationship.New
+        };
+
+        Assert.Empty(PublicBookingValidator.Validate(request, DateTime.UtcNow));
+    }
+
+    [Fact]
     public void ValidationRejectsOversizedInvalidAndExcessivelyDistantData()
     {
         var request = new PublicBookingRequest

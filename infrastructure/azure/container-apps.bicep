@@ -101,7 +101,6 @@ resource portal 'Microsoft.App/containerApps@2023-05-01' = {
             { name: 'AzureAd__Enabled', value: 'false' }
             { name: 'StaffAuth__Enabled', value: !empty(googleOAuthClientId) ? 'true' : 'false' }
             { name: 'StaffAuth__TenantId', value: initialTenantId }
-            { name: 'StaffAuth__AllowedWorkspaceDomain', value: '3rdsetsmiles.com' }
             { name: 'StaffAuth__Users__0__Email', value: 'matt@3rdsetsmiles.com' }
             { name: 'StaffAuth__Users__0__Role', value: 'Admin' }
             { name: 'StaffAuth__Users__1__Email', value: 'markus.phillips@gmail.com' }

@@ -149,7 +149,8 @@ public static class PublicBookingValidator
         if (string.IsNullOrWhiteSpace(request.Name) || request.Name.Trim().Length > 200) errors["name"] = ["Name is required and must be 200 characters or fewer."];
         if (string.IsNullOrWhiteSpace(request.Phone) || request.Phone.Trim().Length > 30 || request.Phone.Count(char.IsDigit) < 7)
             errors["phone"] = ["Phone must contain at least 7 digits and be 30 characters or fewer."];
-        if (!string.IsNullOrWhiteSpace(request.Email) && (request.Email.Length > 320 || !new EmailAddressAttribute().IsValid(request.Email)))
+        var email = request.Email?.Trim();
+        if (!string.IsNullOrWhiteSpace(email) && (email.Length > 320 || !new EmailAddressAttribute().IsValid(email)))
             errors["email"] = ["Email must be a valid address and 320 characters or fewer."];
         if (request.DurationMinutes is < 15 or > 240) errors["durationMinutes"] = ["Duration must be between 15 and 240 minutes."];
         if (request.Reason?.Length > 500) errors["reason"] = ["Reason must be 500 characters or fewer."];

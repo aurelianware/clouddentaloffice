@@ -45,6 +45,15 @@ public sealed class ContainerAppsStaffIdentityTests
         Assert.Null(ContainerAppsStaffIdentity.Resolve(context, Configuration()));
     }
 
+    [Fact]
+    public void OversizedInvalidEasyAuthHeaderIsDenied()
+    {
+        var context = new DefaultHttpContext();
+        context.Request.Headers[ContainerAppsStaffIdentity.PrincipalHeader] = new string('x', 32769);
+
+        Assert.Null(ContainerAppsStaffIdentity.Resolve(context, Configuration()));
+    }
+
     private static DefaultHttpContext Context(string email)
     {
         var payload = JsonSerializer.Serialize(new
