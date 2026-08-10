@@ -10,6 +10,10 @@ name: Deploy to Azure Container Apps
 #   AZURE_RESOURCE_GROUP   – Resource group containing the Container Apps (e.g. cdo-rg)
 #   ACR_NAME               – Azure Container Registry name (e.g. cdoacr from Bicep output)
 #   ACR_LOGIN_SERVER       – ACR login server (e.g. cdoacr.azurecr.io from Bicep output)
+#   POSTGRES_HOST          – PostgreSQL Flexible Server FQDN
+#   POSTGRES_ADMIN_PASSWORD – PostgreSQL administrator password
+#   JWT_KEY                – Portal signing key
+#   PUBLIC_BOOKING_API_KEY – 32+ character website-to-IntakeService credential
 #
 # One-time infrastructure setup (run locally, not in CI):
 #   az group create --name cdo-rg --location eastus
@@ -54,6 +58,11 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
+      - name: Verify production subscription
+        run: |
+          test "$(az account show --query id -o tsv)" = "${{ secrets.AZURE_SUBSCRIPTION_ID }}"
+          test "${{ secrets.AZURE_SUBSCRIPTION_ID }}" = "85bd1f0d-3a84-4070-a1d1-9358fa42c10e"
+
       # Phase 1 — Deploy core infrastructure (ACR, Container App Environment, Managed Identity).
       # Does NOT create Container Apps — images must exist first.
       - name: Deploy infrastructure (Bicep)
@@ -68,15 +77,15 @@ jobs:
         id: infra
         run: |
           ENVIRONMENT_ID=$(az deployment group show \
-            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --resource-group "${{ env.RESOURCE_GROUP }}" \
             --name main \
             --query properties.outputs.environmentId.value -o tsv)
           IDENTITY_ID=$(az deployment group show \
-            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --resource-group "${{ env.RESOURCE_GROUP }}" \
             --name main \
             --query properties.outputs.identityId.value -o tsv)
-          echo "environment_id=$ENVIRONMENT_ID" >> $GITHUB_OUTPUT
-          echo "identity_id=$IDENTITY_ID" >> $GITHUB_OUTPUT
+          echo "environment_id=$ENVIRONMENT_ID" >> "$GITHUB_OUTPUT"
+          echo "identity_id=$IDENTITY_ID" >> "$GITHUB_OUTPUT"
 
       - name: Login to Azure Container Registry
         run: az acr login --name ${{ secrets.ACR_NAME }}
@@ -114,6 +123,14 @@ jobs:
             -t ${{ secrets.ACR_LOGIN_SERVER }}/scheduling-service:latest .
           docker push ${{ secrets.ACR_LOGIN_SERVER }}/scheduling-service:${{ env.IMAGE_TAG }}
           docker push ${{ secrets.ACR_LOGIN_SERVER }}/scheduling-service:latest
+
+      - name: Build and push intake-service
+        run: |
+          docker build -f infrastructure/docker/IntakeService.Dockerfile \
+            -t ${{ secrets.ACR_LOGIN_SERVER }}/intake-service:${{ env.IMAGE_TAG }} \
+            -t ${{ secrets.ACR_LOGIN_SERVER }}/intake-service:latest .
+          docker push ${{ secrets.ACR_LOGIN_SERVER }}/intake-service:${{ env.IMAGE_TAG }}
+          docker push ${{ secrets.ACR_LOGIN_SERVER }}/intake-service:latest
 
       - name: Build and push claims-service
         run: |
@@ -165,6 +182,29 @@ jobs:
 
       # Phase 2 — Deploy Container Apps now that images exist in ACR.
       # Creates apps on first run, updates image tag on subsequent runs.
+      - name: Resolve least-privilege Service Bus credentials
+        id: servicebus
+        shell: bash
+        run: |
+          namespace=$(az servicebus namespace list \
+            --resource-group "${{ env.RESOURCE_GROUP }}" \
+            --query "[?starts_with(name, 'cdo-booking-')].name | [0]" -o tsv)
+          test -n "$namespace"
+          send_connection=$(az servicebus namespace authorization-rule keys list \
+            --resource-group "${{ env.RESOURCE_GROUP }}" \
+            --namespace-name "$namespace" \
+            --name booking-intake-send \
+            --query primaryConnectionString -o tsv)
+          listen_connection=$(az servicebus namespace authorization-rule keys list \
+            --resource-group "${{ env.RESOURCE_GROUP }}" \
+            --namespace-name "$namespace" \
+            --name booking-scheduling-listen \
+            --query primaryConnectionString -o tsv)
+          echo "::add-mask::$send_connection"
+          echo "::add-mask::$listen_connection"
+          echo "send_connection=$send_connection" >> "$GITHUB_OUTPUT"
+          echo "listen_connection=$listen_connection" >> "$GITHUB_OUTPUT"
+
       - name: Deploy Container Apps (Bicep)
         run: |
           az deployment group create \
@@ -178,7 +218,10 @@ jobs:
               imageTag=${{ env.IMAGE_TAG }} \
               postgresHost=${{ secrets.POSTGRES_HOST }} \
               postgresAdminPassword=${{ secrets.POSTGRES_ADMIN_PASSWORD }} \
-              jwtKey=${{ secrets.JWT_KEY }}
+              jwtKey=${{ secrets.JWT_KEY }} \
+              serviceBusSendConnection='${{ steps.servicebus.outputs.send_connection }}' \
+              serviceBusListenConnection='${{ steps.servicebus.outputs.listen_connection }}' \
+              publicBookingApiKey='${{ secrets.PUBLIC_BOOKING_API_KEY }}'
 
       # ── Verify deployment ─────────────────────────────────────────────────────
 
@@ -189,3 +232,14 @@ jobs:
             --resource-group ${{ env.RESOURCE_GROUP }} \
             --query "properties.latestRevisionFqdn" \
             --output tsv
+
+      - name: Verify IntakeService is healthy
+        shell: bash
+        run: |
+          fqdn=$(az containerapp show \
+            --name intake-service \
+            --resource-group "${{ env.RESOURCE_GROUP }}" \
+            --query properties.configuration.ingress.fqdn -o tsv)
+          test -n "$fqdn"
+          curl --fail --retry 5 --retry-delay 5 "https://$fqdn/health"
+          echo "IntakeService: https://$fqdn"
