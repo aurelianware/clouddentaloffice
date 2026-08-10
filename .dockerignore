@@ -1,0 +1,9 @@
+.git
+.github
+**/bin
+**/obj
+**/*.db
+**/*.db-shm
+**/*.db-wal
+*.zip
+docs
