@@ -381,28 +381,14 @@ using (var scope = app.Services.CreateScope())
         
         logger.LogInformation("Database setup completed successfully");
         
-        // Seed initial data
-        logger.LogInformation("Initializing database with seed data...");
-        CloudDentalOffice.Portal.Data.DbInitializer.Initialize(dbContext);
-        CloudDentalOffice.Portal.Data.DbInitializer.ConfigureDemoPayer(
-            dbContext,
-            builder.Configuration["CloudHealthOffice:BaseUrl"]);
-        logger.LogInformation("Database initialization completed");
-        
-        // Seed claims for demo tenant
-        logger.LogInformation("Seeding claims for demo tenant...");
-        CloudDentalOffice.Portal.Data.DbInitializer.SeedClaims(dbContext, TenantConstants.DefaultTenantId);
-        logger.LogInformation("Claims seeding completed");
+        await InitialTenantBootstrap.ApplyAsync(dbContext, builder.Configuration);
 
-        // Verify demo user exists
-        var demoUserExists = dbContext.Users.IgnoreQueryFilters().Any(u => u.Email == "demo@clouddentaloffice.com");
-        if (demoUserExists)
+        // Sample people, claims, and credentials must never be created in production.
+        if (app.Environment.IsDevelopment())
         {
-            logger.LogInformation("✅ Demo user verified: demo@clouddentaloffice.com");
-        }
-        else
-        {
-            logger.LogWarning("⚠️  Demo user not found in database!");
+            DbInitializer.Initialize(dbContext);
+            DbInitializer.ConfigureDemoPayer(dbContext, builder.Configuration["CloudHealthOffice:BaseUrl"]);
+            DbInitializer.SeedClaims(dbContext, TenantConstants.DefaultTenantId);
         }
     }
     catch (Exception ex)
@@ -410,8 +396,7 @@ using (var scope = app.Services.CreateScope())
         logger.LogError(ex, "Error during database initialization: {Message}", ex.Message);
         logger.LogError("Stack trace: {StackTrace}", ex.StackTrace);
         
-        // Don't throw - let the app start so we can see the error in logs
-        // In production, you might want to fail fast instead
+        if (!app.Environment.IsDevelopment()) throw;
     }
 }
 

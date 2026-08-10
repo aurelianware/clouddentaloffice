@@ -71,6 +71,43 @@ resource containerAppEnv 'Microsoft.App/managedEnvironments@2023-05-01' = {
   }
 }
 
+// Durable public-booking handoff. Duplicate detection uses the deterministic
+// MessageId produced when callers send an Idempotency-Key.
+resource serviceBus 'Microsoft.ServiceBus/namespaces@2024-01-01' = {
+  name: '${appName}-booking-${uniqueString(resourceGroup().id)}'
+  location: location
+  sku: { name: 'Standard', tier: 'Standard' }
+  properties: { publicNetworkAccess: 'Enabled', minimumTlsVersion: '1.2' }
+}
+
+resource bookingTopic 'Microsoft.ServiceBus/namespaces/topics@2024-01-01' = {
+  parent: serviceBus
+  name: 'booking-requests'
+  properties: {
+    requiresDuplicateDetection: true
+    duplicateDetectionHistoryTimeWindow: 'P1D'
+    defaultMessageTimeToLive: 'P14D'
+  }
+}
+
+resource schedulingSubscription 'Microsoft.ServiceBus/namespaces/topics/subscriptions@2024-01-01' = {
+  parent: bookingTopic
+  name: 'scheduling'
+  properties: { maxDeliveryCount: 10, deadLetteringOnMessageExpiration: true }
+}
+
+resource bookingSendPolicy 'Microsoft.ServiceBus/namespaces/authorizationRules@2024-01-01' = {
+  parent: serviceBus
+  name: 'booking-intake-send'
+  properties: { rights: [ 'Send' ] }
+}
+
+resource bookingListenPolicy 'Microsoft.ServiceBus/namespaces/authorizationRules@2024-01-01' = {
+  parent: serviceBus
+  name: 'booking-scheduling-listen'
+  properties: { rights: [ 'Listen' ] }
+}
+
 // ── Outputs ───────────────────────────────────────────────────────────────────
 
 @description('ACR login server used as image prefix (e.g. cdoacr.azurecr.io)')
@@ -84,3 +121,7 @@ output identityId string = identity.id
 
 @description('Container App Environment resource ID — used by apps.bicep')
 output environmentId string = containerAppEnv.id
+
+@description('Service Bus authorization rule resource ID; retrieve its connection string securely with az servicebus namespace authorization-rule keys list.')
+output bookingSendAuthorizationRuleId string = bookingSendPolicy.id
+output bookingListenAuthorizationRuleId string = bookingListenPolicy.id

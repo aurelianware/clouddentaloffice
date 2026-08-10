@@ -28,6 +28,13 @@ param connVision string
 param jwtKey string
 param jwtIssuer string
 param jwtAudience string
+@secure()
+param serviceBusSendConnection string
+@secure()
+param serviceBusListenConnection string
+@secure()
+param publicBookingApiKey string
+param initialTenantId string = 'third-set-smiles'
 
 // Shared registry config — Managed Identity pulls from ACR (no admin credentials)
 var registry = [
@@ -81,6 +88,10 @@ resource portal 'Microsoft.App/containerApps@2023-05-01' = {
             { name: 'Jwt__Key', secretRef: 'jwt-key' }
             { name: 'Jwt__Issuer', value: jwtIssuer }
             { name: 'Jwt__Audience', value: jwtAudience }
+            { name: 'InitialTenant__Enabled', value: 'true' }
+            { name: 'InitialTenant__TenantId', value: initialTenantId }
+            { name: 'InitialTenant__Name', value: '3rd Set Smiles' }
+            { name: 'InitialTenant__Domain', value: '3rdsetsmiles.com' }
           ]
         }
       ]
@@ -185,6 +196,7 @@ resource schedulingService 'Microsoft.App/containerApps@2023-05-01' = {
       }
       secrets: [
         { name: 'conn-scheduling', value: connScheduling }
+        { name: 'servicebus-listen', value: serviceBusListenConnection }
       ]
     }
     template: {
@@ -197,6 +209,48 @@ resource schedulingService 'Microsoft.App/containerApps@2023-05-01' = {
             { name: 'ASPNETCORE_ENVIRONMENT', value: 'Production' }
             { name: 'DatabaseProvider', value: 'PostgreSQL' }
             { name: 'ConnectionStrings__SchedulingDb', secretRef: 'conn-scheduling' }
+            { name: 'ServiceBus__ConnectionString', secretRef: 'servicebus-listen' }
+          ]
+        }
+      ]
+      scale: { minReplicas: 1, maxReplicas: 3 }
+    }
+  }
+}
+
+// ── intake-service ───────────────────────────────────────────────────────────
+// The only public API. It has no database secret and cannot reach patient data.
+resource intakeService 'Microsoft.App/containerApps@2023-05-01' = {
+  name: 'intake-service'
+  location: location
+  identity: identityObj
+  properties: {
+    environmentId: environmentId
+    configuration: {
+      registries: registry
+      ingress: { external: true, targetPort: 5109, transport: 'http', allowInsecure: false }
+      secrets: [
+        { name: 'servicebus-send', value: serviceBusSendConnection }
+        { name: 'booking-key', value: publicBookingApiKey }
+      ]
+    }
+    template: {
+      containers: [
+        {
+          name: 'intake-service'
+          image: '${acrLoginServer}/intake-service:${imageTag}'
+          resources: { cpu: json('0.25'), memory: '0.5Gi' }
+          env: [
+            { name: 'ASPNETCORE_ENVIRONMENT', value: 'Production' }
+            { name: 'ServiceBus__ConnectionString', secretRef: 'servicebus-send' }
+            { name: 'PublicBooking__Enabled', value: 'true' }
+            { name: 'PublicBooking__Clients__0__TenantId', value: initialTenantId }
+            { name: 'PublicBooking__Clients__0__ApiKey', secretRef: 'booking-key' }
+            { name: 'PublicBooking__Source', value: '3rdsetsmiles.com' }
+          ]
+          probes: [
+            { type: 'Liveness', httpGet: { path: '/health', port: 5109 }, initialDelaySeconds: 10, periodSeconds: 10 }
+            { type: 'Readiness', httpGet: { path: '/health', port: 5109 }, initialDelaySeconds: 5, periodSeconds: 5 }
           ]
         }
       ]
@@ -459,3 +513,5 @@ resource visionService 'Microsoft.App/containerApps@2023-05-01' = {
 
 @description('Public FQDN of the portal — use this as your app URL')
 output portalFqdn string = portal.properties.configuration.ingress.fqdn
+@description('Public HTTPS host for Cloudflare Pages CLOUDDENTAL_API_BASE')
+output intakeFqdn string = intakeService.properties.configuration.ingress.fqdn

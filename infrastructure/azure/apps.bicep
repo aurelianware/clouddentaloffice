@@ -40,6 +40,13 @@ param postgresAdminPassword string
 
 @secure()
 param jwtKey string
+@secure()
+param serviceBusSendConnection string
+@secure()
+param serviceBusListenConnection string
+@secure()
+param publicBookingApiKey string
+param initialTenantId string = 'third-set-smiles'
 
 param jwtIssuer string = 'CloudDentalOffice'
 param jwtAudience string = 'CloudDentalOfficeUsers'
@@ -63,7 +70,12 @@ module apps 'container-apps.bicep' = {
     jwtKey: jwtKey
     jwtIssuer: jwtIssuer
     jwtAudience: jwtAudience
+    serviceBusSendConnection: serviceBusSendConnection
+    serviceBusListenConnection: serviceBusListenConnection
+    publicBookingApiKey: publicBookingApiKey
+    initialTenantId: initialTenantId
   }
 }
 
 output portalFqdn string = apps.outputs.portalFqdn
+output intakeFqdn string = apps.outputs.intakeFqdn
