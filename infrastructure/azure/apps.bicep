@@ -3,7 +3,7 @@
 //
 // Deploy (manually):
 //   az deployment group create \
-//     --resource-group cdo-rg \
+//     --resource-group cdo-prod-rg \
 //     --template-file infrastructure/azure/apps.bicep \
 //     --parameters \
 //       acrLoginServer=<from main.bicep output> \

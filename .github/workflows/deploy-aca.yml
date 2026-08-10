@@ -7,7 +7,7 @@ name: Deploy to Azure Container Apps
 #   AZURE_CLIENT_ID        – App Registration / service principal client ID (used for OIDC login)
 #   AZURE_TENANT_ID        – Azure AD tenant ID
 #   AZURE_SUBSCRIPTION_ID  – Azure subscription ID
-#   AZURE_RESOURCE_GROUP   – Resource group containing the Container Apps (e.g. cdo-rg)
+#   AZURE_RESOURCE_GROUP   – production resource group (`cdo-prod-rg`)
 #   ACR_NAME               – Azure Container Registry name (e.g. cdoacr from Bicep output)
 #   ACR_LOGIN_SERVER       – ACR login server (e.g. cdoacr.azurecr.io from Bicep output)
 #   POSTGRES_HOST          – PostgreSQL Flexible Server FQDN
@@ -16,9 +16,9 @@ name: Deploy to Azure Container Apps
 #   PUBLIC_BOOKING_API_KEY – 32+ character website-to-IntakeService credential
 #
 # One-time infrastructure setup (run locally, not in CI):
-#   az group create --name cdo-rg --location eastus
+#   az group create --name cdo-prod-rg --location westus3
 #   az deployment group create \
-#     --resource-group cdo-rg \
+#     --resource-group cdo-prod-rg \
 #     --template-file infrastructure/azure/main.bicep \
 #     --parameters @infrastructure/azure/parameters.bicepparam
 #

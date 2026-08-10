@@ -40,20 +40,20 @@ identifier differs or the subscription state is not `Enabled`.
 1. Deploy base infrastructure. This provisions Log Analytics, ACR, Container Apps environment, and Service Bus topic/subscription with duplicate detection:
 
    ```bash
-   az deployment group create -g cdo-rg -f infrastructure/azure/main.bicep -p appName=cdo
+   az deployment group create -g cdo-prod-rg -f infrastructure/azure/main.bicep -p appName=cdo location=westus3
    ```
 
 2. Deploy PostgreSQL, then create/apply the scheduling and portal schemas. Back up before upgrading an existing environment:
 
    ```bash
-   az deployment group create -g cdo-rg -f infrastructure/azure/postgres.bicep -p adminPassword='<POSTGRES_PASSWORD>'
+   az deployment group create -g cdo-prod-rg -f infrastructure/azure/postgres.bicep -p location=westus3 adminPassword='<POSTGRES_PASSWORD>'
    ```
 
 3. Retrieve the Service Bus connection string without printing or committing it, and create independent random secrets:
 
    ```bash
-   az servicebus namespace authorization-rule keys list -g cdo-rg --namespace-name '<SERVICE_BUS_NAMESPACE>' --name booking-intake-send --query primaryConnectionString -o tsv
-   az servicebus namespace authorization-rule keys list -g cdo-rg --namespace-name '<SERVICE_BUS_NAMESPACE>' --name booking-scheduling-listen --query primaryConnectionString -o tsv
+   az servicebus namespace authorization-rule keys list -g cdo-prod-rg --namespace-name '<SERVICE_BUS_NAMESPACE>' --name booking-intake-send --query primaryConnectionString -o tsv
+   az servicebus namespace authorization-rule keys list -g cdo-prod-rg --namespace-name '<SERVICE_BUS_NAMESPACE>' --name booking-scheduling-listen --query primaryConnectionString -o tsv
    openssl rand -base64 32   # CLOUDDENTAL_API_KEY / publicBookingApiKey
    openssl rand -base64 48   # JWT key
    ```

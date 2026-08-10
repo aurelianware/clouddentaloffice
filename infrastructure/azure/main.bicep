@@ -106,6 +106,8 @@ resource bookingListenPolicy 'Microsoft.ServiceBus/namespaces/authorizationRules
   parent: serviceBus
   name: 'booking-scheduling-listen'
   properties: { rights: [ 'Listen' ] }
+  // Service Bus can reject concurrent authorization-rule writes with 429.
+  dependsOn: [ bookingSendPolicy ]
 }
 
 // ── Outputs ───────────────────────────────────────────────────────────────────
