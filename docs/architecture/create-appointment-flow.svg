@@ -1,0 +1,116 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 700" width="1120" height="700" role="img" font-family="'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif" aria-label="Create-appointment flow. A booking travels left to right across the public top row — the practice website form, an API/website layer, and the IntakeService — then one arrow crosses the trust boundary downward as a published BookingRequestedEvent returning 202 Accepted. On the private bottom row it flows right to left through the Service Bus topic, the SchedulingService consumer, and into the Appointments database as a Requested appointment. Email fallback branches up to the practice inbox; a dead-letter branch drops down. No PHI crosses upward to the public tier.">
+  <defs>
+    <marker id="ah-flow" markerWidth="9" markerHeight="7" refX="8" refY="3.5" orient="auto" markerUnits="userSpaceOnUse"><polygon points="0 0, 9 3.5, 0 7" fill="#00ffff"/></marker>
+    <marker id="ah-fallback" markerWidth="9" markerHeight="7" refX="8" refY="3.5" orient="auto" markerUnits="userSpaceOnUse"><polygon points="0 0, 9 3.5, 0 7" fill="#ffb454"/></marker>
+    <marker id="ah-danger" markerWidth="9" markerHeight="7" refX="8" refY="3.5" orient="auto" markerUnits="userSpaceOnUse"><polygon points="0 0, 9 3.5, 0 7" fill="#ff6b81"/></marker>
+  </defs>
+
+  <rect x="0" y="0" width="1120" height="700" fill="#0a0a0a"/>
+
+  <!-- Title -->
+  <text x="40" y="38" font-size="13" font-family="monospace" letter-spacing="3" fill="#00ffff">CLOUD DENTAL OFFICE · CREATE-APPOINTMENT FLOW</text>
+  <text x="39" y="72" font-size="30" font-weight="700" fill="#d8feff">Create-appointment flow</text>
+  <text x="40" y="97" font-size="15" fill="#b0b0b0">How a website booking becomes a scheduled appointment — patient data never crosses to the public internet.</text>
+
+  <g transform="translate(0,112)">
+    <!-- Zone bands -->
+    <rect x="20" y="16" width="1080" height="236" rx="12" fill="#00ffff" fill-opacity="0.06" stroke="#00ffff" stroke-opacity="0.28"/>
+    <rect x="20" y="260" width="1080" height="236" rx="12" fill="#00ff88" fill-opacity="0.05" stroke="#00ff88" stroke-opacity="0.24"/>
+    <text x="40" y="40" font-size="11" font-family="monospace" letter-spacing="2.5" fill="#57c9cc">INTERNET-FACING · NO PHI</text>
+    <text x="40" y="484" font-size="11" font-family="monospace" letter-spacing="2.5" fill="#4fc79a">PRIVATE NETWORK · PHI NEVER LEAVES</text>
+
+    <!-- Trust boundary -->
+    <line x1="20" y1="256" x2="1100" y2="256" stroke="#00ff88" stroke-width="1.4" stroke-dasharray="2 5"/>
+    <rect x="150" y="245" width="286" height="22" rx="11" fill="#0a0a0a" stroke="#00ff88" stroke-width="1"/>
+    <text x="293" y="260" text-anchor="middle" font-size="11" font-family="monospace" letter-spacing="1.5" fill="#d8feff">TRUST BOUNDARY — NO PHI CROSSES</text>
+
+    <!-- Top row (public) -->
+    <rect x="70" y="118" width="200" height="88" rx="10" fill="#10171b" stroke="#00ffff" stroke-opacity="0.22" stroke-width="1.4"/>
+    <text x="170" y="150" text-anchor="middle" font-size="15.5" font-weight="650" fill="#e9fbff">Website form</text>
+    <text x="170" y="170" text-anchor="middle" font-size="11.5" font-family="monospace" fill="#9aa4a4">practice /book/ page</text>
+    <text x="170" y="188" text-anchor="middle" font-size="11" font-family="monospace" fill="#9aa4a4">visitor booking</text>
+
+    <rect x="460" y="118" width="200" height="88" rx="10" fill="#10171b" stroke="#00ffff" stroke-opacity="0.22" stroke-width="1.4"/>
+    <text x="560" y="148" text-anchor="middle" font-size="15.5" font-weight="650" fill="#e9fbff">Website function</text>
+    <text x="560" y="167" text-anchor="middle" font-size="11.5" font-family="monospace" fill="#9aa4a4">/book-appointment</text>
+    <text x="560" y="185" text-anchor="middle" font-size="10.5" font-family="monospace" fill="#9aa4a4">validates · 8s timeout</text>
+
+    <rect x="850" y="118" width="200" height="88" rx="10" fill="#10171b" stroke="#00ffff" stroke-opacity="0.22" stroke-width="1.4"/>
+    <text x="950" y="148" text-anchor="middle" font-size="15.5" font-weight="650" fill="#e9fbff">IntakeService</text>
+    <text x="950" y="167" text-anchor="middle" font-size="11.5" font-family="monospace" fill="#9aa4a4">public · no DB · no PHI</text>
+    <text x="950" y="185" text-anchor="middle" font-size="10.5" font-family="monospace" fill="#9aa4a4">auth (API key) · rate-limit</text>
+
+    <!-- Bottom row (private) -->
+    <rect x="850" y="300" width="200" height="88" rx="10" fill="#0c1216" stroke="#00ff88" stroke-opacity="0.24" stroke-width="1.4"/>
+    <text x="950" y="330" text-anchor="middle" font-size="15.5" font-weight="650" fill="#e9fbff">Azure Service Bus</text>
+    <text x="950" y="349" text-anchor="middle" font-size="11.5" font-family="monospace" fill="#9aa4a4">topic: booking-requests</text>
+    <text x="950" y="367" text-anchor="middle" font-size="10.5" font-family="monospace" fill="#9aa4a4">durable queue</text>
+
+    <rect x="460" y="300" width="200" height="88" rx="10" fill="#0c1216" stroke="#00ff88" stroke-opacity="0.24" stroke-width="1.4"/>
+    <text x="560" y="330" text-anchor="middle" font-size="15.5" font-weight="650" fill="#e9fbff">SchedulingService</text>
+    <text x="560" y="349" text-anchor="middle" font-size="11.5" font-family="monospace" fill="#9aa4a4">consumer · private</text>
+    <text x="560" y="367" text-anchor="middle" font-size="10.5" font-family="monospace" fill="#9aa4a4">resolves provider / patient</text>
+
+    <rect x="70" y="300" width="200" height="88" rx="10" fill="#0c1216" stroke="#00ff88" stroke-opacity="0.24" stroke-width="1.4"/>
+    <text x="170" y="330" text-anchor="middle" font-size="15.5" font-weight="650" fill="#e9fbff">Appointments DB</text>
+    <text x="170" y="349" text-anchor="middle" font-size="11.5" font-family="monospace" fill="#9aa4a4">Status = Requested</text>
+    <text x="170" y="367" text-anchor="middle" font-size="10.5" font-family="monospace" fill="#9aa4a4">unconfirmed until staff OK</text>
+
+    <!-- Branch nodes -->
+    <rect x="460" y="30" width="200" height="54" rx="9" fill="#141017" stroke="#ffb454" stroke-opacity="0.35" stroke-width="1.3"/>
+    <text x="560" y="52" text-anchor="middle" font-size="13.5" font-weight="650" fill="#e9fbff">Practice inbox</text>
+    <text x="560" y="70" text-anchor="middle" font-size="11" font-family="monospace" fill="#9aa4a4">email · Resend</text>
+
+    <rect x="460" y="428" width="200" height="54" rx="9" fill="#171114" stroke="#ff6b81" stroke-opacity="0.35" stroke-width="1.3"/>
+    <text x="560" y="450" text-anchor="middle" font-size="13.5" font-weight="650" fill="#e9fbff">Dead-letter queue</text>
+    <text x="560" y="468" text-anchor="middle" font-size="11" font-family="monospace" fill="#9aa4a4">needs a human</text>
+
+    <!-- Spine arrows -->
+    <line x1="270" y1="162" x2="458" y2="162" stroke="#00ffff" stroke-width="2" marker-end="url(#ah-flow)"/>
+    <text x="364" y="152" text-anchor="middle" font-size="10.5" font-family="monospace" fill="#9aa4a4">POST /book-appointment</text>
+
+    <line x1="660" y1="162" x2="848" y2="162" stroke="#00ffff" stroke-width="2" marker-end="url(#ah-flow)"/>
+    <text x="753" y="151" text-anchor="middle" font-size="9" font-family="monospace" fill="#9aa4a4">POST /api/public/booking-requests</text>
+    <text x="753" y="181" text-anchor="middle" font-size="9.5" font-family="monospace" fill="#9aa4a4">Bearer key · 8s timeout</text>
+
+    <line x1="950" y1="206" x2="950" y2="298" stroke="#00ffff" stroke-width="2" marker-end="url(#ah-flow)"/>
+    <text x="966" y="222" font-size="10" font-family="monospace" fill="#9aa4a4">publish</text>
+    <text x="966" y="236" font-size="10" font-family="monospace" fill="#9aa4a4">BookingRequestedEvent</text>
+    <text x="966" y="250" font-size="10" font-family="monospace" fill="#9aa4a4">&#8594; 202 Accepted</text>
+
+    <line x1="850" y1="344" x2="662" y2="344" stroke="#00ffff" stroke-width="2" marker-end="url(#ah-flow)"/>
+    <text x="756" y="333" text-anchor="middle" font-size="10.5" font-family="monospace" fill="#9aa4a4">scheduling subscription</text>
+
+    <line x1="460" y1="344" x2="272" y2="344" stroke="#00ffff" stroke-width="2" marker-end="url(#ah-flow)"/>
+    <text x="366" y="333" text-anchor="middle" font-size="10.5" font-family="monospace" fill="#9aa4a4">INSERT · Status = Requested</text>
+
+    <!-- Branches -->
+    <line x1="560" y1="118" x2="560" y2="86" stroke="#ffb454" stroke-width="1.8" stroke-dasharray="5 3.5" marker-end="url(#ah-fallback)"/>
+    <text x="576" y="104" font-size="10" font-family="monospace" fill="#9aa4a4">email fallback / copy</text>
+
+    <line x1="560" y1="388" x2="560" y2="426" stroke="#ff6b81" stroke-width="1.8" stroke-dasharray="5 3.5" marker-end="url(#ah-danger)"/>
+    <text x="576" y="412" font-size="10" font-family="monospace" fill="#9aa4a4">bad / misconfigured msg</text>
+
+    <text x="950" y="406" text-anchor="middle" font-size="10" font-family="monospace" fill="#9aa4a4">waits here if the consumer is down</text>
+    <text x="170" y="406" text-anchor="middle" font-size="10" font-family="monospace" fill="#9aa4a4">staff confirm in Portal &#8594; Scheduled</text>
+  </g>
+
+  <!-- Legend -->
+  <g transform="translate(0,634)">
+    <line x1="40" y1="0" x2="66" y2="0" stroke="#00ffff" stroke-width="2" marker-end="url(#ah-flow)"/>
+    <text x="74" y="4" font-size="12.5" fill="#b0b0b0">Booking flow</text>
+    <line x1="182" y1="0" x2="208" y2="0" stroke="#ffb454" stroke-width="1.8" stroke-dasharray="5 3.5" marker-end="url(#ah-fallback)"/>
+    <text x="216" y="4" font-size="12.5" fill="#b0b0b0">Email fallback</text>
+    <line x1="330" y1="0" x2="356" y2="0" stroke="#ff6b81" stroke-width="1.8" stroke-dasharray="5 3.5" marker-end="url(#ah-danger)"/>
+    <text x="364" y="4" font-size="12.5" fill="#b0b0b0">Dead-letter</text>
+    <rect x="470" y="-8" width="15" height="15" rx="4" fill="#00ffff" fill-opacity="0.12" stroke="#00ffff" stroke-opacity="0.5"/>
+    <text x="492" y="4" font-size="12.5" fill="#b0b0b0">No PHI (public)</text>
+    <rect x="618" y="-8" width="15" height="15" rx="4" fill="#00ff88" fill-opacity="0.1" stroke="#00ff88" stroke-opacity="0.5"/>
+    <text x="640" y="4" font-size="12.5" fill="#b0b0b0">PHI (private)</text>
+  </g>
+
+  <!-- Footer -->
+  <text x="40" y="676" font-size="11.5" font-family="monospace" fill="#7f8888">One arrow crosses the boundary — the published event. The public tier holds no database and no PHI.</text>
+  <text x="1080" y="676" text-anchor="end" font-size="11.5" font-family="monospace" fill="#7f8888">IntakeService + Service Bus + SchedulingService</text>
+</svg>
