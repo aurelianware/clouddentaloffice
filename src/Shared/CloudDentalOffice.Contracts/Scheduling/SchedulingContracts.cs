@@ -28,6 +28,24 @@ public record CreateAppointmentRequest
     public Guid? LocationId { get; init; }
 }
 
+/// <summary>
+/// Public booking intake submitted from a practice website (e.g. 3rd Set Smiles).
+/// Deliberately does NOT accept Patient/Provider/Location identifiers — the
+/// SchedulingService resolves those server-side from configuration so an internet
+/// caller cannot target arbitrary records. Contact details are carried through to
+/// the appointment notes for staff follow-up.
+/// </summary>
+public record PublicBookingRequest
+{
+    public string Name { get; init; } = string.Empty;
+    public string Phone { get; init; } = string.Empty;
+    public string? Email { get; init; }
+    public DateTime PreferredStart { get; init; }
+    public int? DurationMinutes { get; init; }
+    public string? Reason { get; init; }
+    public string? Message { get; init; }
+}
+
 public enum AppointmentStatus
 {
     Scheduled,
@@ -37,5 +55,8 @@ public enum AppointmentStatus
     Completed,
     Cancelled,
     NoShow,
-    Rescheduled
+    Rescheduled,
+    // Unconfirmed intake from a public website booking form. Appended last so
+    // existing persisted integer values are unchanged.
+    Requested
 }

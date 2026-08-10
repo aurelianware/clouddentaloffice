@@ -71,6 +71,69 @@ Cloud Dental Office uses a **microservices architecture** with each bounded cont
 
 ---
 
+## Public Website Booking Intake
+
+The `SchedulingService` exposes an internet-facing endpoint for practice
+websites (e.g. [3rd Set Smiles](https://github.com/aurelianware/3rdsetsmiles)) to
+submit appointment requests, **without** exposing the internal admin endpoints.
+
+```
+POST /api/public/booking-requests
+```
+
+How it differs from the internal `POST /api/appointments`:
+
+- **Disabled by default** — returns `404` unless `PublicBooking:Enabled` is `true`.
+- **Requires an API key** — `Authorization: Bearer <key>` or `X-Api-Key: <key>`,
+  compared in constant time. Missing/wrong key → `401`.
+- **No client-supplied identifiers** — the request body carries only patient
+  contact details and a preferred time. Provider, location, and the placeholder
+  "web intake" patient are resolved **server-side** from configuration, so a
+  caller cannot target arbitrary records.
+- **Marks intakes as `Requested`** (a new `AppointmentStatus`) — unconfirmed
+  until staff confirm, rather than landing on the calendar as `Scheduled`.
+- **Rate limited** — fixed window, 5 requests/minute per client IP
+  (keyed on `X-Forwarded-For`).
+
+Request body (`PublicBookingRequest`):
+
+```jsonc
+{
+  "name": "Jane Doe",           // required
+  "phone": "480-555-0100",      // required
+  "email": "jane@example.com",  // optional
+  "preferredStart": "2026-08-20T21:00:00Z", // required, UTC ISO-8601, must be future
+  "durationMinutes": 60,        // optional; falls back to PublicBooking:DefaultDurationMinutes
+  "reason": "New patient exam", // optional
+  "message": "Second choice: Friday" // optional
+}
+```
+
+Success returns `201 Created` with a minimal confirmation
+(`{ id, status, startTime, endTime }`) — no internal fields are echoed. Contact
+details are stored in the appointment `notes` for staff follow-up.
+
+### Configuration
+
+Set these under `PublicBooking` (via `appsettings.json`, environment variables,
+or user secrets). Environment-variable form uses `PublicBooking__ApiKey`, etc.
+
+| Key | Purpose |
+|-----|---------|
+| `PublicBooking:Enabled` | Master switch (default `false`). |
+| `PublicBooking:ApiKey` | Shared secret the website sends. **Required when enabled.** |
+| `PublicBooking:ProviderId` | GUID of the default provider. |
+| `PublicBooking:LocationId` | GUID of the location (blank/zero → null). |
+| `PublicBooking:PatientId` | GUID of a shared "Web Booking" placeholder patient. |
+| `PublicBooking:DefaultDurationMinutes` | Appointment length when the request omits one (default `60`). |
+
+The endpoint is exposed through the API Gateway at the same path via the
+`public-booking-route`. Keep the raw `SchedulingService` off the public internet
+and route external traffic only through the gateway (add TLS + the API key
+there). CORS is **not** required — the website calls this server-to-server.
+
+---
+
 ## Quick Start
 
 ### Docker Compose (recommended)
