@@ -3,7 +3,7 @@
 //
 // Deploy (manually):
 //   az deployment group create \
-//     --resource-group cdo-rg \
+//     --resource-group cdo-prod-rg \
 //     --template-file infrastructure/azure/apps.bicep \
 //     --parameters \
 //       acrLoginServer=<from main.bicep output> \
@@ -40,6 +40,16 @@ param postgresAdminPassword string
 
 @secure()
 param jwtKey string
+@secure()
+param serviceBusSendConnection string
+@secure()
+param serviceBusListenConnection string
+@secure()
+param publicBookingApiKey string
+param initialTenantId string = 'third-set-smiles'
+param googleOAuthClientId string = ''
+@secure()
+param googleOAuthClientSecret string = ''
 
 param jwtIssuer string = 'CloudDentalOffice'
 param jwtAudience string = 'CloudDentalOfficeUsers'
@@ -63,7 +73,14 @@ module apps 'container-apps.bicep' = {
     jwtKey: jwtKey
     jwtIssuer: jwtIssuer
     jwtAudience: jwtAudience
+    serviceBusSendConnection: serviceBusSendConnection
+    serviceBusListenConnection: serviceBusListenConnection
+    publicBookingApiKey: publicBookingApiKey
+    initialTenantId: initialTenantId
+    googleOAuthClientId: googleOAuthClientId
+    googleOAuthClientSecret: googleOAuthClientSecret
   }
 }
 
 output portalFqdn string = apps.outputs.portalFqdn
+output intakeFqdn string = apps.outputs.intakeFqdn

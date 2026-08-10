@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.HttpOverrides;
 using System.Net;
 using System.Text.Json.Serialization;
+using System.ComponentModel.DataAnnotations;
 using CloudDentalOffice.Contracts.Events;
 using CloudDentalOffice.Contracts.Scheduling;
 using CloudDentalOffice.Messaging;
@@ -16,6 +17,13 @@ using CloudDentalOffice.Messaging;
 // only the minimum contact and preference data required for appointment intake.
 
 var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddOptions<PublicBookingOptions>()
+    .Bind(builder.Configuration.GetSection(PublicBookingOptions.SectionName))
+    .Validate(o => !o.Enabled || o.Clients.Any(c =>
+        !string.IsNullOrWhiteSpace(c.TenantId) && c.ApiKey?.Length >= 32),
+        "Enabled public booking requires at least one client with a tenant ID and a 32+ character API key.")
+    .ValidateOnStart();
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c => c.SwaggerDoc("v1", new() { Title = "Intake Service", Version = "v1" }));
@@ -85,20 +93,30 @@ app.MapPost("/api/public/booking-requests", async (
     var errors = PublicBookingValidator.Validate(request, DateTime.UtcNow);
     var preferredStartUtc = request.PreferredStart.ToUniversalTime();
 
+    var idempotencyKey = http.Request.Headers["Idempotency-Key"].ToString().Trim();
+    if (!string.IsNullOrEmpty(idempotencyKey) && idempotencyKey.Length is < 8 or > 128)
+        errors["Idempotency-Key"] = ["Idempotency-Key must be 8 to 128 characters."];
+
     if (errors.Count > 0)
         return Results.ValidationProblem(errors);
 
     var evt = new BookingRequestedEvent(
-        Name: request.Name,
-        Phone: request.Phone,
-        Email: request.Email,
+        Name: request.Name.Trim(),
+        Phone: request.Phone.Trim(),
+        Email: string.IsNullOrWhiteSpace(request.Email) ? null : request.Email.Trim(),
         PreferredStartUtc: preferredStartUtc,
         DurationMinutes: request.DurationMinutes,
-        Reason: request.Reason,
-        Message: request.Message,
+        Reason: string.IsNullOrWhiteSpace(request.Reason) ? null : request.Reason.Trim(),
+        Message: string.IsNullOrWhiteSpace(request.Message) ? null : request.Message.Trim(),
         PatientRelationship: request.PatientRelationship,
         TenantId: tenantId,
-        Source: section.GetValue<string>("Source") ?? "PublicWebsite");
+        Source: section.GetValue<string>("Source") ?? "PublicWebsite",
+        SourceReference: null)
+    {
+        EventId = string.IsNullOrEmpty(idempotencyKey)
+            ? Guid.NewGuid()
+            : Idempotency.CreateEventId(tenantId, idempotencyKey)
+    };
 
     try
     {
@@ -128,15 +146,49 @@ public static class PublicBookingValidator
     public static Dictionary<string, string[]> Validate(PublicBookingRequest request, DateTime utcNow)
     {
         var errors = new Dictionary<string, string[]>();
-        if (string.IsNullOrWhiteSpace(request.Name)) errors["name"] = ["Name is required."];
-        if (string.IsNullOrWhiteSpace(request.Phone)) errors["phone"] = ["Phone is required."];
+        if (string.IsNullOrWhiteSpace(request.Name) || request.Name.Trim().Length > 200) errors["name"] = ["Name is required and must be 200 characters or fewer."];
+        if (string.IsNullOrWhiteSpace(request.Phone) || request.Phone.Trim().Length > 30 || request.Phone.Count(char.IsDigit) < 7)
+            errors["phone"] = ["Phone must contain at least 7 digits and be 30 characters or fewer."];
+        var email = request.Email?.Trim();
+        if (!string.IsNullOrWhiteSpace(email) && (email.Length > 320 || !new EmailAddressAttribute().IsValid(email)))
+            errors["email"] = ["Email must be a valid address and 320 characters or fewer."];
+        if (request.DurationMinutes is < 15 or > 240) errors["durationMinutes"] = ["Duration must be between 15 and 240 minutes."];
+        if (request.Reason?.Length > 500) errors["reason"] = ["Reason must be 500 characters or fewer."];
+        if (request.Message?.Length > 2000) errors["message"] = ["Message must be 2000 characters or fewer."];
+        if (!Enum.IsDefined(request.PatientRelationship) || request.PatientRelationship == PatientRelationship.Unknown)
+            errors["patientRelationship"] = ["Patient relationship must be New or Existing."];
         if (request.PreferredStart == default) errors["preferredStart"] = ["A preferred start time is required."];
         else if (request.PreferredStart.Kind == DateTimeKind.Unspecified)
             errors["preferredStart"] = ["preferredStart must include a timezone (UTC 'Z' or an offset)."];
-        else if (request.PreferredStart.ToUniversalTime() <= utcNow)
-            errors["preferredStart"] = ["preferredStart must be in the future."];
+        else if (request.PreferredStart.ToUniversalTime() <= utcNow.AddMinutes(5))
+            errors["preferredStart"] = ["preferredStart must be at least 5 minutes in the future."];
+        else if (request.PreferredStart.ToUniversalTime() > utcNow.AddYears(1))
+            errors["preferredStart"] = ["preferredStart must be within one year."];
         return errors;
     }
+}
+
+public static class Idempotency
+{
+    public static Guid CreateEventId(string tenantId, string key)
+    {
+        if (key.Length is < 8 or > 128) throw new ArgumentException("Idempotency-Key must be 8 to 128 characters.", nameof(key));
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes($"{tenantId}\n{key}"));
+        return new Guid(hash.AsSpan(0, 16));
+    }
+}
+
+public sealed class PublicBookingOptions
+{
+    public const string SectionName = "PublicBooking";
+    public bool Enabled { get; set; }
+    public List<PublicBookingClient> Clients { get; set; } = [];
+}
+
+public sealed class PublicBookingClient
+{
+    public string TenantId { get; set; } = string.Empty;
+    public string? ApiKey { get; set; }
 }
 
 public static class IntakeAuth
@@ -187,3 +239,5 @@ public static class IntakeAuth
             && CryptographicOperations.FixedTimeEquals(providedBytes, expectedBytes);
     }
 }
+
+public partial class Program { }

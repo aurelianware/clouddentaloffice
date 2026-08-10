@@ -375,34 +375,31 @@ using (var scope = app.Services.CreateScope())
     {
         logger.LogInformation("Applying database migrations...");
         
-        // Apply migrations in all environments
-        logger.LogInformation("Running database migrations...");
-        dbContext.Database.Migrate();
-        
-        logger.LogInformation("Database setup completed successfully");
-        
-        // Seed initial data
-        logger.LogInformation("Initializing database with seed data...");
-        CloudDentalOffice.Portal.Data.DbInitializer.Initialize(dbContext);
-        CloudDentalOffice.Portal.Data.DbInitializer.ConfigureDemoPayer(
-            dbContext,
-            builder.Configuration["CloudHealthOffice:BaseUrl"]);
-        logger.LogInformation("Database initialization completed");
-        
-        // Seed claims for demo tenant
-        logger.LogInformation("Seeding claims for demo tenant...");
-        CloudDentalOffice.Portal.Data.DbInitializer.SeedClaims(dbContext, TenantConstants.DefaultTenantId);
-        logger.LogInformation("Claims seeding completed");
-
-        // Verify demo user exists
-        var demoUserExists = dbContext.Users.IgnoreQueryFilters().Any(u => u.Email == "demo@clouddentaloffice.com");
-        if (demoUserExists)
+        // Historical migrations were generated against SQLite and cannot be
+        // replayed safely by Npgsql. Fresh production environments create the
+        // current model directly until provider-specific migrations are
+        // baselined. Existing environments should explicitly enable migrations.
+        if (builder.Configuration.GetValue("Database:UseMigrations", app.Environment.IsDevelopment()))
         {
-            logger.LogInformation("✅ Demo user verified: demo@clouddentaloffice.com");
+            logger.LogInformation("Running database migrations...");
+            dbContext.Database.Migrate();
         }
         else
         {
-            logger.LogWarning("⚠️  Demo user not found in database!");
+            logger.LogInformation("Creating the current database model without historical migrations...");
+            dbContext.Database.EnsureCreated();
+        }
+        
+        logger.LogInformation("Database setup completed successfully");
+        
+        await InitialTenantBootstrap.ApplyAsync(dbContext, builder.Configuration);
+
+        // Sample people, claims, and credentials must never be created in production.
+        if (app.Environment.IsDevelopment())
+        {
+            DbInitializer.Initialize(dbContext);
+            DbInitializer.ConfigureDemoPayer(dbContext, builder.Configuration["CloudHealthOffice:BaseUrl"]);
+            DbInitializer.SeedClaims(dbContext, TenantConstants.DefaultTenantId);
         }
     }
     catch (Exception ex)
@@ -410,8 +407,7 @@ using (var scope = app.Services.CreateScope())
         logger.LogError(ex, "Error during database initialization: {Message}", ex.Message);
         logger.LogError("Stack trace: {StackTrace}", ex.StackTrace);
         
-        // Don't throw - let the app start so we can see the error in logs
-        // In production, you might want to fail fast instead
+        if (!app.Environment.IsDevelopment()) throw;
     }
 }
 
@@ -427,6 +423,7 @@ app.UseStaticFiles();
 app.UseRouting();
 
 app.UseAuthentication();
+app.UseMiddleware<StaffAccessMiddleware>();
 app.UseAuthorization();
 
 app.MapBlazorHub();
