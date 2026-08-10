@@ -95,6 +95,7 @@ resource portal 'Microsoft.App/containerApps@2023-05-01' = {
           ]
         }
       ]
+      // Staff UI stays warm to avoid login/review cold starts.
       scale: { minReplicas: 1, maxReplicas: 3 }
     }
   }
@@ -137,6 +138,7 @@ resource apiGateway 'Microsoft.App/containerApps@2023-05-01' = {
           ]
         }
       ]
+      // Portal calls this on every private API request, so keep one warm.
       scale: { minReplicas: 1, maxReplicas: 3 }
     }
   }
@@ -174,7 +176,7 @@ resource patientService 'Microsoft.App/containerApps@2023-05-01' = {
           ]
         }
       ]
-      scale: { minReplicas: 1, maxReplicas: 3 }
+      scale: { minReplicas: 0, maxReplicas: 3 }
     }
   }
 }
@@ -213,7 +215,28 @@ resource schedulingService 'Microsoft.App/containerApps@2023-05-01' = {
           ]
         }
       ]
-      scale: { minReplicas: 1, maxReplicas: 3 }
+      // No HTTP ingress wakes this consumer. KEDA watches the private
+      // subscription and starts a replica whenever a booking is queued.
+      scale: {
+        minReplicas: 0
+        maxReplicas: 3
+        rules: [
+          {
+            name: 'booking-request-messages'
+            custom: {
+              type: 'azure-servicebus'
+              metadata: {
+                topicName: 'booking-requests'
+                subscriptionName: 'scheduling'
+                messageCount: '1'
+              }
+              auth: [
+                { secretRef: 'servicebus-listen', triggerParameter: 'connection' }
+              ]
+            }
+          }
+        ]
+      }
     }
   }
 }
@@ -254,6 +277,7 @@ resource intakeService 'Microsoft.App/containerApps@2023-05-01' = {
           ]
         }
       ]
+      // Public booking should respond without a cold-start delay.
       scale: { minReplicas: 1, maxReplicas: 3 }
     }
   }
@@ -291,7 +315,7 @@ resource claimsService 'Microsoft.App/containerApps@2023-05-01' = {
           ]
         }
       ]
-      scale: { minReplicas: 1, maxReplicas: 3 }
+      scale: { minReplicas: 0, maxReplicas: 3 }
     }
   }
 }
@@ -323,7 +347,7 @@ resource eligibilityService 'Microsoft.App/containerApps@2023-05-01' = {
           ]
         }
       ]
-      scale: { minReplicas: 1, maxReplicas: 3 }
+      scale: { minReplicas: 0, maxReplicas: 3 }
     }
   }
 }
@@ -355,7 +379,7 @@ resource eraService 'Microsoft.App/containerApps@2023-05-01' = {
           ]
         }
       ]
-      scale: { minReplicas: 1, maxReplicas: 3 }
+      scale: { minReplicas: 0, maxReplicas: 3 }
     }
   }
 }
@@ -393,7 +417,7 @@ resource authService 'Microsoft.App/containerApps@2023-05-01' = {
           ]
         }
       ]
-      scale: { minReplicas: 1, maxReplicas: 3 }
+      scale: { minReplicas: 0, maxReplicas: 3 }
     }
   }
 }
@@ -447,7 +471,7 @@ resource prescriptionService 'Microsoft.App/containerApps@2023-05-01' = {
           ]
         }
       ]
-      scale: { minReplicas: 1, maxReplicas: 3 }
+      scale: { minReplicas: 0, maxReplicas: 3 }
     }
   }
 }
@@ -504,7 +528,7 @@ resource visionService 'Microsoft.App/containerApps@2023-05-01' = {
           ]
         }
       ]
-      scale: { minReplicas: 1, maxReplicas: 3 }
+      scale: { minReplicas: 0, maxReplicas: 3 }
     }
   }
 }

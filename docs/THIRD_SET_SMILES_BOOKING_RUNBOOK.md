@@ -50,6 +50,13 @@ Prerequisites: Azure CLI logged in, resource group selected, images built/pushed
 
 5. Verify SchedulingService is healthy and listening on `booking-requests/scheduling`; verify the `third-set-smiles` TenantRegistry and Organization rows exist. Then verify IntakeService. Only after the full consumer smoke test succeeds should Cloudflare be enabled.
 
+The deployment uses the Container Apps Consumption profile. Portal, API Gateway,
+and IntakeService keep one replica warm. SchedulingService scales from zero when
+the Service Bus subscription contains a message. Patient, claims, eligibility,
+ERA, auth, prescription, and vision services scale to zero between requests.
+This avoids paying for ten continuously running replicas while keeping the
+booking form and staff review path responsive.
+
 Minimum runtime settings:
 
 | Service | Setting/secret |
