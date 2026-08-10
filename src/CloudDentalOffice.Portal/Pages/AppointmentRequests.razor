@@ -1,0 +1,88 @@
+@page "/appointment-requests"
+@using CloudDentalOffice.Contracts.Scheduling
+@inject IBookingRequestService BookingRequests
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+
+<PageTitle>Appointment Requests - Cloud Dental Office</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-4">
+    <MudPaper Class="pa-4" Style="background:#0a0a0a;border:1px solid #00ffff;">
+        <MudStack Row Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center">
+            <div>
+                <MudText Typo="Typo.h4" Color="Color.Primary"><MudIcon Icon="@Icons.Material.Filled.MarkEmailUnread" /> Appointment Requests</MudText>
+                <MudText Typo="Typo.body2">Review online requests before creating appointments.</MudText>
+            </div>
+            <MudSelect T="string" Value="_filter" ValueChanged="FilterChanged" Label="Status" Dense Variant="Variant.Outlined">
+                <MudSelectItem Value='@("Unresolved")'>Unresolved</MudSelectItem>
+                <MudSelectItem Value='@(nameof(BookingRequestStatus.New))'>New</MudSelectItem>
+                <MudSelectItem Value='@(nameof(BookingRequestStatus.NeedsFollowUp))'>Needs Follow-up</MudSelectItem>
+                <MudSelectItem Value='@(nameof(BookingRequestStatus.Approved))'>Approved</MudSelectItem>
+                <MudSelectItem Value='@(nameof(BookingRequestStatus.Rejected))'>Rejected</MudSelectItem>
+                <MudSelectItem Value='@("All")'>All</MudSelectItem>
+            </MudSelect>
+        </MudStack>
+    </MudPaper>
+
+    <MudPaper Class="pa-4 mt-4" Style="background:#0a0a0a;border:1px solid rgba(0,255,255,.3);">
+        @if (_loading) { <MudProgressLinear Indeterminate Color="Color.Primary" /> }
+        else
+        {
+            <MudTable Items="_requests" Hover Dense>
+                <HeaderContent>
+                    <MudTh>Name</MudTh><MudTh>Contact</MudTh><MudTh>Patient</MudTh><MudTh>Preferred time</MudTh>
+                    <MudTh>Reason</MudTh><MudTh>Source</MudTh><MudTh>Age</MudTh><MudTh>Status</MudTh><MudTh></MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd DataLabel="Name">@context.Name</MudTd>
+                    <MudTd DataLabel="Contact">@context.Phone<br />@context.Email</MudTd>
+                    <MudTd DataLabel="Patient">@context.PatientRelationship</MudTd>
+                    <MudTd DataLabel="Preferred time">@context.PreferredStartUtc.ToLocalTime().ToString("g")</MudTd>
+                    <MudTd DataLabel="Reason">@context.Reason</MudTd>
+                    <MudTd DataLabel="Source">@context.Source</MudTd>
+                    <MudTd DataLabel="Age">@FormatAge(context.CreatedAt)</MudTd>
+                    <MudTd DataLabel="Status"><MudChip T="string" Size="Size.Small" Color="@StatusColor(context.Status)">@context.Status</MudChip></MudTd>
+                    <MudTd><MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Primary" OnClick="@(() => Review(context))">Review</MudButton></MudTd>
+                </RowTemplate>
+                <NoRecordsContent><MudText>No appointment requests match this filter.</MudText></NoRecordsContent>
+            </MudTable>
+        }
+    </MudPaper>
+</MudContainer>
+
+@code {
+    private List<BookingRequestDto> _requests = [];
+    private string _filter = "Unresolved";
+    private bool _loading = true;
+    protected override Task OnInitializedAsync() => Load();
+    private async Task Load()
+    {
+        _loading = true;
+        try { _requests = await BookingRequests.GetAsync(_filter is "Unresolved" ? null : _filter); }
+        catch (Exception ex) { Snackbar.Add($"Unable to load requests: {ex.Message}", Severity.Error); }
+        finally { _loading = false; }
+    }
+    private async Task FilterChanged(string value) { _filter = value; await Load(); }
+    private async Task Review(BookingRequestDto request)
+    {
+        var dialog = await DialogService.ShowAsync<BookingRequestReviewDialog>("Review Appointment Request",
+            new DialogParameters<BookingRequestReviewDialog> { { x => x.Request, request } },
+            new DialogOptions { MaxWidth = MaxWidth.Large, FullWidth = true, CloseButton = true });
+        await dialog.Result;
+        await Load();
+    }
+    private static string FormatAge(DateTime value)
+    {
+        var age = DateTime.UtcNow - value;
+        if (age.TotalDays >= 1) return $"{(int)age.TotalDays}d";
+        if (age.TotalHours >= 1) return $"{(int)age.TotalHours}h";
+        return $"{Math.Max(0, (int)age.TotalMinutes)}m";
+    }
+    private static Color StatusColor(BookingRequestStatus status) => status switch
+    {
+        BookingRequestStatus.Approved => Color.Success,
+        BookingRequestStatus.Rejected or BookingRequestStatus.Cancelled => Color.Error,
+        BookingRequestStatus.NeedsFollowUp => Color.Warning,
+        _ => Color.Info
+    };
+}

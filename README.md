@@ -63,7 +63,7 @@ Cloud Dental Office uses a **microservices architecture** with each bounded cont
 | **AuthService** | 5106 | JWT authentication, OpenID Connect, multi-tenant identity |
 | **PrescriptionService** | 5107 | e-Prescribing with DoseSpot integration, EPCS compliance, Surescripts certified |
 | **VisionService** | 5108 | AI vision platform — privaseeAI integration, insurance card OCR (Azure AI Vision), narcotics cabinet monitoring, consent recording, clinical note generation |
-| **IntakeService** | 5109 | Public, internet-facing booking intake. Authenticates + validates website booking requests and publishes events to Service Bus. **No database, no PHI.** |
+| **IntakeService** | 5109 | Isolated public intake. Publishes validated booking requests and has no database or read access to patient/clinical systems. |
 
 ### Shared Libraries
 
@@ -76,17 +76,23 @@ Cloud Dental Office uses a **microservices architecture** with each bounded cont
 ## Public Website Booking Intake
 
 Practice websites (e.g. [3rd Set Smiles](https://github.com/aurelianware/3rdsetsmiles))
-submit appointment requests through a **dedicated public service** that never
-touches the database or any PHI. This keeps the internet-facing surface provably
-free of patient data.
+submit appointment requests through a **dedicated public service** with no read
+access to patient, clinical, or scheduling databases. It accepts only the
+minimum information necessary for appointment intake.
 
+```mermaid
+flowchart LR
+    Website[Practice website] --> Intake[IntakeService]
+    Intake --> Bus[Service Bus]
+    Bus --> Request[BookingRequest]
+    Request --> Review[Staff review]
+    Review --> Patient[Match or create patient]
+    Patient --> Approval[Approve & Schedule]
+    Approval --> Appointment[Appointment]
 ```
-Internet ─▶ IntakeService  (auth + validate + rate-limit; NO DB, NO PHI)
-                  │ publishes BookingRequestedEvent
-                  ▼
-          Service Bus topic  ──▶ SchedulingService consumer (private) ─▶ writes appointment
-Private  ─▶ ApiGateway ─▶ all PHI endpoints (never internet-exposed)
-```
+
+`BookingRequest` is the visitor's scheduling intent. `Appointment` is a
+practice-confirmed event created only after staff review and approval.
 
 **IntakeService** (the only internet-facing component) exposes:
 
@@ -97,8 +103,8 @@ POST /api/public/booking-requests
 - **Disabled by default** — returns `404` unless `PublicBooking:Enabled` is `true`.
 - **Requires an API key** — `Authorization: Bearer <key>` or `X-Api-Key: <key>`,
   compared in constant time. Missing/wrong key → `401`.
-- **Rate limited** — fixed window, 5 requests/minute per client IP (keyed on
-  `X-Forwarded-For`).
+- **Rate limited** — fixed window, 5 requests/minute per client IP. Forwarded
+  addresses are honored only from explicitly configured `TrustedProxies`.
 - **No database access.** It validates the request and publishes a
   `BookingRequestedEvent` to Service Bus, then returns `202 Accepted`
   (`{ status, eventId }`). It cannot read appointments or PHI.
@@ -110,8 +116,9 @@ Request body (`PublicBookingRequest`):
   "name": "Jane Doe",           // required
   "phone": "480-555-0100",      // required
   "email": "jane@example.com",  // optional
+  "patientRelationship": "Existing", // New, Existing, Unknown; missing -> Unknown
   "preferredStart": "2026-08-20T21:00:00Z", // required, UTC ISO-8601 (or offset), must be future
-  "durationMinutes": 60,        // optional; consumer falls back to PublicBooking:DefaultDurationMinutes
+  "durationMinutes": 60,        // optional preference
   "reason": "New patient exam", // optional
   "message": "Second choice: Friday" // optional
 }
@@ -121,15 +128,13 @@ Request body (`PublicBookingRequest`):
 with no timezone is rejected.
 
 **SchedulingService** runs a `BookingRequestConsumer` (a `BackgroundService`) that
-subscribes to the topic on the private network and creates the appointment:
+subscribes to the topic and creates a durable `BookingRequest`:
 
-- Resolves provider, location, and the placeholder "web intake" patient
-  **server-side** from `PublicBooking` config — these identifiers never leave the
-  private tier.
-- Records the appointment as `Requested` (a new `AppointmentStatus`) — unconfirmed
-  until staff confirm, rather than landing on the calendar as `Scheduled`.
-- Dead-letters messages it can't process (bad body, or misconfigured
-  provider/patient/duration) so nothing is silently lost.
+- No placeholder patient or provider is required.
+- `(TenantId, EventId)` uniqueness prevents duplicates during Service Bus redelivery.
+- Malformed events are dead-lettered and processing failures remain eligible for retry.
+- Staff use **Appointment Requests** to match/create the patient, review the
+  provider and actual slot, approve and schedule, reject, or request follow-up.
 
 ### Failure behavior (the website keeps working)
 
@@ -152,7 +157,9 @@ The topic decouples the website from the scheduler:
 | Key | Purpose |
 |-----|---------|
 | `PublicBooking:Enabled` | Master switch (default `false`). |
-| `PublicBooking:ApiKey` | Shared secret the website sends. **Required when enabled.** |
+| `PublicBooking:ApiKey` / `PublicBooking:TenantId` | Backwards-compatible single-practice credential mapping. |
+| `PublicBooking:Clients:{index}:ApiKey` / `TenantId` | Credential-to-tenant mappings for multiple practices. Store these in a secret provider. |
+| `TrustedProxies` | Proxy IPs allowed to supply forwarded client headers. |
 | `ServiceBus:ConnectionString` | Service Bus namespace connection string. Empty → events are logged and dropped. |
 | `ServiceBus:BookingTopic` | Topic to publish to (default `booking-requests`). |
 
@@ -160,10 +167,6 @@ The topic decouples the website from the scheduler:
 
 | Key | Purpose |
 |-----|---------|
-| `PublicBooking:ProviderId` | GUID of the default provider. |
-| `PublicBooking:LocationId` | GUID of the location (blank/zero → null). |
-| `PublicBooking:PatientId` | GUID of a shared "Web Booking" placeholder patient. |
-| `PublicBooking:DefaultDurationMinutes` | Appointment length when the request omits one (default `60`). |
 | `PublicBooking:RequireApiKeyForReads` | When `true`, `GET /api/appointments*` also require the API key (default `false`). |
 | `ServiceBus:ConnectionString` | Same namespace as IntakeService. Empty → the consumer stays idle. |
 | `ServiceBus:BookingTopic` / `ServiceBus:BookingSubscription` | Defaults `booking-requests` / `scheduling`. |
@@ -172,13 +175,28 @@ Environment-variable form uses double underscores, e.g. `PublicBooking__ApiKey`,
 `ServiceBus__ConnectionString`. You must create the topic and the `scheduling`
 subscription in your Service Bus namespace.
 
+### Upgrade note
+
+The service creates the new `BookingRequests` table and indexes on startup for
+SQLite, PostgreSQL, and SQL Server. The earlier prototype stored scheduling
+patient/provider identifiers as GUID placeholders; this workflow aligns them
+with the integer identifiers exposed by the current PatientService/Portal.
+Before upgrading a non-empty scheduling database created by the earlier public
+booking prototype, archive any `Requested` placeholder appointments and rebuild
+or explicitly migrate the `Appointments.PatientId` and `ProviderId` columns.
+Fresh local/Kubernetes databases require no manual step.
+
 ### Deployment boundary (important)
 
 Expose **only IntakeService** to the internet (TLS + the API key at the edge).
 Keep `api-gateway` and every PHI-bearing service — including `SchedulingService`
 and its anonymous `GET /api/appointments*` reads — on the **private** network.
-Because IntakeService has no database and communicates outbound only to Service
-Bus, the public surface carries no PHI even if the public endpoint is probed.
+IntakeService has no database and cannot read clinical or patient records.
+Visitor-submitted contact and visit information must nevertheless be handled as
+sensitive healthcare information.
+
+3rd Set Smiles is the first reference integration, but no practice name or
+internal patient/provider/location identifier is coupled to this workflow.
 
 If (against this guidance) `SchedulingService` is ever reachable from the
 internet, set `PublicBooking:RequireApiKeyForReads=true` as defense-in-depth so

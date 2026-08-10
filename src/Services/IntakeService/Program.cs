@@ -2,6 +2,9 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.AspNetCore.HttpOverrides;
+using System.Net;
+using System.Text.Json.Serialization;
 using CloudDentalOffice.Contracts.Events;
 using CloudDentalOffice.Contracts.Scheduling;
 using CloudDentalOffice.Messaging;
@@ -9,8 +12,8 @@ using CloudDentalOffice.Messaging;
 // IntakeService is the ONLY component intended to be exposed to the public
 // internet. It authenticates and validates website booking requests and
 // publishes a BookingRequestedEvent to Service Bus. It has NO database context
-// and NO access to appointments or any PHI — a private consumer
-// (SchedulingService) turns the event into an appointment.
+// and no read access to patient, clinical, or scheduling databases. It accepts
+// only the minimum contact and preference data required for appointment intake.
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -18,17 +21,24 @@ builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c => c.SwaggerDoc("v1", new() { Title = "Intake Service", Version = "v1" }));
 builder.Services.AddHealthChecks();
 builder.Services.AddEventPublishing(builder.Configuration);
+builder.Services.ConfigureHttpJsonOptions(options =>
+    options.SerializerOptions.Converters.Add(new JsonStringEnumConverter()));
 
-// Rate limit the public endpoint per forwarded client IP.
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
+{
+    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+    foreach (var value in builder.Configuration.GetSection("TrustedProxies").Get<string[]>() ?? [])
+        if (IPAddress.TryParse(value, out var address)) options.KnownProxies.Add(address);
+});
+
+// Rate limit by the connection address after ASP.NET Core has accepted forwarded
+// headers only from explicitly configured trusted proxies.
 builder.Services.AddRateLimiter(options =>
 {
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
     options.AddPolicy("public-booking", httpContext =>
     {
-        var forwarded = httpContext.Request.Headers["X-Forwarded-For"].ToString();
-        var clientKey = !string.IsNullOrWhiteSpace(forwarded)
-            ? forwarded.Split(',')[0].Trim()
-            : httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+        var clientKey = httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
         return RateLimitPartition.GetFixedWindowLimiter(clientKey, _ => new FixedWindowRateLimiterOptions
         {
             PermitLimit = 5,
@@ -40,6 +50,7 @@ builder.Services.AddRateLimiter(options =>
 
 var app = builder.Build();
 if (app.Environment.IsDevelopment()) { app.UseSwagger(); app.UseSwaggerUI(); }
+app.UseForwardedHeaders();
 app.UseRateLimiter();
 app.MapHealthChecks("/health");
 
@@ -55,8 +66,8 @@ app.MapPost("/api/public/booking-requests", async (
     if (!section.GetValue("Enabled", false))
         return Results.NotFound();
 
-    var apiKey = section.GetValue<string>("ApiKey");
-    if (string.IsNullOrWhiteSpace(apiKey) || !IntakeAuth.IsAuthorized(http, apiKey))
+    var tenantId = IntakeAuth.ResolveTenant(http, section);
+    if (tenantId is null)
         return Results.Unauthorized();
 
     // Don't falsely accept a booking we can't deliver: if Service Bus isn't
@@ -71,23 +82,8 @@ app.MapPost("/api/public/booking-requests", async (
             statusCode: StatusCodes.Status503ServiceUnavailable);
     }
 
-    var errors = new Dictionary<string, string[]>();
-    if (string.IsNullOrWhiteSpace(request.Name))
-        errors["name"] = new[] { "Name is required." };
-    if (string.IsNullOrWhiteSpace(request.Phone))
-        errors["phone"] = new[] { "Phone is required." };
-
-    // Require an unambiguous instant: UTC ("Z") or an explicit offset. A value
-    // with no timezone (DateTimeKind.Unspecified) is rejected rather than
-    // silently assumed to be UTC.
-    if (request.PreferredStart == default)
-        errors["preferredStart"] = new[] { "A preferred start time is required." };
-    else if (request.PreferredStart.Kind == DateTimeKind.Unspecified)
-        errors["preferredStart"] = new[] { "preferredStart must include a timezone (UTC 'Z' or an offset)." };
-
+    var errors = PublicBookingValidator.Validate(request, DateTime.UtcNow);
     var preferredStartUtc = request.PreferredStart.ToUniversalTime();
-    if (!errors.ContainsKey("preferredStart") && preferredStartUtc <= DateTime.UtcNow)
-        errors["preferredStart"] = new[] { "preferredStart must be in the future." };
 
     if (errors.Count > 0)
         return Results.ValidationProblem(errors);
@@ -99,7 +95,10 @@ app.MapPost("/api/public/booking-requests", async (
         PreferredStartUtc: preferredStartUtc,
         DurationMinutes: request.DurationMinutes,
         Reason: request.Reason,
-        Message: request.Message);
+        Message: request.Message,
+        PatientRelationship: request.PatientRelationship,
+        TenantId: tenantId,
+        Source: section.GetValue<string>("Source") ?? "PublicWebsite");
 
     try
     {
@@ -124,8 +123,43 @@ app.MapPost("/api/public/booking-requests", async (
 
 app.Run();
 
-internal static class IntakeAuth
+public static class PublicBookingValidator
 {
+    public static Dictionary<string, string[]> Validate(PublicBookingRequest request, DateTime utcNow)
+    {
+        var errors = new Dictionary<string, string[]>();
+        if (string.IsNullOrWhiteSpace(request.Name)) errors["name"] = ["Name is required."];
+        if (string.IsNullOrWhiteSpace(request.Phone)) errors["phone"] = ["Phone is required."];
+        if (request.PreferredStart == default) errors["preferredStart"] = ["A preferred start time is required."];
+        else if (request.PreferredStart.Kind == DateTimeKind.Unspecified)
+            errors["preferredStart"] = ["preferredStart must include a timezone (UTC 'Z' or an offset)."];
+        else if (request.PreferredStart.ToUniversalTime() <= utcNow)
+            errors["preferredStart"] = ["preferredStart must be in the future."];
+        return errors;
+    }
+}
+
+public static class IntakeAuth
+{
+    public static string? ResolveTenant(HttpContext http, IConfigurationSection section)
+    {
+        var provided = GetProvidedKey(http);
+        if (string.IsNullOrEmpty(provided)) return null;
+
+        foreach (var client in section.GetSection("Clients").GetChildren())
+        {
+            var expected = client.GetValue<string>("ApiKey");
+            var tenantId = client.GetValue<string>("TenantId");
+            if (!string.IsNullOrWhiteSpace(expected) && !string.IsNullOrWhiteSpace(tenantId) && ConstantTimeEquals(provided, expected))
+                return tenantId;
+        }
+
+        var legacyKey = section.GetValue<string>("ApiKey");
+        if (!string.IsNullOrWhiteSpace(legacyKey) && ConstantTimeEquals(provided, legacyKey))
+            return section.GetValue("TenantId", "default");
+        return null;
+    }
+
     /// <summary>
     /// Validates the request's API key against the configured value using a
     /// constant-time comparison. Accepts "Authorization: Bearer &lt;key&gt;" or
@@ -133,22 +167,20 @@ internal static class IntakeAuth
     /// </summary>
     public static bool IsAuthorized(HttpContext http, string expectedKey)
     {
-        string? provided = null;
+        var provided = GetProvidedKey(http);
+        return provided is not null && ConstantTimeEquals(provided, expectedKey);
+    }
 
+    private static string? GetProvidedKey(HttpContext http)
+    {
         var auth = http.Request.Headers.Authorization.ToString();
-        if (auth.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
-            provided = auth["Bearer ".Length..].Trim();
+        if (auth.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase)) return auth["Bearer ".Length..].Trim();
+        var apiKey = http.Request.Headers["X-Api-Key"].ToString();
+        return string.IsNullOrWhiteSpace(apiKey) ? null : apiKey.Trim();
+    }
 
-        if (string.IsNullOrEmpty(provided))
-        {
-            var apiKeyHeader = http.Request.Headers["X-Api-Key"].ToString();
-            if (!string.IsNullOrEmpty(apiKeyHeader))
-                provided = apiKeyHeader.Trim();
-        }
-
-        if (string.IsNullOrEmpty(provided))
-            return false;
-
+    private static bool ConstantTimeEquals(string provided, string expectedKey)
+    {
         var providedBytes = Encoding.UTF8.GetBytes(provided);
         var expectedBytes = Encoding.UTF8.GetBytes(expectedKey);
         return providedBytes.Length == expectedBytes.Length

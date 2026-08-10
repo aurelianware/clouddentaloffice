@@ -1,0 +1,160 @@
+@using CloudDentalOffice.Contracts.Scheduling
+@using CloudDentalOffice.Portal.Models
+@inject IBookingRequestService BookingRequests
+@inject IPatientService PatientService
+@inject IProviderService ProviderService
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+
+<MudDialog>
+    <DialogContent>
+        <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Class="mb-4">
+            <MudText Typo="Typo.h6">Original website request</MudText>
+            <MudText><b>@Request.Name</b> · @Request.Phone · @Request.Email</MudText>
+            <MudText>@Request.PatientRelationship patient · Preferred @Request.PreferredStartUtc.ToLocalTime().ToString("f")</MudText>
+            <MudText>@Request.Reason</MudText>
+            @if (!string.IsNullOrWhiteSpace(Request.Message)) { <MudText>@Request.Message</MudText> }
+        </MudAlert>
+
+        @if (Request.Status == BookingRequestStatus.Approved)
+        {
+            <MudAlert Severity="Severity.Success">Approved and scheduled as appointment @Request.ApprovedAppointmentId.</MudAlert>
+        }
+        else
+        {
+            <MudText Typo="Typo.h6" Color="Color.Primary">1. Confirm patient</MudText>
+            <MudAutocomplete T="Patient" Value="_patient" ValueChanged="PatientChanged" SearchFunc="SearchPatients"
+                             ToStringFunc="@(p => p?.FullName ?? string.Empty)" Label="Search by name, phone, or email"
+                             Variant="Variant.Outlined" Clearable Class="mb-2" />
+            @if (_potentialMatches.Count > 0 && _patient is null)
+            {
+                <MudText Typo="Typo.caption">Potential matches — staff confirmation is required:</MudText>
+                @foreach (var patient in _potentialMatches.Take(5))
+                {
+                    <MudButton Variant="Variant.Text" OnClick="@(() => PatientChanged(patient))">@patient.FullName · @patient.PrimaryPhone · @patient.Email</MudButton>
+                }
+            }
+            <MudButton StartIcon="@Icons.Material.Filled.PersonAdd" Variant="Variant.Outlined" OnClick="CreatePatientFromRequest">
+                Create Patient From Request
+            </MudButton>
+
+            <MudDivider Class="my-4" />
+            <MudText Typo="Typo.h6" Color="Color.Primary">2. Confirm scheduling</MudText>
+            <MudGrid>
+                <MudItem xs="12" md="6">
+                    <MudSelect T="int" @bind-Value="_providerId" Label="Provider" Required Variant="Variant.Outlined">
+                        @foreach (var provider in _providers) { <MudSelectItem Value="provider.ProviderId">@provider.FullName</MudSelectItem> }
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="12" md="4"><MudDatePicker @bind-Date="_date" Label="Date" Variant="Variant.Outlined" /></MudItem>
+                <MudItem xs="12" md="4"><MudTimePicker @bind-Time="_time" Label="Start time" Variant="Variant.Outlined" /></MudItem>
+                <MudItem xs="12" md="4"><MudNumericField T="int" @bind-Value="_duration" Label="Duration (minutes)" Min="1" Variant="Variant.Outlined" /></MudItem>
+                <MudItem xs="12"><MudTextField @bind-Value="_staffNotes" Label="Staff notes" Lines="2" Variant="Variant.Outlined" /></MudItem>
+            </MudGrid>
+        }
+    </DialogContent>
+    <DialogActions>
+        @if (Request.Status != BookingRequestStatus.Approved)
+        {
+            <MudButton Color="Color.Warning" OnClick="NeedsFollowUp">Needs Follow-Up</MudButton>
+            <MudButton Color="Color.Error" OnClick="Reject">Reject</MudButton>
+            <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="Approve">Approve &amp; Schedule</MudButton>
+        }
+        <MudButton OnClick="Close">Close</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] public MudDialogInstance MudDialog { get; set; } = null!;
+    [Parameter] public BookingRequestDto Request { get; set; } = null!;
+    private List<Patient> _patients = [];
+    private List<Patient> _potentialMatches = [];
+    private List<Provider> _providers = [];
+    private Patient? _patient;
+    private int _providerId;
+    private DateTime? _date;
+    private TimeSpan? _time;
+    private int _duration;
+    private string? _staffNotes;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _patients = await PatientService.GetPatientsAsync();
+        _providers = (await ProviderService.GetProvidersAsync()).Where(p => p.IsActive).ToList();
+        _patient = Request.MatchedPatientId.HasValue ? _patients.FirstOrDefault(p => p.PatientId == Request.MatchedPatientId) : null;
+        _potentialMatches = _patients.Where(IsPotentialMatch).ToList();
+        var local = Request.PreferredStartUtc.ToLocalTime();
+        _date = local.Date;
+        _time = local.TimeOfDay;
+        _duration = Request.PreferredDurationMinutes is > 0 ? Request.PreferredDurationMinutes.Value : 60;
+        _staffNotes = Request.StaffNotes;
+        if (Request.Status == BookingRequestStatus.New)
+            Request = await BookingRequests.ChangeStatusAsync(Request.Id, BookingRequestStatus.InReview);
+    }
+
+    private bool IsPotentialMatch(Patient p) =>
+        p.FullName.Equals(Request.Name, StringComparison.OrdinalIgnoreCase) ||
+        (!string.IsNullOrWhiteSpace(Request.Email) && p.Email?.Equals(Request.Email, StringComparison.OrdinalIgnoreCase) == true) ||
+        NormalizePhone(p.PrimaryPhone) == NormalizePhone(Request.Phone);
+    private static string NormalizePhone(string? value) => new((value ?? string.Empty).Where(char.IsDigit).ToArray());
+    private Task<IEnumerable<Patient>> SearchPatients(string value, CancellationToken token) => Task.FromResult<IEnumerable<Patient>>(
+        string.IsNullOrWhiteSpace(value) ? _patients.Take(10) : _patients.Where(p =>
+            p.FullName.Contains(value, StringComparison.OrdinalIgnoreCase) ||
+            (p.Email?.Contains(value, StringComparison.OrdinalIgnoreCase) ?? false) ||
+            (p.PrimaryPhone?.Contains(value, StringComparison.OrdinalIgnoreCase) ?? false)).Take(20));
+    private async Task PatientChanged(Patient? patient)
+    {
+        _patient = patient;
+        if (patient is not null) Request = await BookingRequests.MatchPatientAsync(Request.Id, patient.PatientId, notes: _staffNotes);
+    }
+    private async Task CreatePatientFromRequest()
+    {
+        var parts = Request.Name.Trim().Split(' ', 2, StringSplitOptions.RemoveEmptyEntries);
+        var patient = new Patient
+        {
+            FirstName = parts.ElementAtOrDefault(0) ?? string.Empty,
+            LastName = parts.ElementAtOrDefault(1) ?? string.Empty,
+            PrimaryPhone = Request.Phone, Email = Request.Email, Gender = string.Empty
+        };
+        var dialog = await DialogService.ShowAsync<PatientDialog>("Create Patient From Request",
+            new DialogParameters<PatientDialog> { { x => x.Patient, patient } },
+            new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true });
+        var result = await dialog.Result;
+        if (!result.Canceled && result.Data is Patient completed)
+        {
+            _patient = await PatientService.CreatePatientAsync(completed);
+            _patients.Add(_patient);
+            Request = await BookingRequests.MatchPatientAsync(Request.Id, _patient.PatientId, notes: _staffNotes);
+            Snackbar.Add("Patient created and matched. Review scheduling details before approval.", Severity.Success);
+        }
+    }
+    private async Task Approve()
+    {
+        if (_patient is null || _providerId <= 0 || !_date.HasValue || !_time.HasValue)
+        { Snackbar.Add("Select a patient, provider, date, and time.", Severity.Error); return; }
+        try
+        {
+            var local = DateTime.SpecifyKind(_date.Value.Date.Add(_time.Value), DateTimeKind.Local);
+            Request = await BookingRequests.ApproveAsync(Request.Id, new ApproveBookingRequest
+            {
+                PatientId = _patient.PatientId, ProviderId = _providerId, StartTimeUtc = local.ToUniversalTime(),
+                DurationMinutes = _duration, Notes = _staffNotes
+            });
+            Snackbar.Add("Request approved and appointment scheduled.", Severity.Success);
+            MudDialog.Close(DialogResult.Ok(Request));
+        }
+        catch (Exception ex) { Snackbar.Add($"Unable to schedule: {ex.Message}", Severity.Error); }
+    }
+    private async Task NeedsFollowUp() { Request = await BookingRequests.ChangeStatusAsync(Request.Id, BookingRequestStatus.NeedsFollowUp, notes: _staffNotes); MudDialog.Close(DialogResult.Ok(Request)); }
+    private async Task Reject()
+    {
+        var confirmed = await DialogService.ShowMessageBox("Reject request", "Reject this request? Add details in Staff notes before continuing.", yesText: "Reject", cancelText: "Cancel");
+        if (confirmed == true)
+        {
+            Request = await BookingRequests.ChangeStatusAsync(Request.Id, BookingRequestStatus.Rejected,
+                reason: _staffNotes, notes: _staffNotes);
+            MudDialog.Close(DialogResult.Ok(Request));
+        }
+    }
+    private void Close() => MudDialog.Close();
+}
