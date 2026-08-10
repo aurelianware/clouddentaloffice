@@ -3,16 +3,15 @@ using Azure.Messaging.ServiceBus;
 using CloudDentalOffice.Contracts.Events;
 using CloudDentalOffice.Contracts.Scheduling;
 using CloudDentalOffice.Messaging;
+using Microsoft.EntityFrameworkCore;
 
 /// <summary>
 /// Subscribes to the booking-requests topic and turns each BookingRequestedEvent
-/// into an unconfirmed (Requested) appointment. Provider/location/patient are
-/// resolved here from PublicBooking configuration — the internet-facing
-/// IntakeService never sees them. Runs only when ServiceBus is configured.
+/// into a durable BookingRequest for explicit staff review. It never creates an
+/// Appointment and requires no placeholder patient or provider identifiers.
 /// </summary>
 public sealed class BookingRequestConsumer(
     IServiceProvider services,
-    IConfiguration config,
     ServiceBusOptions options,
     ILogger<BookingRequestConsumer> logger) : BackgroundService
 {
@@ -78,54 +77,20 @@ public sealed class BookingRequestConsumer(
             return;
         }
 
-        var section = config.GetSection("PublicBooking");
-        var providerId = section.GetValue<Guid>("ProviderId");
-        var patientId = section.GetValue<Guid>("PatientId");
-        var locationId = section.GetValue<Guid>("LocationId");
-        var defaultDurationMinutes = section.GetValue("DefaultDurationMinutes", 60);
-        if (providerId == Guid.Empty || patientId == Guid.Empty || defaultDurationMinutes <= 0)
+        if (evt.EventId == Guid.Empty || string.IsNullOrWhiteSpace(evt.TenantId) ||
+            string.IsNullOrWhiteSpace(evt.Name) || string.IsNullOrWhiteSpace(evt.Phone) || evt.PreferredStartUtc == default)
         {
-            logger.LogError("PublicBooking is misconfigured; dead-lettering booking event {EventId}.", evt.EventId);
-            await args.DeadLetterMessageAsync(args.Message, "Misconfigured",
-                "ProviderId/PatientId/DefaultDurationMinutes are not set on the SchedulingService.");
+            await args.DeadLetterMessageAsync(args.Message, "InvalidEvent", "Required booking event fields are missing.");
             return;
         }
 
-        var durationMinutes = evt.DurationMinutes is int d && d > 0 ? d : defaultDurationMinutes;
-        var startUtc = evt.PreferredStartUtc.Kind == DateTimeKind.Utc
-            ? evt.PreferredStartUtc
-            : evt.PreferredStartUtc.ToUniversalTime();
-
-        var notes = string.Join("\n", new[]
-        {
-            "WEB BOOKING REQUEST — confirm with patient before finalizing.",
-            $"Name: {evt.Name}",
-            $"Phone: {evt.Phone}",
-            string.IsNullOrWhiteSpace(evt.Email) ? null : $"Email: {evt.Email}",
-            string.IsNullOrWhiteSpace(evt.Reason) ? null : $"Reason: {evt.Reason}",
-            string.IsNullOrWhiteSpace(evt.Message) ? null : $"Message: {evt.Message}"
-        }.Where(line => line is not null));
-
         using var scope = services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<SchedulingDbContext>();
-        db.Appointments.Add(new Appointment
-        {
-            Id = Guid.NewGuid(),
-            PatientId = patientId,
-            ProviderId = providerId,
-            StartTime = startUtc,
-            EndTime = startUtc.AddMinutes(durationMinutes),
-            Status = AppointmentStatus.Requested,
-            ProcedureCodes = null,
-            Notes = notes,
-            Operatory = null,
-            LocationId = locationId == Guid.Empty ? null : locationId,
-            CreatedAt = DateTime.UtcNow
-        });
-        await db.SaveChangesAsync(args.CancellationToken);
+        var created = await new BookingRequestWorkflow(db).PersistEventAsync(evt, args.CancellationToken);
         await args.CompleteMessageAsync(args.Message, args.CancellationToken);
 
-        logger.LogInformation("Created Requested appointment from booking event {EventId}.", evt.EventId);
+        logger.LogInformation("{Action} BookingRequest for event {EventId} and tenant {TenantId}.",
+            created ? "Created" : "Ignored duplicate", evt.EventId, evt.TenantId);
     }
 
     private Task OnErrorAsync(ProcessErrorEventArgs args)

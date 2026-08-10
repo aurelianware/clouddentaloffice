@@ -20,8 +20,8 @@ public record PatientUpdatedEvent(Guid PatientId) : IntegrationEvent;
 /// Raised by the public IntakeService when a website visitor submits a booking
 /// request. Carries only visitor-supplied contact details and a preferred time —
 /// no PatientId/ProviderId/LocationId. A private consumer (SchedulingService)
-/// resolves those from configuration and creates the (unconfirmed) appointment,
-/// so the internet-facing tier never touches the scheduling database or PHI.
+/// persists a BookingRequest for explicit staff review. The public tier has no
+/// read access to patient, clinical, or scheduling databases.
 /// </summary>
 public record BookingRequestedEvent(
     string Name,
@@ -30,11 +30,15 @@ public record BookingRequestedEvent(
     DateTime PreferredStartUtc,
     int? DurationMinutes,
     string? Reason,
-    string? Message) : IntegrationEvent;
+    string? Message,
+    Scheduling.PatientRelationship PatientRelationship = Scheduling.PatientRelationship.Unknown,
+    string TenantId = "default",
+    string Source = "PublicWebsite",
+    string? SourceReference = null) : IntegrationEvent;
 
-public record AppointmentScheduledEvent(Guid AppointmentId, Guid PatientId, Guid ProviderId, DateTime StartTime) : IntegrationEvent;
-public record AppointmentCompletedEvent(Guid AppointmentId, Guid PatientId, string? ProcedureCodes) : IntegrationEvent;
-public record AppointmentCancelledEvent(Guid AppointmentId, Guid PatientId, string? Reason) : IntegrationEvent;
+public record AppointmentScheduledEvent(Guid AppointmentId, int PatientId, int ProviderId, DateTime StartTime) : IntegrationEvent;
+public record AppointmentCompletedEvent(Guid AppointmentId, int PatientId, string? ProcedureCodes) : IntegrationEvent;
+public record AppointmentCancelledEvent(Guid AppointmentId, int PatientId, string? Reason) : IntegrationEvent;
 
 // ── Claims Events ──
 public record ClaimCreatedEvent(Guid ClaimId, Guid PatientId, decimal TotalCharge) : IntegrationEvent;

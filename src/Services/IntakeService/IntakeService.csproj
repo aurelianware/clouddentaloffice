@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
   <PropertyGroup>
-    <Description>Public, internet-facing booking intake. Authenticates, validates, and publishes booking-request events. No database or PHI access.</Description>
+    <Description>Isolated public booking intake. Has no access to patient, clinical, or scheduling databases.</Description>
     <DockerDefaultTargetOS>Linux</DockerDefaultTargetOS>
     <UserSecretsId>cdo-intake-secrets</UserSecretsId>
   </PropertyGroup>

@@ -82,10 +82,60 @@ app.MapPost("/api/appointments", async (CreateAppointmentRequest request, Schedu
     return Results.Created($"/api/appointments/{apt.Id}", apt);
 }).WithTags("Appointments");
 
+app.MapGet("/api/booking-requests", async (SchedulingDbContext db, string tenantId, string? status) =>
+{
+    var query = db.BookingRequests.Where(r => r.TenantId == tenantId);
+    if (!string.IsNullOrWhiteSpace(status) && Enum.TryParse<BookingRequestStatus>(status, true, out var parsed))
+        query = query.Where(r => r.Status == parsed);
+    else if (string.IsNullOrWhiteSpace(status))
+        query = query.Where(r => r.Status != BookingRequestStatus.Approved &&
+                                 r.Status != BookingRequestStatus.Rejected &&
+                                 r.Status != BookingRequestStatus.Cancelled);
+    return Results.Ok(await query.OrderBy(r => r.CreatedAt).Select(r => r.ToDto()).ToListAsync());
+}).WithTags("BookingRequests");
+
+app.MapGet("/api/booking-requests/{id:guid}", async (Guid id, string tenantId, SchedulingDbContext db) =>
+{
+    var request = await db.BookingRequests.FirstOrDefaultAsync(r => r.Id == id && r.TenantId == tenantId);
+    return request is null ? Results.NotFound() : Results.Ok(request.ToDto());
+}).WithTags("BookingRequests");
+
+app.MapPost("/api/booking-requests/{id:guid}/match-patient", async (
+    Guid id, string tenantId, MatchBookingPatientRequest match, SchedulingDbContext db) =>
+{
+    try { return Results.Ok((await new BookingRequestWorkflow(db).MatchPatientAsync(id, tenantId, match)).ToDto()); }
+    catch (KeyNotFoundException) { return Results.NotFound(); }
+    catch (ArgumentException ex) { return Results.ValidationProblem(new Dictionary<string, string[]> { ["patientId"] = [ex.Message] }); }
+    catch (InvalidOperationException ex) { return Results.Conflict(new { message = ex.Message }); }
+}).WithTags("BookingRequests");
+
+app.MapPost("/api/booking-requests/{id:guid}/status", async (
+    Guid id, string tenantId, ChangeBookingRequestStatusRequest change, SchedulingDbContext db) =>
+{
+    try { return Results.Ok((await new BookingRequestWorkflow(db).ChangeStatusAsync(id, tenantId, change)).ToDto()); }
+    catch (KeyNotFoundException) { return Results.NotFound(); }
+    catch (ArgumentException ex) { return Results.ValidationProblem(new Dictionary<string, string[]> { ["status"] = [ex.Message] }); }
+    catch (InvalidOperationException ex) { return Results.Conflict(new { message = ex.Message }); }
+}).WithTags("BookingRequests");
+
+app.MapPost("/api/booking-requests/{id:guid}/approve", async (
+    Guid id, string tenantId, ApproveBookingRequest approval, SchedulingDbContext db) =>
+{
+    try
+    {
+        var result = await new BookingRequestWorkflow(db).ApproveAsync(id, tenantId, approval);
+        return Results.Ok(new { bookingRequest = result.Request.ToDto(), appointmentId = result.Appointment.Id, created = result.Created });
+    }
+    catch (KeyNotFoundException) { return Results.NotFound(); }
+    catch (ArgumentException ex) { return Results.ValidationProblem(new Dictionary<string, string[]> { ["request"] = [ex.Message] }); }
+    catch (InvalidOperationException ex) { return Results.Conflict(new { message = ex.Message }); }
+}).WithTags("BookingRequests");
+
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<SchedulingDbContext>();
     await db.Database.EnsureCreatedAsync();
+    await BookingRequestSchema.EnsureAsync(db);
 }
 
 app.Run();
@@ -93,8 +143,8 @@ app.Run();
 public class Appointment
 {
     public Guid Id { get; set; }
-    public Guid PatientId { get; set; }
-    public Guid ProviderId { get; set; }
+    public int PatientId { get; set; }
+    public int ProviderId { get; set; }
     public DateTime StartTime { get; set; }
     public DateTime EndTime { get; set; }
     public AppointmentStatus Status { get; set; }
@@ -108,6 +158,7 @@ public class Appointment
 public class SchedulingDbContext(DbContextOptions<SchedulingDbContext> options) : DbContext(options)
 {
     public DbSet<Appointment> Appointments => Set<Appointment>();
+    public DbSet<BookingRequest> BookingRequests => Set<BookingRequest>();
 }
 
 internal static class PublicBookingAuth
