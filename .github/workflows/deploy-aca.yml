@@ -290,8 +290,14 @@ jobs:
           echo "IntakeService: https://$fqdn"
 
       - name: Verify production custom domains
+        shell: bash
         run: |
-          curl --fail --retry 12 --retry-delay 10 \
-            https://portal.3rdsetsmiles.com/health
+          portal_redirect=$(curl --silent --show-error --retry 12 --retry-delay 10 \
+            --output /dev/null --write-out '%{redirect_url}' \
+            'https://portal.3rdsetsmiles.com/.auth/login/google?post_login_redirect_uri=%2F')
+          case "$portal_redirect" in
+            https://accounts.google.com/*) ;;
+            *) echo "Portal did not redirect to Google authentication" >&2; exit 1 ;;
+          esac
           curl --fail --retry 12 --retry-delay 10 \
             https://book-api.3rdsetsmiles.com/health
