@@ -63,37 +63,45 @@ Cloud Dental Office uses a **microservices architecture** with each bounded cont
 | **AuthService** | 5106 | JWT authentication, OpenID Connect, multi-tenant identity |
 | **PrescriptionService** | 5107 | e-Prescribing with DoseSpot integration, EPCS compliance, Surescripts certified |
 | **VisionService** | 5108 | AI vision platform — privaseeAI integration, insurance card OCR (Azure AI Vision), narcotics cabinet monitoring, consent recording, clinical note generation |
+| **IntakeService** | 5109 | Public, internet-facing booking intake. Authenticates + validates website booking requests and publishes events to Service Bus. **No database, no PHI.** |
 
 ### Shared Libraries
 
 - **CloudDentalOffice.Contracts** — DTOs, integration events, and API contracts shared across services
 - **CloudDentalOffice.EdiCommon** — Clean-room X12 EDI parser and generators (837D, 270/271, 835)
+- **CloudDentalOffice.Messaging** — Service Bus event-publishing abstraction (`IEventPublisher`)
 
 ---
 
 ## Public Website Booking Intake
 
-The `SchedulingService` exposes an internet-facing endpoint for practice
-websites (e.g. [3rd Set Smiles](https://github.com/aurelianware/3rdsetsmiles)) to
-submit appointment requests, **without** exposing the internal admin endpoints.
+Practice websites (e.g. [3rd Set Smiles](https://github.com/aurelianware/3rdsetsmiles))
+submit appointment requests through a **dedicated public service** that never
+touches the database or any PHI. This keeps the internet-facing surface provably
+free of patient data.
+
+```
+Internet ─▶ IntakeService  (auth + validate + rate-limit; NO DB, NO PHI)
+                  │ publishes BookingRequestedEvent
+                  ▼
+          Service Bus topic  ──▶ SchedulingService consumer (private) ─▶ writes appointment
+Private  ─▶ ApiGateway ─▶ all PHI endpoints (never internet-exposed)
+```
+
+**IntakeService** (the only internet-facing component) exposes:
 
 ```
 POST /api/public/booking-requests
 ```
 
-How it differs from the internal `POST /api/appointments`:
-
 - **Disabled by default** — returns `404` unless `PublicBooking:Enabled` is `true`.
 - **Requires an API key** — `Authorization: Bearer <key>` or `X-Api-Key: <key>`,
   compared in constant time. Missing/wrong key → `401`.
-- **No client-supplied identifiers** — the request body carries only patient
-  contact details and a preferred time. Provider, location, and the placeholder
-  "web intake" patient are resolved **server-side** from configuration, so a
-  caller cannot target arbitrary records.
-- **Marks intakes as `Requested`** (a new `AppointmentStatus`) — unconfirmed
-  until staff confirm, rather than landing on the calendar as `Scheduled`.
-- **Rate limited** — fixed window, 5 requests/minute per client IP
-  (keyed on `X-Forwarded-For`).
+- **Rate limited** — fixed window, 5 requests/minute per client IP (keyed on
+  `X-Forwarded-For`).
+- **No database access.** It validates the request and publishes a
+  `BookingRequestedEvent` to Service Bus, then returns `202 Accepted`
+  (`{ status, eventId }`). It cannot read appointments or PHI.
 
 Request body (`PublicBookingRequest`):
 
@@ -102,52 +110,67 @@ Request body (`PublicBookingRequest`):
   "name": "Jane Doe",           // required
   "phone": "480-555-0100",      // required
   "email": "jane@example.com",  // optional
-  "preferredStart": "2026-08-20T21:00:00Z", // required, UTC ISO-8601, must be future
-  "durationMinutes": 60,        // optional; falls back to PublicBooking:DefaultDurationMinutes
+  "preferredStart": "2026-08-20T21:00:00Z", // required, UTC ISO-8601 (or offset), must be future
+  "durationMinutes": 60,        // optional; consumer falls back to PublicBooking:DefaultDurationMinutes
   "reason": "New patient exam", // optional
   "message": "Second choice: Friday" // optional
 }
 ```
 
-Success returns `201 Created` with a minimal confirmation
-(`{ id, status, startTime, endTime }`) — no internal fields are echoed. Contact
-details are stored in the appointment `notes` for staff follow-up.
+`preferredStart` must carry a timezone (UTC `Z` or an explicit offset); a value
+with no timezone is rejected.
+
+**SchedulingService** runs a `BookingRequestConsumer` (a `BackgroundService`) that
+subscribes to the topic on the private network and creates the appointment:
+
+- Resolves provider, location, and the placeholder "web intake" patient
+  **server-side** from `PublicBooking` config — these identifiers never leave the
+  private tier.
+- Records the appointment as `Requested` (a new `AppointmentStatus`) — unconfirmed
+  until staff confirm, rather than landing on the calendar as `Scheduled`.
+- Dead-letters messages it can't process (bad body, or misconfigured
+  provider/patient/duration) so nothing is silently lost.
 
 ### Configuration
 
-Set these under `PublicBooking` (via `appsettings.json`, environment variables,
-or user secrets). Environment-variable form uses `PublicBooking__ApiKey`, etc.
+**IntakeService** (`PublicBooking` + `ServiceBus` sections):
 
 | Key | Purpose |
 |-----|---------|
 | `PublicBooking:Enabled` | Master switch (default `false`). |
 | `PublicBooking:ApiKey` | Shared secret the website sends. **Required when enabled.** |
+| `ServiceBus:ConnectionString` | Service Bus namespace connection string. Empty → events are logged and dropped. |
+| `ServiceBus:BookingTopic` | Topic to publish to (default `booking-requests`). |
+
+**SchedulingService** (`PublicBooking` + `ServiceBus` sections):
+
+| Key | Purpose |
+|-----|---------|
 | `PublicBooking:ProviderId` | GUID of the default provider. |
 | `PublicBooking:LocationId` | GUID of the location (blank/zero → null). |
 | `PublicBooking:PatientId` | GUID of a shared "Web Booking" placeholder patient. |
 | `PublicBooking:DefaultDurationMinutes` | Appointment length when the request omits one (default `60`). |
-| `PublicBooking:RequireApiKeyForReads` | When `true`, `GET /api/appointments` and `GET /api/appointments/{id}` also require the API key (default `false`). |
+| `PublicBooking:RequireApiKeyForReads` | When `true`, `GET /api/appointments*` also require the API key (default `false`). |
+| `ServiceBus:ConnectionString` | Same namespace as IntakeService. Empty → the consumer stays idle. |
+| `ServiceBus:BookingTopic` / `ServiceBus:BookingSubscription` | Defaults `booking-requests` / `scheduling`. |
 
-When `Enabled`, the endpoint validates configuration and returns `500` if
-`ProviderId`/`PatientId` are unset or `DefaultDurationMinutes <= 0`, rather than
-persisting an invalid appointment. `preferredStart` must carry a timezone
-(UTC `Z` or an explicit offset); a value with no timezone is rejected.
+Environment-variable form uses double underscores, e.g. `PublicBooking__ApiKey`,
+`ServiceBus__ConnectionString`. You must create the topic and the `scheduling`
+subscription in your Service Bus namespace.
 
 ### Deployment boundary (important)
 
-The `SchedulingService` read endpoints (`GET /api/appointments*`) are anonymous
-by default and return the full record, including the `Notes` that carry public
-booking contact details. The Portal reaches them through the gateway on a
-**private** network, so this is safe internally — but it means you must **not**
-put the existing all-routes gateway directly on the internet.
+Expose **only IntakeService** to the internet (TLS + the API key at the edge).
+Keep `api-gateway` and every PHI-bearing service — including `SchedulingService`
+and its anonymous `GET /api/appointments*` reads — on the **private** network.
+Because IntakeService has no database and communicates outbound only to Service
+Bus, the public surface carries no PHI even if the public endpoint is probed.
 
-To accept public bookings, expose **only** `/api/public/booking-requests` to the
-internet (e.g. an edge path filter in Azure Front Door / Application Gateway, or
-a dedicated public ingress), and keep the internal `/api/appointments*` routes on
-the private gateway. As defense-in-depth for a shared/public gateway, also set
-`PublicBooking:RequireApiKeyForReads=true` (the Portal must then present the key
-on its scheduling calls). Add TLS + the API key at the edge. CORS is **not**
-required — the website calls this server-to-server.
+If (against this guidance) `SchedulingService` is ever reachable from the
+internet, set `PublicBooking:RequireApiKeyForReads=true` as defense-in-depth so
+its reads require the API key (the Portal must then present the key on its
+scheduling calls). CORS is **not** required — the website calls IntakeService
+server-to-server.
 
 ---
 

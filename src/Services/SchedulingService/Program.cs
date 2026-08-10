@@ -1,9 +1,8 @@
 using System.Security.Cryptography;
 using System.Text;
-using System.Threading.RateLimiting;
-using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using CloudDentalOffice.Contracts.Scheduling;
+using CloudDentalOffice.Messaging;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -27,30 +26,17 @@ builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c => c.SwaggerDoc("v1", new() { Title = "Scheduling Service", Version = "v1" }));
 builder.Services.AddHealthChecks();
 
-// Rate limiting for the internet-facing public booking endpoint. Partitions by
-// the caller's forwarded client IP (the ApiGateway/edge sets X-Forwarded-For)
-// so one visitor cannot flood the intake. Other endpoints are unaffected.
-builder.Services.AddRateLimiter(options =>
-{
-    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
-    options.AddPolicy("public-booking", httpContext =>
-    {
-        var forwarded = httpContext.Request.Headers["X-Forwarded-For"].ToString();
-        var clientKey = !string.IsNullOrWhiteSpace(forwarded)
-            ? forwarded.Split(',')[0].Trim()
-            : httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
-        return RateLimitPartition.GetFixedWindowLimiter(clientKey, _ => new FixedWindowRateLimiterOptions
-        {
-            PermitLimit = 5,
-            Window = TimeSpan.FromMinutes(1),
-            QueueLimit = 0
-        });
-    });
-});
+// Consume public booking-request events from Service Bus and turn them into
+// (unconfirmed) appointments. Runs only when ServiceBus is configured; the
+// consumer self-guards otherwise. Public booking traffic never reaches this
+// service directly — the internet-facing IntakeService publishes the events.
+var serviceBusOptions = new ServiceBusOptions();
+builder.Configuration.GetSection(ServiceBusOptions.SectionName).Bind(serviceBusOptions);
+builder.Services.AddSingleton(serviceBusOptions);
+builder.Services.AddHostedService<BookingRequestConsumer>();
 
 var app = builder.Build();
 if (app.Environment.IsDevelopment()) { app.UseSwagger(); app.UseSwaggerUI(); }
-app.UseRateLimiter();
 app.MapHealthChecks("/health");
 
 // These read endpoints return full appointment records, including the free-text
@@ -95,111 +81,6 @@ app.MapPost("/api/appointments", async (CreateAppointmentRequest request, Schedu
     await db.SaveChangesAsync();
     return Results.Created($"/api/appointments/{apt.Id}", apt);
 }).WithTags("Appointments");
-
-// Public, internet-facing booking intake for practice websites.
-//
-// Unlike POST /api/appointments (an internal/admin endpoint that trusts the
-// caller-supplied Patient/Provider/Location IDs), this endpoint:
-//   - is disabled unless PublicBooking:Enabled is true,
-//   - requires an API key (Authorization: Bearer <key> or X-Api-Key: <key>),
-//   - resolves Provider/Location/Patient server-side from configuration and
-//     ignores any identifiers a caller might try to supply,
-//   - records the appointment as AppointmentStatus.Requested (unconfirmed), and
-//   - is rate limited per client IP.
-//
-// It must ONLY be exposed publicly through the ApiGateway; the raw service
-// should not be reachable from the internet.
-app.MapPost("/api/public/booking-requests", async (
-    PublicBookingRequest request,
-    SchedulingDbContext db,
-    IConfiguration config,
-    ILoggerFactory loggerFactory,
-    HttpContext http) =>
-{
-    var section = config.GetSection("PublicBooking");
-    if (!section.GetValue("Enabled", false))
-        return Results.NotFound();
-
-    var apiKey = section.GetValue<string>("ApiKey");
-    if (string.IsNullOrWhiteSpace(apiKey) || !PublicBookingAuth.IsAuthorized(http, apiKey))
-        return Results.Unauthorized();
-
-    // Fail fast on server misconfiguration rather than writing invalid
-    // appointments (FK violations, or EndTime not after StartTime).
-    var providerId = section.GetValue<Guid>("ProviderId");
-    var patientId = section.GetValue<Guid>("PatientId");
-    var locationId = section.GetValue<Guid>("LocationId");
-    var defaultDurationMinutes = section.GetValue("DefaultDurationMinutes", 60);
-    if (providerId == Guid.Empty || patientId == Guid.Empty || defaultDurationMinutes <= 0)
-    {
-        loggerFactory.CreateLogger("PublicBooking").LogError(
-            "PublicBooking is enabled but misconfigured (ProviderId/PatientId/DefaultDurationMinutes).");
-        return Results.Problem(
-            title: "Online booking is temporarily unavailable.",
-            statusCode: StatusCodes.Status500InternalServerError);
-    }
-
-    var errors = new Dictionary<string, string[]>();
-    if (string.IsNullOrWhiteSpace(request.Name))
-        errors["name"] = new[] { "Name is required." };
-    if (string.IsNullOrWhiteSpace(request.Phone))
-        errors["phone"] = new[] { "Phone is required." };
-
-    // Require an unambiguous instant: UTC ("Z") or an explicit offset. A value
-    // with no timezone (DateTimeKind.Unspecified) is rejected rather than
-    // silently assumed to be UTC, which could shift the requested time.
-    if (request.PreferredStart == default)
-        errors["preferredStart"] = new[] { "A preferred start time is required." };
-    else if (request.PreferredStart.Kind == DateTimeKind.Unspecified)
-        errors["preferredStart"] = new[] { "preferredStart must include a timezone (UTC 'Z' or an offset)." };
-
-    var preferredStartUtc = request.PreferredStart.ToUniversalTime();
-    if (!errors.ContainsKey("preferredStart") && preferredStartUtc <= DateTime.UtcNow)
-        errors["preferredStart"] = new[] { "preferredStart must be in the future." };
-
-    if (errors.Count > 0)
-        return Results.ValidationProblem(errors);
-
-    var durationMinutes = request.DurationMinutes is int d && d > 0 ? d : defaultDurationMinutes;
-
-    var notes = string.Join("\n", new[]
-    {
-        "WEB BOOKING REQUEST — confirm with patient before finalizing.",
-        $"Name: {request.Name}",
-        $"Phone: {request.Phone}",
-        string.IsNullOrWhiteSpace(request.Email) ? null : $"Email: {request.Email}",
-        string.IsNullOrWhiteSpace(request.Reason) ? null : $"Reason: {request.Reason}",
-        string.IsNullOrWhiteSpace(request.Message) ? null : $"Message: {request.Message}"
-    }.Where(line => line is not null));
-
-    var apt = new Appointment
-    {
-        Id = Guid.NewGuid(),
-        PatientId = patientId,
-        ProviderId = providerId,
-        StartTime = preferredStartUtc,
-        EndTime = preferredStartUtc.AddMinutes(durationMinutes),
-        Status = AppointmentStatus.Requested,
-        ProcedureCodes = null,
-        Notes = notes,
-        Operatory = null,
-        LocationId = locationId == Guid.Empty ? null : locationId,
-        CreatedAt = DateTime.UtcNow
-    };
-    db.Appointments.Add(apt);
-    await db.SaveChangesAsync();
-
-    // Return a minimal confirmation — do not echo internal identifiers.
-    return Results.Created($"/api/appointments/{apt.Id}", new
-    {
-        id = apt.Id,
-        status = apt.Status.ToString(),
-        startTime = apt.StartTime,
-        endTime = apt.EndTime
-    });
-})
-.RequireRateLimiting("public-booking")
-.WithTags("PublicBooking");
 
 using (var scope = app.Services.CreateScope())
 {

@@ -63,8 +63,31 @@ services:
     environment:
       - ASPNETCORE_ENVIRONMENT=Development
       - ConnectionStrings__SchedulingDb=Host=postgres;Database=cdo_scheduling;Username=cdo;Password=cdo_dev_password
+      # Consumes booking-request events. Empty connection string => consumer idles.
+      - ServiceBus__ConnectionString=${SERVICEBUS_CONNECTION_STRING:-}
+      - PublicBooking__ProviderId=${PUBLIC_BOOKING_PROVIDER_ID:-}
+      - PublicBooking__LocationId=${PUBLIC_BOOKING_LOCATION_ID:-}
+      - PublicBooking__PatientId=${PUBLIC_BOOKING_PATIENT_ID:-}
     depends_on:
       - postgres
+    networks:
+      - cdo-network
+
+  # ── Public booking intake (the ONLY service meant to face the internet) ──
+  # It has no database and no PHI access; it authenticates + validates and
+  # publishes booking-request events to Service Bus. Keep every other service,
+  # including api-gateway, on the private network.
+  intake-service:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/IntakeService.Dockerfile
+    ports:
+      - "5109:5109"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - ServiceBus__ConnectionString=${SERVICEBUS_CONNECTION_STRING:-}
+      - PublicBooking__Enabled=${PUBLIC_BOOKING_ENABLED:-false}
+      - PublicBooking__ApiKey=${PUBLIC_BOOKING_API_KEY:-}
     networks:
       - cdo-network
 

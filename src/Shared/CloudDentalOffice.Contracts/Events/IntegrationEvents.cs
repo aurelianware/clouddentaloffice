@@ -15,6 +15,23 @@ public record PatientCreatedEvent(Guid PatientId, string FirstName, string LastN
 public record PatientUpdatedEvent(Guid PatientId) : IntegrationEvent;
 
 // ── Scheduling Events ──
+
+/// <summary>
+/// Raised by the public IntakeService when a website visitor submits a booking
+/// request. Carries only visitor-supplied contact details and a preferred time —
+/// no PatientId/ProviderId/LocationId. A private consumer (SchedulingService)
+/// resolves those from configuration and creates the (unconfirmed) appointment,
+/// so the internet-facing tier never touches the scheduling database or PHI.
+/// </summary>
+public record BookingRequestedEvent(
+    string Name,
+    string Phone,
+    string? Email,
+    DateTime PreferredStartUtc,
+    int? DurationMinutes,
+    string? Reason,
+    string? Message) : IntegrationEvent;
+
 public record AppointmentScheduledEvent(Guid AppointmentId, Guid PatientId, Guid ProviderId, DateTime StartTime) : IntegrationEvent;
 public record AppointmentCompletedEvent(Guid AppointmentId, Guid PatientId, string? ProcedureCodes) : IntegrationEvent;
 public record AppointmentCancelledEvent(Guid AppointmentId, Guid PatientId, string? Reason) : IntegrationEvent;
