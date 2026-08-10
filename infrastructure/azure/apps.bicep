@@ -47,6 +47,9 @@ param serviceBusListenConnection string
 @secure()
 param publicBookingApiKey string
 param initialTenantId string = 'third-set-smiles'
+param googleOAuthClientId string = ''
+@secure()
+param googleOAuthClientSecret string = ''
 
 param jwtIssuer string = 'CloudDentalOffice'
 param jwtAudience string = 'CloudDentalOfficeUsers'
@@ -74,6 +77,8 @@ module apps 'container-apps.bicep' = {
     serviceBusListenConnection: serviceBusListenConnection
     publicBookingApiKey: publicBookingApiKey
     initialTenantId: initialTenantId
+    googleOAuthClientId: googleOAuthClientId
+    googleOAuthClientSecret: googleOAuthClientSecret
   }
 }
 

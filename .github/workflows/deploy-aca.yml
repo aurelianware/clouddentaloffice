@@ -14,6 +14,8 @@ name: Deploy to Azure Container Apps
 #   POSTGRES_ADMIN_PASSWORD – PostgreSQL administrator password
 #   JWT_KEY                – Portal signing key
 #   PUBLIC_BOOKING_API_KEY – 32+ character website-to-IntakeService credential
+#   GOOGLE_OAUTH_CLIENT_ID – Google OAuth web client for the Portal ACA hostname
+#   GOOGLE_OAUTH_CLIENT_SECRET – matching Google OAuth client secret
 #
 # One-time infrastructure setup (run locally, not in CI):
 #   az group create --name cdo-prod-rg --location westus3
@@ -221,7 +223,9 @@ jobs:
               jwtKey=${{ secrets.JWT_KEY }} \
               serviceBusSendConnection='${{ steps.servicebus.outputs.send_connection }}' \
               serviceBusListenConnection='${{ steps.servicebus.outputs.listen_connection }}' \
-              publicBookingApiKey='${{ secrets.PUBLIC_BOOKING_API_KEY }}'
+              publicBookingApiKey='${{ secrets.PUBLIC_BOOKING_API_KEY }}' \
+              googleOAuthClientId='${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}' \
+              googleOAuthClientSecret='${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}'
 
       # ── Verify deployment ─────────────────────────────────────────────────────
 

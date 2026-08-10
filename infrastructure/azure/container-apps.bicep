@@ -35,6 +35,9 @@ param serviceBusListenConnection string
 @secure()
 param publicBookingApiKey string
 param initialTenantId string = 'third-set-smiles'
+param googleOAuthClientId string = ''
+@secure()
+param googleOAuthClientSecret string = ''
 
 // Shared registry config — Managed Identity pulls from ACR (no admin credentials)
 var registry = [
@@ -71,6 +74,7 @@ resource portal 'Microsoft.App/containerApps@2023-05-01' = {
       secrets: [
         { name: 'conn-default', value: connPortal }
         { name: 'jwt-key', value: jwtKey }
+        { name: 'google-oauth-client-secret', value: googleOAuthClientSecret }
       ]
     }
     template: {
@@ -94,11 +98,52 @@ resource portal 'Microsoft.App/containerApps@2023-05-01' = {
             { name: 'InitialTenant__TenantId', value: initialTenantId }
             { name: 'InitialTenant__Name', value: '3rd Set Smiles' }
             { name: 'InitialTenant__Domain', value: '3rdsetsmiles.com' }
+            { name: 'AzureAd__Enabled', value: 'false' }
+            { name: 'StaffAuth__Enabled', value: !empty(googleOAuthClientId) ? 'true' : 'false' }
+            { name: 'StaffAuth__TenantId', value: initialTenantId }
+            { name: 'StaffAuth__AllowedWorkspaceDomain', value: '3rdsetsmiles.com' }
+            { name: 'StaffAuth__Users__0__Email', value: 'matt@3rdsetsmiles.com' }
+            { name: 'StaffAuth__Users__0__Role', value: 'Admin' }
+            { name: 'StaffAuth__Users__1__Email', value: 'markus.phillips@gmail.com' }
+            { name: 'StaffAuth__Users__1__Role', value: 'Admin' }
           ]
         }
       ]
       // Staff UI stays warm to avoid login/review cold starts.
       scale: { minReplicas: 1, maxReplicas: 3 }
+    }
+  }
+}
+
+resource portalGoogleAuth 'Microsoft.App/containerApps/authConfigs@2024-03-01' = if (!empty(googleOAuthClientId)) {
+  parent: portal
+  name: 'current'
+  properties: {
+    platform: {
+      enabled: true
+    }
+    globalValidation: {
+      unauthenticatedClientAction: 'RedirectToLoginPage'
+      redirectToProvider: 'google'
+    }
+    identityProviders: {
+      google: {
+        registration: {
+          clientId: googleOAuthClientId
+          clientSecretSettingName: 'google-oauth-client-secret'
+        }
+        validation: {
+          allowedAudiences: [ googleOAuthClientId ]
+        }
+      }
+    }
+    login: {
+      tokenStore: {
+        enabled: false
+      }
+    }
+    httpSettings: {
+      requireHttps: true
     }
   }
 }

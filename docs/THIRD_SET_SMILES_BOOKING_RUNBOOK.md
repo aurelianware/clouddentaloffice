@@ -77,6 +77,38 @@ Minimum runtime settings:
 | Scheduling | `ASPNETCORE_ENVIRONMENT=Production`, `DatabaseProvider=PostgreSQL`, `ConnectionStrings__SchedulingDb`, listen-only `ServiceBus__ConnectionString`, topic `booking-requests`, subscription `scheduling` |
 | Portal bootstrap | `InitialTenant__Enabled=true`, `InitialTenant__TenantId=third-set-smiles`, `InitialTenant__Name=3rd Set Smiles`, `InitialTenant__Domain=3rdsetsmiles.com` |
 
+## Staff portal Google Workspace authentication
+
+The Portal alone uses Azure Container Apps built-in Google authentication. IntakeService remains public with its independent API key; SchedulingService and the API gateway remain private.
+
+Create a Google OAuth **Web application** client with:
+
+- Authorized JavaScript origin: `https://portal.lemoncoast-a1e8528c.westus3.azurecontainerapps.io`
+- Authorized redirect URI: `https://portal.lemoncoast-a1e8528c.westus3.azurecontainerapps.io/.auth/login/google/callback`
+
+Store the client values as GitHub Actions secrets `GOOGLE_OAUTH_CLIENT_ID` and
+`GOOGLE_OAUTH_CLIENT_SECRET`. Never commit or print the client secret. The ACA
+deployment enables Easy Auth only when the client ID is supplied.
+
+The application independently enforces a least-privilege allowlist and pins every
+approved identity to tenant `third-set-smiles`. Initial administrators are:
+
+- `matt@3rdsetsmiles.com`
+- `markus.phillips@gmail.com` (temporary deployment/testing access; remove after handoff)
+
+A matching Workspace suffix is not sufficient by itself. Any Google identity not
+explicitly listed receives HTTP 403 after authentication. Require Workspace MFA,
+review ACA authentication logs, and remove the temporary Gmail administrator after
+Matt verifies access.
+
+Authentication smoke tests:
+
+1. An anonymous request to the Portal redirects to Google.
+2. Matt can sign in and sees the `third-set-smiles` appointment-request queue.
+3. The temporary Gmail administrator can sign in during deployment testing.
+4. A Google identity outside the allowlist receives 403.
+5. Intake `/health` and authenticated website booking intake still work unchanged.
+
 ## Smoke tests
 
 Set local shell variables without recording secrets in the command history. Health must return 200:

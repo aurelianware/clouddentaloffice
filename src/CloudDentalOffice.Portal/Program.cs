@@ -423,6 +423,7 @@ app.UseStaticFiles();
 app.UseRouting();
 
 app.UseAuthentication();
+app.UseMiddleware<StaffAccessMiddleware>();
 app.UseAuthorization();
 
 app.MapBlazorHub();
