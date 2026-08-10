@@ -269,7 +269,7 @@
         }
         catch (Exception ex)
         {
-            Snackbar.Add($"Error saving procedure: {ex.Message}", Severity.Error);
+            Snackbar.Add($"Error saving procedure: {ex.GetDetailedMessage()}", Severity.Error);
         }
         finally
         {

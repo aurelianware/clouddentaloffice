@@ -9,11 +9,13 @@ public class TreatmentPlanService : ITreatmentPlanService
 {
     private readonly CloudDentalDbContext _context;
     private readonly ITenantProvider _tenantProvider;
+    private readonly ILogger<TreatmentPlanService> _logger;
 
-    public TreatmentPlanService(CloudDentalDbContext context, ITenantProvider tenantProvider)
+    public TreatmentPlanService(CloudDentalDbContext context, ITenantProvider tenantProvider, ILogger<TreatmentPlanService> logger)
     {
         _context = context;
         _tenantProvider = tenantProvider;
+        _logger = logger;
     }
 
     public async Task<List<TreatmentPlan>> GetAllTreatmentPlansAsync()
@@ -81,11 +83,20 @@ public class TreatmentPlanService : ITreatmentPlanService
             procedure.CompletedDate = NormalizeToUtc(procedure.CompletedDate);
         }
 
-        _context.TreatmentPlans.Add(plan);
-        await _context.SaveChangesAsync();
+        try
+        {
+            _context.TreatmentPlans.Add(plan);
+            await _context.SaveChangesAsync();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error creating treatment plan for Patient {PatientId}, Provider {ProviderId}",
+                plan.PatientId, plan.ProviderId);
+            throw;
+        }
 
         // Reload with navigation properties
-        return await GetTreatmentPlanByIdAsync(plan.TreatmentPlanId.ToString()) 
+        return await GetTreatmentPlanByIdAsync(plan.TreatmentPlanId.ToString())
                ?? throw new InvalidOperationException("Failed to retrieve created treatment plan");
     }
 
@@ -156,10 +167,18 @@ public class TreatmentPlanService : ITreatmentPlanService
             }
         }
 
-        await _context.SaveChangesAsync();
+        try
+        {
+            await _context.SaveChangesAsync();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error updating treatment plan {TreatmentPlanId}", plan.TreatmentPlanId);
+            throw;
+        }
 
         // Reload with all navigation properties
-        return await GetTreatmentPlanByIdAsync(plan.TreatmentPlanId.ToString()) 
+        return await GetTreatmentPlanByIdAsync(plan.TreatmentPlanId.ToString())
                ?? throw new InvalidOperationException("Failed to retrieve updated treatment plan");
     }
 

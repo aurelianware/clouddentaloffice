@@ -282,7 +282,7 @@
         }
         catch (Exception ex)
         {
-            Snackbar.Add($"Error saving payer configuration: {ex.Message}", Severity.Error);
+            Snackbar.Add($"Error saving payer configuration: {ex.GetDetailedMessage()}", Severity.Error);
         }
     }
 

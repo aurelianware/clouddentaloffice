@@ -255,7 +255,7 @@
         }
         catch (Exception ex)
         {
-            Snackbar.Add($"Error saving provider: {ex.Message}", Severity.Error);
+            Snackbar.Add($"Error saving provider: {ex.GetDetailedMessage()}", Severity.Error);
         }
         finally
         {

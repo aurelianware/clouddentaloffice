@@ -355,13 +355,46 @@ public class CloudDentalDbContext : DbContext
     public override int SaveChanges()
     {
         ApplyTenantId();
+        NormalizeDateTimesToUtc();
         return base.SaveChanges();
     }
 
     public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {
         ApplyTenantId();
+        NormalizeDateTimesToUtc();
         return base.SaveChangesAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// PostgreSQL (Npgsql) maps <see cref="DateTime"/> to <c>timestamp with time zone</c>
+    /// and rejects any value whose <see cref="DateTime.Kind"/> is not
+    /// <see cref="DateTimeKind.Utc"/>, throwing "An error occurred while saving the
+    /// entity changes. See the inner exception for details." A single missed
+    /// conversion anywhere in the app is enough to break a save, so this acts as a
+    /// last-line safety net: every DateTime being written is stamped as UTC.
+    ///
+    /// Values already marked UTC are left untouched (services that intentionally
+    /// convert local -> UTC still win). Unspecified/Local values keep their clock
+    /// reading and are simply labelled UTC, so no wall-clock shift is introduced.
+    /// </summary>
+    private void NormalizeDateTimesToUtc()
+    {
+        foreach (var entry in ChangeTracker.Entries())
+        {
+            if (entry.State != EntityState.Added && entry.State != EntityState.Modified)
+            {
+                continue;
+            }
+
+            foreach (var property in entry.Properties)
+            {
+                if (property.CurrentValue is DateTime dateTime && dateTime.Kind != DateTimeKind.Utc)
+                {
+                    property.CurrentValue = DateTime.SpecifyKind(dateTime, DateTimeKind.Utc);
+                }
+            }
+        }
     }
 
     private void ApplyTenantId()
