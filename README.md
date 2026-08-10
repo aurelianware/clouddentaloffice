@@ -131,6 +131,20 @@ subscribes to the topic on the private network and creates the appointment:
 - Dead-letters messages it can't process (bad body, or misconfigured
   provider/patient/duration) so nothing is silently lost.
 
+### Failure behavior (the website keeps working)
+
+The topic decouples the website from the scheduler:
+
+- **SchedulingService down / deploying:** IntakeService still returns `202` and
+  the event waits durably in the `scheduling` subscription until the consumer
+  comes back and processes it. **No booking is lost and the website is
+  unaffected.**
+- **Service Bus unreachable, or not configured:** IntakeService returns `503`
+  (rather than a false `202`), so the calling website falls back to its own
+  delivery path (e.g. email).
+- IntakeService has no database, so a scheduling-database outage cannot affect
+  the public endpoint at all.
+
 ### Configuration
 
 **IntakeService** (`PublicBooking` + `ServiceBus` sections):

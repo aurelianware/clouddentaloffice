@@ -47,6 +47,8 @@ app.MapPost("/api/public/booking-requests", async (
     PublicBookingRequest request,
     IConfiguration config,
     IEventPublisher publisher,
+    ServiceBusOptions serviceBus,
+    ILoggerFactory loggerFactory,
     HttpContext http) =>
 {
     var section = config.GetSection("PublicBooking");
@@ -56,6 +58,18 @@ app.MapPost("/api/public/booking-requests", async (
     var apiKey = section.GetValue<string>("ApiKey");
     if (string.IsNullOrWhiteSpace(apiKey) || !IntakeAuth.IsAuthorized(http, apiKey))
         return Results.Unauthorized();
+
+    // Don't falsely accept a booking we can't deliver: if Service Bus isn't
+    // configured, the publisher would drop the event. Return 503 so the caller
+    // falls back to its own delivery path instead.
+    if (!serviceBus.IsConfigured)
+    {
+        loggerFactory.CreateLogger("PublicBooking").LogError(
+            "PublicBooking is enabled but ServiceBus is not configured; refusing the request.");
+        return Results.Problem(
+            title: "Booking is temporarily unavailable. Please try again shortly.",
+            statusCode: StatusCodes.Status503ServiceUnavailable);
+    }
 
     var errors = new Dictionary<string, string[]>();
     if (string.IsNullOrWhiteSpace(request.Name))
@@ -87,7 +101,20 @@ app.MapPost("/api/public/booking-requests", async (
         Reason: request.Reason,
         Message: request.Message);
 
-    await publisher.PublishAsync(evt, http.RequestAborted);
+    try
+    {
+        await publisher.PublishAsync(evt, http.RequestAborted);
+    }
+    catch (Exception ex)
+    {
+        // The broker is unreachable. Return 503 so the caller (the website)
+        // can fall back to its own delivery path (e.g. email) instead of
+        // treating the booking as accepted.
+        loggerFactory.CreateLogger("PublicBooking").LogError(ex, "Failed to publish booking event {EventId}.", evt.EventId);
+        return Results.Problem(
+            title: "Booking is temporarily unavailable. Please try again shortly.",
+            statusCode: StatusCodes.Status503ServiceUnavailable);
+    }
 
     // Accepted for asynchronous processing — staff confirm before finalizing.
     return Results.Accepted(value: new { status = "requested", eventId = evt.EventId });
