@@ -25,7 +25,7 @@ public sealed class BookingRequestWorkflow(SchedulingDbContext db)
         if (change.Status is not (BookingRequestStatus.InReview or BookingRequestStatus.NeedsFollowUp or BookingRequestStatus.Rejected or BookingRequestStatus.Cancelled))
             throw new ArgumentException("Unsupported status transition.");
         var request = await FindAsync(id, tenantId, cancellationToken);
-        if (request.Status == BookingRequestStatus.Approved) throw new InvalidOperationException("Approved requests cannot be changed.");
+        EnsureUnresolved(request);
         request.Status = change.Status;
         request.ReviewedAt ??= DateTime.UtcNow;
         request.ReviewedBy = change.ReviewedBy;

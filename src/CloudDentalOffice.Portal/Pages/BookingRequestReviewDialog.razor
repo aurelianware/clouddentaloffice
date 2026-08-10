@@ -148,8 +148,13 @@
     private async Task NeedsFollowUp() { Request = await BookingRequests.ChangeStatusAsync(Request.Id, BookingRequestStatus.NeedsFollowUp, notes: _staffNotes); MudDialog.Close(DialogResult.Ok(Request)); }
     private async Task Reject()
     {
-        var reason = await DialogService.ShowMessageBox("Reject request", "Reject this request? Add details in Staff notes before continuing.", yesText: "Reject", cancelText: "Cancel");
-        if (reason == true) { Request = await BookingRequests.ChangeStatusAsync(Request.Id, BookingRequestStatus.Rejected, _staffNotes, _staffNotes); MudDialog.Close(DialogResult.Ok(Request)); }
+        var confirmed = await DialogService.ShowMessageBox("Reject request", "Reject this request? Add details in Staff notes before continuing.", yesText: "Reject", cancelText: "Cancel");
+        if (confirmed == true)
+        {
+            Request = await BookingRequests.ChangeStatusAsync(Request.Id, BookingRequestStatus.Rejected,
+                reason: _staffNotes, notes: _staffNotes);
+            MudDialog.Close(DialogResult.Ok(Request));
+        }
     }
     private void Close() => MudDialog.Close();
 }

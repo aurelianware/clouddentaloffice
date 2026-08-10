@@ -88,6 +88,10 @@ public sealed class BookingRequestWorkflowTests : IAsyncLifetime
             new ChangeBookingRequestStatusRequest(BookingRequestStatus.Rejected, "staff", "Not accepting", null));
         Assert.Equal(BookingRequestStatus.Rejected, request.Status);
         Assert.Empty(await _db.Appointments.ToListAsync());
+        await Assert.ThrowsAsync<InvalidOperationException>(() => workflow.ChangeStatusAsync(request.Id, request.TenantId,
+            new ChangeBookingRequestStatusRequest(BookingRequestStatus.InReview, "staff", null, null)));
+        Assert.Equal("Not accepting", request.RejectionReason);
+        Assert.NotNull(request.RejectedAt);
     }
 
     private static BookingRequestedEvent NewEvent(PatientRelationship relationship) => new(

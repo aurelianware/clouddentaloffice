@@ -82,11 +82,14 @@ app.MapPost("/api/appointments", async (CreateAppointmentRequest request, Schedu
     return Results.Created($"/api/appointments/{apt.Id}", apt);
 }).WithTags("Appointments");
 
-app.MapGet("/api/booking-requests", async (SchedulingDbContext db, string tenantId, string? status) =>
+app.MapGet("/api/booking-requests", async (SchedulingDbContext db, IConfiguration config, HttpContext http, string tenantId, string? status) =>
 {
+    if (!PublicBookingAuth.ReadsAllowed(config, http)) return Results.Unauthorized();
     var query = db.BookingRequests.Where(r => r.TenantId == tenantId);
     if (!string.IsNullOrWhiteSpace(status) && Enum.TryParse<BookingRequestStatus>(status, true, out var parsed))
         query = query.Where(r => r.Status == parsed);
+    else if (!string.IsNullOrWhiteSpace(status) && !string.Equals(status, "All", StringComparison.OrdinalIgnoreCase))
+        return Results.ValidationProblem(new Dictionary<string, string[]> { ["status"] = [$"Unknown booking request status '{status}'."] });
     else if (string.IsNullOrWhiteSpace(status))
         query = query.Where(r => r.Status != BookingRequestStatus.Approved &&
                                  r.Status != BookingRequestStatus.Rejected &&
@@ -94,8 +97,9 @@ app.MapGet("/api/booking-requests", async (SchedulingDbContext db, string tenant
     return Results.Ok(await query.OrderBy(r => r.CreatedAt).Select(r => r.ToDto()).ToListAsync());
 }).WithTags("BookingRequests");
 
-app.MapGet("/api/booking-requests/{id:guid}", async (Guid id, string tenantId, SchedulingDbContext db) =>
+app.MapGet("/api/booking-requests/{id:guid}", async (Guid id, string tenantId, SchedulingDbContext db, IConfiguration config, HttpContext http) =>
 {
+    if (!PublicBookingAuth.ReadsAllowed(config, http)) return Results.Unauthorized();
     var request = await db.BookingRequests.FirstOrDefaultAsync(r => r.Id == id && r.TenantId == tenantId);
     return request is null ? Results.NotFound() : Results.Ok(request.ToDto());
 }).WithTags("BookingRequests");
