@@ -227,6 +227,47 @@ jobs:
               googleOAuthClientId='${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}' \
               googleOAuthClientSecret='${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}'
 
+      # DNS is hosted in Cloudflare. The CNAME and asuid TXT records must exist
+      # before this step runs. Keeping hostname/certificate binding here makes
+      # the operation repeatable without introducing a Bicep dependency cycle
+      # between the Container App hostname and its managed certificate.
+      - name: Bind production custom domains
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          environment_name="$(basename '${{ steps.infra.outputs.environment_id }}')"
+
+          bind_domain() {
+            local app_name="$1"
+            local hostname="$2"
+
+            if ! az containerapp hostname list \
+              --name "$app_name" \
+              --resource-group "${{ env.RESOURCE_GROUP }}" \
+              --query "[?name=='$hostname'] | [0].name" \
+              --output tsv | grep -Fxq "$hostname"; then
+              az containerapp hostname add \
+                --name "$app_name" \
+                --resource-group "${{ env.RESOURCE_GROUP }}" \
+                --hostname "$hostname" \
+                --only-show-errors \
+                --output none
+            fi
+
+            az containerapp hostname bind \
+              --name "$app_name" \
+              --resource-group "${{ env.RESOURCE_GROUP }}" \
+              --environment "$environment_name" \
+              --hostname "$hostname" \
+              --validation-method CNAME \
+              --only-show-errors \
+              --output none
+          }
+
+          bind_domain portal portal.3rdsetsmiles.com
+          bind_domain intake-service book-api.3rdsetsmiles.com
+
       # ── Verify deployment ─────────────────────────────────────────────────────
 
       - name: Verify portal is running
@@ -247,3 +288,10 @@ jobs:
           test -n "$fqdn"
           curl --fail --retry 5 --retry-delay 5 "https://$fqdn/health"
           echo "IntakeService: https://$fqdn"
+
+      - name: Verify production custom domains
+        run: |
+          curl --fail --retry 12 --retry-delay 10 \
+            https://portal.3rdsetsmiles.com/health
+          curl --fail --retry 12 --retry-delay 10 \
+            https://book-api.3rdsetsmiles.com/health

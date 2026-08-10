@@ -81,10 +81,17 @@ Minimum runtime settings:
 
 The Portal alone uses Azure Container Apps built-in Google authentication. IntakeService remains public with its independent API key; SchedulingService and the API gateway remain private.
 
+Production uses these custom domains. Their Cloudflare records must remain DNS-only so Azure can validate and renew the managed certificates:
+
+- Staff portal: `https://portal.3rdsetsmiles.com`
+- Booking intake: `https://book-api.3rdsetsmiles.com`
+
+The deployment workflow idempotently binds both hostnames and their Azure-managed certificates after the Container Apps Bicep deployment. Required Cloudflare records are `portal` and `book-api` CNAMEs pointing to their generated Container Apps hostnames, plus matching `asuid.portal` and `asuid.book-api` TXT records containing the Container Apps custom-domain verification ID.
+
 Create a Google OAuth **Web application** client with:
 
-- Authorized JavaScript origin: `https://portal.lemoncoast-a1e8528c.westus3.azurecontainerapps.io`
-- Authorized redirect URI: `https://portal.lemoncoast-a1e8528c.westus3.azurecontainerapps.io/.auth/login/google/callback`
+- Authorized JavaScript origin: `https://portal.3rdsetsmiles.com`
+- Authorized redirect URI: `https://portal.3rdsetsmiles.com/.auth/login/google/callback`
 
 Store the client values as GitHub Actions secrets `GOOGLE_OAUTH_CLIENT_ID` and
 `GOOGLE_OAUTH_CLIENT_SECRET`. Never commit or print the client secret. The ACA
@@ -150,7 +157,7 @@ In **Workers & Pages → 3rdsetsmiles → Settings → Variables and Secrets**, 
 
 | Variable | Exact value |
 |---|---|
-| `CLOUDDENTAL_API_BASE` | `https://<intakeFqdn output>` (no trailing slash), or confirmed custom domain `https://book-api.3rdsetsmiles.com` |
+| `CLOUDDENTAL_API_BASE` | `https://book-api.3rdsetsmiles.com` (no trailing slash) |
 | `CLOUDDENTAL_API_KEY` | same generated 32-byte secret as Intake client 0; store encrypted |
 | `CLOUDDENTAL_BOOKING_PATH` | omit (default is `/api/public/booking-requests`) |
 | `CLOUDDENTAL_APPT_MINUTES` | `60` |
