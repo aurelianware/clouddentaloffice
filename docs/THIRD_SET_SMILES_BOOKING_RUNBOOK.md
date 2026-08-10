@@ -25,6 +25,18 @@ This path records a **booking request for staff review**. A `202` never means an
 
 Prerequisites: Azure CLI logged in, resource group selected, images built/pushed to ACR (including `intake-service` and `scheduling-service`), and database backup/restore tested.
 
+Pin and verify the production subscription before every manual deployment. The
+GitHub repository secret `AZURE_SUBSCRIPTION_ID` must contain the same value:
+
+```bash
+az account set --subscription 85bd1f0d-3a84-4070-a1d1-9358fa42c10e
+test "$(az account show --query id -o tsv)" = "85bd1f0d-3a84-4070-a1d1-9358fa42c10e"
+az account show --query '{name:name,id:id,tenantId:tenantId,state:state}' -o table
+```
+
+Expected tenant ID: `e77fcd28-df84-4a84-b8ff-63edfb2bb498`. Stop if either
+identifier differs or the subscription state is not `Enabled`.
+
 1. Deploy base infrastructure. This provisions Log Analytics, ACR, Container Apps environment, and Service Bus topic/subscription with duplicate detection:
 
    ```bash
