@@ -71,7 +71,7 @@
         // in-memory circuit on the server. That state is fully restored if the
         // browser rejoins the SAME circuit; it is only lost when a page reload
         // happens because the circuit is gone. The server retains a disconnected
-        // circuit for 3 minutes (see Program.cs), but the default client stops
+        // circuit for 4 minutes (see Program.cs), but the default client stops
         // retrying after ~16s, so a phone whose tab is backgrounded longer than
         // that reloads and loses the form even though the server was still holding
         // it. This handler keeps retrying across the whole retention window and
@@ -116,7 +116,10 @@
                         return;
                     }
                     // reconnect() resolves false only when the server circuit is gone,
-                    // so the state cannot be recovered - a reload is required.
+                    // so the state cannot be recovered - a reload is required. Stop
+                    // retrying so later visibility/online events don't keep hammering
+                    // a circuit that will never come back.
+                    reconnecting = false;
                     showState("failed");
                 } catch (e) {
                     // Server unreachable (still offline). Keep trying until the window closes.

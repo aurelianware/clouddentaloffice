@@ -108,6 +108,29 @@ public class SaveNormalizationTests : IDisposable
         Assert.Equal("Tenant ID is not available", exception.GetDetailedMessage());
     }
 
+    [Fact]
+    public void GetDetailedMessage_CollapsesNewlinesToSingleLine()
+    {
+        var inner = new InvalidOperationException("23502: null value in column\n  DETAIL: Failing row\tcontains (...)");
+        var outer = new Exception("An error occurred while saving the entity changes.", inner);
+
+        var message = outer.GetDetailedMessage();
+
+        Assert.DoesNotContain('\n', message);
+        Assert.DoesNotContain('\t', message);
+        Assert.Contains("DETAIL: Failing row contains", message);
+    }
+
+    [Fact]
+    public void GetDetailedMessage_DoesNotDuplicateWhenInnerEqualsOuter()
+    {
+        // GetBaseException() returns the exception itself when there is no inner,
+        // so a single message must not be repeated.
+        var exception = new Exception("Something failed");
+
+        Assert.Equal("Something failed", exception.GetDetailedMessage());
+    }
+
     public void Dispose()
     {
         _dbContext?.Dispose();

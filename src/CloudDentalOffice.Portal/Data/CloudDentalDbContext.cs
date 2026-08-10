@@ -375,8 +375,11 @@ public class CloudDentalDbContext : DbContext
     /// last-line safety net: every DateTime being written is stamped as UTC.
     ///
     /// Values already marked UTC are left untouched (services that intentionally
-    /// convert local -> UTC still win). Unspecified/Local values keep their clock
-    /// reading and are simply labelled UTC, so no wall-clock shift is introduced.
+    /// convert local -> UTC still win). <see cref="DateTimeKind.Local"/> values are
+    /// converted to the equivalent UTC instant, preserving the moment in time.
+    /// <see cref="DateTimeKind.Unspecified"/> values - what the UI date/time pickers
+    /// produce - are treated as already representing UTC wall-clock time and are
+    /// simply labelled UTC (no shift), matching how the app stores picker input.
     /// </summary>
     private void NormalizeDateTimesToUtc()
     {
@@ -391,7 +394,9 @@ public class CloudDentalDbContext : DbContext
             {
                 if (property.CurrentValue is DateTime dateTime && dateTime.Kind != DateTimeKind.Utc)
                 {
-                    property.CurrentValue = DateTime.SpecifyKind(dateTime, DateTimeKind.Utc);
+                    property.CurrentValue = dateTime.Kind == DateTimeKind.Local
+                        ? dateTime.ToUniversalTime()
+                        : DateTime.SpecifyKind(dateTime, DateTimeKind.Utc);
                 }
             }
         }

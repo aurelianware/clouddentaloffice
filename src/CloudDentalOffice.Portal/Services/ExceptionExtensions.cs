@@ -12,19 +12,41 @@ public static class ExceptionExtensions
 {
     /// <summary>
     /// Returns a message that includes the deepest inner exception, which is
-    /// where the real database/validation error lives.
+    /// where the real database/validation error lives. The result is collapsed to
+    /// a single line so it stays readable in snackbars and safe to reuse in logs
+    /// (exception messages can contain newlines or other untrusted text).
     /// </summary>
     public static string GetDetailedMessage(this Exception exception)
     {
         ArgumentNullException.ThrowIfNull(exception);
 
+        var outer = Flatten(exception.Message);
         var root = exception.GetBaseException();
-        if (ReferenceEquals(root, exception) || string.IsNullOrWhiteSpace(root.Message))
+        var inner = Flatten(root.Message);
+
+        // Nothing extra to add when there's no distinct underlying cause.
+        if (ReferenceEquals(root, exception)
+            || string.IsNullOrWhiteSpace(inner)
+            || string.Equals(outer, inner, StringComparison.Ordinal))
         {
-            return exception.Message;
+            return outer;
         }
 
         // Surface the outer context plus the underlying cause.
-        return $"{exception.Message} ({root.Message})";
+        return $"{outer} ({inner})";
+    }
+
+    /// <summary>
+    /// Collapses any run of whitespace (including newlines and tabs) into single
+    /// spaces so a message renders on one line.
+    /// </summary>
+    private static string Flatten(string? message)
+    {
+        if (string.IsNullOrWhiteSpace(message))
+        {
+            return string.Empty;
+        }
+
+        return string.Join(' ', message.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
     }
 }
