@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Threading.RateLimiting;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using CloudDentalOffice.Contracts.Scheduling;
 
@@ -52,16 +53,24 @@ if (app.Environment.IsDevelopment()) { app.UseSwagger(); app.UseSwaggerUI(); }
 app.UseRateLimiter();
 app.MapHealthChecks("/health");
 
-app.MapGet("/api/appointments", async (SchedulingDbContext db, DateTime? from, DateTime? to) =>
+// These read endpoints return full appointment records, including the free-text
+// Notes that public booking intakes use to carry patient contact details. They
+// are anonymous by default (trusted internal callers such as the Portal reach
+// them through a private gateway). If the same gateway is ever exposed to the
+// internet, set PublicBooking:RequireApiKeyForReads=true so reads require the
+// API key too — otherwise contact details would be publicly readable.
+app.MapGet("/api/appointments", async (SchedulingDbContext db, IConfiguration config, HttpContext http, DateTime? from, DateTime? to) =>
 {
+    if (!PublicBookingAuth.ReadsAllowed(config, http)) return Results.Unauthorized();
     var query = db.Appointments.AsQueryable();
     if (from.HasValue) query = query.Where(a => a.StartTime >= from.Value);
     if (to.HasValue) query = query.Where(a => a.StartTime <= to.Value);
     return Results.Ok(await query.OrderBy(a => a.StartTime).Take(100).ToListAsync());
 }).WithTags("Appointments");
 
-app.MapGet("/api/appointments/{id:guid}", async (Guid id, SchedulingDbContext db) =>
+app.MapGet("/api/appointments/{id:guid}", async (Guid id, SchedulingDbContext db, IConfiguration config, HttpContext http) =>
 {
+    if (!PublicBookingAuth.ReadsAllowed(config, http)) return Results.Unauthorized();
     var apt = await db.Appointments.FindAsync(id);
     return apt is not null ? Results.Ok(apt) : Results.NotFound();
 }).WithTags("Appointments");
@@ -104,6 +113,7 @@ app.MapPost("/api/public/booking-requests", async (
     PublicBookingRequest request,
     SchedulingDbContext db,
     IConfiguration config,
+    ILoggerFactory loggerFactory,
     HttpContext http) =>
 {
     var section = config.GetSection("PublicBooking");
@@ -114,26 +124,43 @@ app.MapPost("/api/public/booking-requests", async (
     if (string.IsNullOrWhiteSpace(apiKey) || !PublicBookingAuth.IsAuthorized(http, apiKey))
         return Results.Unauthorized();
 
+    // Fail fast on server misconfiguration rather than writing invalid
+    // appointments (FK violations, or EndTime not after StartTime).
+    var providerId = section.GetValue<Guid>("ProviderId");
+    var patientId = section.GetValue<Guid>("PatientId");
+    var locationId = section.GetValue<Guid>("LocationId");
+    var defaultDurationMinutes = section.GetValue("DefaultDurationMinutes", 60);
+    if (providerId == Guid.Empty || patientId == Guid.Empty || defaultDurationMinutes <= 0)
+    {
+        loggerFactory.CreateLogger("PublicBooking").LogError(
+            "PublicBooking is enabled but misconfigured (ProviderId/PatientId/DefaultDurationMinutes).");
+        return Results.Problem(
+            title: "Online booking is temporarily unavailable.",
+            statusCode: StatusCodes.Status500InternalServerError);
+    }
+
     var errors = new Dictionary<string, string[]>();
     if (string.IsNullOrWhiteSpace(request.Name))
         errors["name"] = new[] { "Name is required." };
     if (string.IsNullOrWhiteSpace(request.Phone))
         errors["phone"] = new[] { "Phone is required." };
 
-    var preferredStartUtc = request.PreferredStart.Kind == DateTimeKind.Unspecified
-        ? DateTime.SpecifyKind(request.PreferredStart, DateTimeKind.Utc)
-        : request.PreferredStart.ToUniversalTime();
-    if (request.PreferredStart == default || preferredStartUtc <= DateTime.UtcNow)
-        errors["preferredStart"] = new[] { "A valid future preferred start time is required." };
+    // Require an unambiguous instant: UTC ("Z") or an explicit offset. A value
+    // with no timezone (DateTimeKind.Unspecified) is rejected rather than
+    // silently assumed to be UTC, which could shift the requested time.
+    if (request.PreferredStart == default)
+        errors["preferredStart"] = new[] { "A preferred start time is required." };
+    else if (request.PreferredStart.Kind == DateTimeKind.Unspecified)
+        errors["preferredStart"] = new[] { "preferredStart must include a timezone (UTC 'Z' or an offset)." };
+
+    var preferredStartUtc = request.PreferredStart.ToUniversalTime();
+    if (!errors.ContainsKey("preferredStart") && preferredStartUtc <= DateTime.UtcNow)
+        errors["preferredStart"] = new[] { "preferredStart must be in the future." };
 
     if (errors.Count > 0)
         return Results.ValidationProblem(errors);
 
-    var durationMinutes = request.DurationMinutes is int d && d > 0
-        ? d
-        : section.GetValue("DefaultDurationMinutes", 60);
-
-    var locationId = section.GetValue<Guid>("LocationId");
+    var durationMinutes = request.DurationMinutes is int d && d > 0 ? d : defaultDurationMinutes;
 
     var notes = string.Join("\n", new[]
     {
@@ -148,8 +175,8 @@ app.MapPost("/api/public/booking-requests", async (
     var apt = new Appointment
     {
         Id = Guid.NewGuid(),
-        PatientId = section.GetValue<Guid>("PatientId"),
-        ProviderId = section.GetValue<Guid>("ProviderId"),
+        PatientId = patientId,
+        ProviderId = providerId,
         StartTime = preferredStartUtc,
         EndTime = preferredStartUtc.AddMinutes(durationMinutes),
         Status = AppointmentStatus.Requested,
@@ -231,5 +258,21 @@ internal static class PublicBookingAuth
         var expectedBytes = Encoding.UTF8.GetBytes(expectedKey);
         return providedBytes.Length == expectedBytes.Length
             && CryptographicOperations.FixedTimeEquals(providedBytes, expectedBytes);
+    }
+
+    /// <summary>
+    /// Whether an appointment read should be allowed. Reads are open by default
+    /// (trusted internal callers via a private gateway). When
+    /// PublicBooking:RequireApiKeyForReads is true — e.g. the gateway is exposed
+    /// publicly — reads require the same API key as the booking endpoint.
+    /// </summary>
+    public static bool ReadsAllowed(IConfiguration config, HttpContext http)
+    {
+        var section = config.GetSection("PublicBooking");
+        if (!section.GetValue("RequireApiKeyForReads", false))
+            return true;
+
+        var apiKey = section.GetValue<string>("ApiKey");
+        return !string.IsNullOrWhiteSpace(apiKey) && IsAuthorized(http, apiKey);
     }
 }

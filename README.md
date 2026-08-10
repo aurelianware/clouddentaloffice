@@ -126,11 +126,28 @@ or user secrets). Environment-variable form uses `PublicBooking__ApiKey`, etc.
 | `PublicBooking:LocationId` | GUID of the location (blank/zero → null). |
 | `PublicBooking:PatientId` | GUID of a shared "Web Booking" placeholder patient. |
 | `PublicBooking:DefaultDurationMinutes` | Appointment length when the request omits one (default `60`). |
+| `PublicBooking:RequireApiKeyForReads` | When `true`, `GET /api/appointments` and `GET /api/appointments/{id}` also require the API key (default `false`). |
 
-The endpoint is exposed through the API Gateway at the same path via the
-`public-booking-route`. Keep the raw `SchedulingService` off the public internet
-and route external traffic only through the gateway (add TLS + the API key
-there). CORS is **not** required — the website calls this server-to-server.
+When `Enabled`, the endpoint validates configuration and returns `500` if
+`ProviderId`/`PatientId` are unset or `DefaultDurationMinutes <= 0`, rather than
+persisting an invalid appointment. `preferredStart` must carry a timezone
+(UTC `Z` or an explicit offset); a value with no timezone is rejected.
+
+### Deployment boundary (important)
+
+The `SchedulingService` read endpoints (`GET /api/appointments*`) are anonymous
+by default and return the full record, including the `Notes` that carry public
+booking contact details. The Portal reaches them through the gateway on a
+**private** network, so this is safe internally — but it means you must **not**
+put the existing all-routes gateway directly on the internet.
+
+To accept public bookings, expose **only** `/api/public/booking-requests` to the
+internet (e.g. an edge path filter in Azure Front Door / Application Gateway, or
+a dedicated public ingress), and keep the internal `/api/appointments*` routes on
+the private gateway. As defense-in-depth for a shared/public gateway, also set
+`PublicBooking:RequireApiKeyForReads=true` (the Portal must then present the key
+on its scheduling calls). Add TLS + the API key at the edge. CORS is **not**
+required — the website calls this server-to-server.
 
 ---
 
