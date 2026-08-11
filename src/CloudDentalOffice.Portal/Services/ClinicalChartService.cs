@@ -9,11 +9,13 @@ public class ClinicalChartService : IClinicalChartService
 {
     private readonly CloudDentalDbContext _context;
     private readonly ITenantProvider _tenantProvider;
+    private readonly ILogger<ClinicalChartService> _logger;
 
-    public ClinicalChartService(CloudDentalDbContext context, ITenantProvider tenantProvider)
+    public ClinicalChartService(CloudDentalDbContext context, ITenantProvider tenantProvider, ILogger<ClinicalChartService> logger)
     {
         _context = context;
         _tenantProvider = tenantProvider;
+        _logger = logger;
     }
 
     public async Task<List<CompletedProcedureDto>> GetCompletedProceduresAsync(int patientId)
@@ -190,15 +192,24 @@ public class ClinicalChartService : IClinicalChartService
 
     public async Task<Procedure> CreateProcedureAsync(Procedure procedure)
     {
-        var tenantId = _tenantProvider.TenantId;
-        procedure.TenantId = tenantId;
-        procedure.CreatedDate = DateTime.UtcNow;
-        procedure.ServiceDate = NormalizeToUtc(procedure.ServiceDate);
+        try
+        {
+            var tenantId = _tenantProvider.TenantId;
+            procedure.TenantId = tenantId;
+            procedure.CreatedDate = DateTime.UtcNow;
+            procedure.ServiceDate = NormalizeToUtc(procedure.ServiceDate);
 
-        _context.Procedures.Add(procedure);
-        await _context.SaveChangesAsync();
+            _context.Procedures.Add(procedure);
+            await _context.SaveChangesAsync();
 
-        return procedure;
+            return procedure;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error creating procedure for Patient {PatientId}, Provider {ProviderId}, Code {CDTCode}",
+                procedure.PatientId, procedure.ProviderId, procedure.CDTCode);
+            throw;
+        }
     }
 
     public async Task<Procedure?> GetProcedureByIdAsync(int procedureId)

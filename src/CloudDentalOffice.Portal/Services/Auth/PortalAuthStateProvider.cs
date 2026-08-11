@@ -9,14 +9,29 @@ namespace CloudDentalOffice.Portal.Services.Auth;
 public class PortalAuthStateProvider : AuthenticationStateProvider
 {
     private readonly ProtectedLocalStorage _localStorage;
+    private readonly IHttpContextAccessor _httpContextAccessor;
+    private readonly IConfiguration _configuration;
     
-    public PortalAuthStateProvider(ProtectedLocalStorage localStorage)
+    public PortalAuthStateProvider(
+        ProtectedLocalStorage localStorage,
+        IHttpContextAccessor httpContextAccessor,
+        IConfiguration configuration)
     {
         _localStorage = localStorage;
+        _httpContextAccessor = httpContextAccessor;
+        _configuration = configuration;
     }
 
     public override async Task<AuthenticationState> GetAuthenticationStateAsync()
     {
+        if (_configuration.GetValue("StaffAuth:Enabled", false))
+        {
+            var user = _httpContextAccessor.HttpContext?.User;
+            return new AuthenticationState(user?.Identity?.IsAuthenticated == true
+                ? user
+                : new ClaimsPrincipal(new ClaimsIdentity()));
+        }
+
         try
         {
             var result = await _localStorage.GetAsync<string>("authToken");

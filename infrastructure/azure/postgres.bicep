@@ -3,9 +3,9 @@
 //
 // Deploy:
 //   az deployment group create \
-//     --resource-group cdo-rg \
+//     --resource-group cdo-prod-rg \
 //     --template-file infrastructure/azure/postgres.bicep \
-//     --parameters adminPassword=<your-password>
+//     --parameters location=westus3 adminPassword=<your-password>
 
 targetScope = 'resourceGroup'
 

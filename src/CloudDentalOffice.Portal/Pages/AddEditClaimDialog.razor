@@ -462,7 +462,7 @@
         }
         catch (Exception ex)
         {
-            Snackbar.Add($"Error saving claim: {ex.Message}", Severity.Error);
+            Snackbar.Add($"Error saving claim: {ex.GetDetailedMessage()}", Severity.Error);
         }
         finally
         {

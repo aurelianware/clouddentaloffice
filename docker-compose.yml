@@ -85,8 +85,8 @@ services:
       - ASPNETCORE_ENVIRONMENT=Development
       - ServiceBus__ConnectionString=${SERVICEBUS_CONNECTION_STRING:-}
       - PublicBooking__Enabled=${PUBLIC_BOOKING_ENABLED:-false}
-      - PublicBooking__ApiKey=${PUBLIC_BOOKING_API_KEY:-}
-      - PublicBooking__TenantId=${PUBLIC_BOOKING_TENANT_ID:-default}
+      - PublicBooking__Clients__0__ApiKey=${PUBLIC_BOOKING_API_KEY:-}
+      - PublicBooking__Clients__0__TenantId=${PUBLIC_BOOKING_TENANT_ID:-third-set-smiles}
     networks:
       - cdo-network
 

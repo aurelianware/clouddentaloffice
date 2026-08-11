@@ -1,0 +1,44 @@
+using CloudDentalOffice.Portal.Models;
+using Microsoft.EntityFrameworkCore;
+
+namespace CloudDentalOffice.Portal.Data;
+
+public static class InitialTenantBootstrap
+{
+    public static async Task ApplyAsync(CloudDentalDbContext db, IConfiguration configuration, CancellationToken cancellationToken = default)
+    {
+        var section = configuration.GetSection("InitialTenant");
+        if (!section.GetValue("Enabled", false)) return;
+
+        var tenantId = section["TenantId"]?.Trim();
+        var name = section["Name"]?.Trim();
+        var domain = section["Domain"]?.Trim();
+        if (string.IsNullOrWhiteSpace(tenantId) || tenantId.Length > 64 || string.IsNullOrWhiteSpace(name))
+            throw new InvalidOperationException("InitialTenant requires a TenantId (max 64 characters) and Name.");
+
+        if (!await db.Tenants.IgnoreQueryFilters().AnyAsync(t => t.TenantId == tenantId, cancellationToken))
+        {
+            db.Tenants.Add(new TenantRegistry
+            {
+                TenantId = tenantId,
+                Name = name,
+                Plan = section["Plan"] ?? "production",
+                IsActive = true
+            });
+        }
+
+        if (!await db.Organizations.IgnoreQueryFilters().AnyAsync(o => o.TenantId == tenantId, cancellationToken))
+        {
+            db.Organizations.Add(new Organization
+            {
+                TenantId = tenantId,
+                Name = name,
+                Domain = domain,
+                Plan = section["Plan"] ?? "production",
+                IsActive = true
+            });
+        }
+
+        await db.SaveChangesAsync(cancellationToken);
+    }
+}

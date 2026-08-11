@@ -7,14 +7,20 @@ name: Deploy to Azure Container Apps
 #   AZURE_CLIENT_ID        – App Registration / service principal client ID (used for OIDC login)
 #   AZURE_TENANT_ID        – Azure AD tenant ID
 #   AZURE_SUBSCRIPTION_ID  – Azure subscription ID
-#   AZURE_RESOURCE_GROUP   – Resource group containing the Container Apps (e.g. cdo-rg)
+#   AZURE_RESOURCE_GROUP   – production resource group (`cdo-prod-rg`)
 #   ACR_NAME               – Azure Container Registry name (e.g. cdoacr from Bicep output)
 #   ACR_LOGIN_SERVER       – ACR login server (e.g. cdoacr.azurecr.io from Bicep output)
+#   POSTGRES_HOST          – PostgreSQL Flexible Server FQDN
+#   POSTGRES_ADMIN_PASSWORD – PostgreSQL administrator password
+#   JWT_KEY                – Portal signing key
+#   PUBLIC_BOOKING_API_KEY – 32+ character website-to-IntakeService credential
+#   GOOGLE_OAUTH_CLIENT_ID – Google OAuth web client for the Portal ACA hostname
+#   GOOGLE_OAUTH_CLIENT_SECRET – matching Google OAuth client secret
 #
 # One-time infrastructure setup (run locally, not in CI):
-#   az group create --name cdo-rg --location eastus
+#   az group create --name cdo-prod-rg --location westus3
 #   az deployment group create \
-#     --resource-group cdo-rg \
+#     --resource-group cdo-prod-rg \
 #     --template-file infrastructure/azure/main.bicep \
 #     --parameters @infrastructure/azure/parameters.bicepparam
 #
@@ -54,6 +60,11 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
+      - name: Verify production subscription
+        run: |
+          test "$(az account show --query id -o tsv)" = "${{ secrets.AZURE_SUBSCRIPTION_ID }}"
+          test "${{ secrets.AZURE_SUBSCRIPTION_ID }}" = "85bd1f0d-3a84-4070-a1d1-9358fa42c10e"
+
       # Phase 1 — Deploy core infrastructure (ACR, Container App Environment, Managed Identity).
       # Does NOT create Container Apps — images must exist first.
       - name: Deploy infrastructure (Bicep)
@@ -68,15 +79,15 @@ jobs:
         id: infra
         run: |
           ENVIRONMENT_ID=$(az deployment group show \
-            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --resource-group "${{ env.RESOURCE_GROUP }}" \
             --name main \
             --query properties.outputs.environmentId.value -o tsv)
           IDENTITY_ID=$(az deployment group show \
-            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --resource-group "${{ env.RESOURCE_GROUP }}" \
             --name main \
             --query properties.outputs.identityId.value -o tsv)
-          echo "environment_id=$ENVIRONMENT_ID" >> $GITHUB_OUTPUT
-          echo "identity_id=$IDENTITY_ID" >> $GITHUB_OUTPUT
+          echo "environment_id=$ENVIRONMENT_ID" >> "$GITHUB_OUTPUT"
+          echo "identity_id=$IDENTITY_ID" >> "$GITHUB_OUTPUT"
 
       - name: Login to Azure Container Registry
         run: az acr login --name ${{ secrets.ACR_NAME }}
@@ -114,6 +125,14 @@ jobs:
             -t ${{ secrets.ACR_LOGIN_SERVER }}/scheduling-service:latest .
           docker push ${{ secrets.ACR_LOGIN_SERVER }}/scheduling-service:${{ env.IMAGE_TAG }}
           docker push ${{ secrets.ACR_LOGIN_SERVER }}/scheduling-service:latest
+
+      - name: Build and push intake-service
+        run: |
+          docker build -f infrastructure/docker/IntakeService.Dockerfile \
+            -t ${{ secrets.ACR_LOGIN_SERVER }}/intake-service:${{ env.IMAGE_TAG }} \
+            -t ${{ secrets.ACR_LOGIN_SERVER }}/intake-service:latest .
+          docker push ${{ secrets.ACR_LOGIN_SERVER }}/intake-service:${{ env.IMAGE_TAG }}
+          docker push ${{ secrets.ACR_LOGIN_SERVER }}/intake-service:latest
 
       - name: Build and push claims-service
         run: |
@@ -165,6 +184,29 @@ jobs:
 
       # Phase 2 — Deploy Container Apps now that images exist in ACR.
       # Creates apps on first run, updates image tag on subsequent runs.
+      - name: Resolve least-privilege Service Bus credentials
+        id: servicebus
+        shell: bash
+        run: |
+          namespace=$(az servicebus namespace list \
+            --resource-group "${{ env.RESOURCE_GROUP }}" \
+            --query "[?starts_with(name, 'cdo-booking-')].name | [0]" -o tsv)
+          test -n "$namespace"
+          send_connection=$(az servicebus namespace authorization-rule keys list \
+            --resource-group "${{ env.RESOURCE_GROUP }}" \
+            --namespace-name "$namespace" \
+            --name booking-intake-send \
+            --query primaryConnectionString -o tsv)
+          listen_connection=$(az servicebus namespace authorization-rule keys list \
+            --resource-group "${{ env.RESOURCE_GROUP }}" \
+            --namespace-name "$namespace" \
+            --name booking-scheduling-listen \
+            --query primaryConnectionString -o tsv)
+          echo "::add-mask::$send_connection"
+          echo "::add-mask::$listen_connection"
+          echo "send_connection=$send_connection" >> "$GITHUB_OUTPUT"
+          echo "listen_connection=$listen_connection" >> "$GITHUB_OUTPUT"
+
       - name: Deploy Container Apps (Bicep)
         run: |
           az deployment group create \
@@ -178,7 +220,53 @@ jobs:
               imageTag=${{ env.IMAGE_TAG }} \
               postgresHost=${{ secrets.POSTGRES_HOST }} \
               postgresAdminPassword=${{ secrets.POSTGRES_ADMIN_PASSWORD }} \
-              jwtKey=${{ secrets.JWT_KEY }}
+              jwtKey=${{ secrets.JWT_KEY }} \
+              serviceBusSendConnection='${{ steps.servicebus.outputs.send_connection }}' \
+              serviceBusListenConnection='${{ steps.servicebus.outputs.listen_connection }}' \
+              publicBookingApiKey='${{ secrets.PUBLIC_BOOKING_API_KEY }}' \
+              googleOAuthClientId='${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}' \
+              googleOAuthClientSecret='${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}'
+
+      # DNS is hosted in Cloudflare. The CNAME and asuid TXT records must exist
+      # before this step runs. Keeping hostname/certificate binding here makes
+      # the operation repeatable without introducing a Bicep dependency cycle
+      # between the Container App hostname and its managed certificate.
+      - name: Bind production custom domains
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          environment_name="$(basename '${{ steps.infra.outputs.environment_id }}')"
+
+          bind_domain() {
+            local app_name="$1"
+            local hostname="$2"
+
+            if ! az containerapp hostname list \
+              --name "$app_name" \
+              --resource-group "${{ env.RESOURCE_GROUP }}" \
+              --query "[?name=='$hostname'] | [0].name" \
+              --output tsv | grep -Fxq "$hostname"; then
+              az containerapp hostname add \
+                --name "$app_name" \
+                --resource-group "${{ env.RESOURCE_GROUP }}" \
+                --hostname "$hostname" \
+                --only-show-errors \
+                --output none
+            fi
+
+            az containerapp hostname bind \
+              --name "$app_name" \
+              --resource-group "${{ env.RESOURCE_GROUP }}" \
+              --environment "$environment_name" \
+              --hostname "$hostname" \
+              --validation-method CNAME \
+              --only-show-errors \
+              --output none
+          }
+
+          bind_domain portal portal.3rdsetsmiles.com
+          bind_domain intake-service book-api.3rdsetsmiles.com
 
       # ── Verify deployment ─────────────────────────────────────────────────────
 
@@ -189,3 +277,27 @@ jobs:
             --resource-group ${{ env.RESOURCE_GROUP }} \
             --query "properties.latestRevisionFqdn" \
             --output tsv
+
+      - name: Verify IntakeService is healthy
+        shell: bash
+        run: |
+          fqdn=$(az containerapp show \
+            --name intake-service \
+            --resource-group "${{ env.RESOURCE_GROUP }}" \
+            --query properties.configuration.ingress.fqdn -o tsv)
+          test -n "$fqdn"
+          curl --fail --retry 5 --retry-delay 5 "https://$fqdn/health"
+          echo "IntakeService: https://$fqdn"
+
+      - name: Verify production custom domains
+        shell: bash
+        run: |
+          portal_redirect=$(curl --silent --show-error --retry 12 --retry-delay 10 \
+            --output /dev/null --write-out '%{redirect_url}' \
+            'https://portal.3rdsetsmiles.com/.auth/login/google?post_login_redirect_uri=%2F')
+          case "$portal_redirect" in
+            https://accounts.google.com/*) ;;
+            *) echo "Portal did not redirect to Google authentication" >&2; exit 1 ;;
+          esac
+          curl --fail --retry 12 --retry-delay 10 \
+            https://book-api.3rdsetsmiles.com/health
