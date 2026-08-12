@@ -368,7 +368,8 @@ builder.Services.AddHttpClient<IInsuranceEstimateService, CloudHealthOfficeInsur
 });
 builder.Services.Configure<PayerConnectivityOptions>(builder.Configuration.GetSection("PayerConnectivity"));
 builder.Services.AddScoped<ITradingPartnerAdapter, CloudHealthOfficeTradingPartnerAdapter>();
-builder.Services.AddScoped<ITradingPartnerAdapter, MockEligibilityTradingPartnerAdapter>();
+if (builder.Environment.IsDevelopment())
+    builder.Services.AddScoped<ITradingPartnerAdapter, MockEligibilityTradingPartnerAdapter>();
 builder.Services.AddScoped<ITransactionAuditSink, LoggingTransactionAuditSink>();
 builder.Services.AddScoped<IPayerTransactionRouter, PayerTransactionRouter>();
 builder.Services.AddScoped<IEdiSubmissionService, EdiSubmissionService>();

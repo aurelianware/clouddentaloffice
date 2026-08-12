@@ -114,6 +114,14 @@ public sealed class PayerTransactionRouter : IPayerTransactionRouter
             {
                 failures.Add($"{adapterType}: {ex.Message}");
             }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                failures.Add($"{adapterType}: unexpected error - {ex.Message}");
+            }
         }
 
         throw new TreatmentEstimateUnavailableException("No configured estimate source could produce a result. " + string.Join("; ", failures));
