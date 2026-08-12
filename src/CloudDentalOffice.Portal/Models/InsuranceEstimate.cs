@@ -2,7 +2,7 @@ namespace CloudDentalOffice.Portal.Models;
 
 public enum EstimateStatus { Completed, Partial }
 public enum EstimateAuthority { CloudHealthOfficeEstimate, PayerEstimate, PayerAdjudication }
-public enum EstimateConfidence { High, Medium, Low }
+public enum EstimateConfidence { High, Medium, Low, InsufficientData }
 
 public sealed record TreatmentEstimateRequest
 {
@@ -11,7 +11,7 @@ public sealed record TreatmentEstimateRequest
     public required string PatientId { get; init; }
     public required string MemberId { get; init; }
     public string? GroupNumber { get; init; }
-    public required string PayerId { get; init; }
+    public required Guid BenefitPlanId { get; init; }
     public required string RenderingProviderNpi { get; init; }
     public required DateOnly ServiceDate { get; init; }
     public IReadOnlyList<TreatmentEstimateRequestLine> Lines { get; init; } = [];

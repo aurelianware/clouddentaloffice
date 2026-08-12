@@ -1,5 +1,4 @@
 using System.Net;
-using System.Net.Http.Json;
 using CloudDentalOffice.Portal.Models;
 using CloudDentalOffice.Portal.Services;
 using CloudDentalOffice.Portal.Services.Tenancy;
@@ -21,7 +20,7 @@ public sealed class InsuranceEstimateServiceTests
             Procedure(42, "D2392", 310m)
         ];
 
-        var request = TreatmentEstimateMapper.Map(plan, Patient(), Insurance(), Provider(), new DateOnly(2026, 9, 1), "tenant-a");
+        var request = TreatmentEstimateMapper.Map(plan, Patient(), Insurance(), Provider(), new DateOnly(2026, 9, 1), "tenant-a", Mappings());
 
         Assert.Equal(2, request.Lines.Count);
         Assert.Equal("planned-41", request.Lines[0].LineId);
@@ -33,7 +32,7 @@ public sealed class InsuranceEstimateServiceTests
     [Fact]
     public void MissingInsuranceProducesActionableValidation() =>
         Assert.Contains("active insurance", Assert.Throws<TreatmentEstimateValidationException>(() =>
-            TreatmentEstimateMapper.Map(Plan(), Patient(), null, Provider(), DateOnly.FromDateTime(DateTime.Today), "tenant-a")).Message);
+            TreatmentEstimateMapper.Map(Plan(), Patient(), null, Provider(), DateOnly.FromDateTime(DateTime.Today), "tenant-a", Mappings())).Message);
 
     [Fact]
     public void MissingMemberIdProducesActionableValidation()
@@ -41,7 +40,7 @@ public sealed class InsuranceEstimateServiceTests
         var insurance = Insurance();
         insurance.MemberId = "";
         Assert.Contains("member ID", Assert.Throws<TreatmentEstimateValidationException>(() =>
-            TreatmentEstimateMapper.Map(Plan(), Patient(), insurance, Provider(), DateOnly.FromDateTime(DateTime.Today), "tenant-a")).Message);
+            TreatmentEstimateMapper.Map(Plan(), Patient(), insurance, Provider(), DateOnly.FromDateTime(DateTime.Today), "tenant-a", Mappings())).Message);
     }
 
     [Fact]
@@ -50,18 +49,28 @@ public sealed class InsuranceEstimateServiceTests
         var provider = Provider();
         provider.NPI = "";
         Assert.Contains("NPI", Assert.Throws<TreatmentEstimateValidationException>(() =>
-            TreatmentEstimateMapper.Map(Plan(), Patient(), Insurance(), provider, DateOnly.FromDateTime(DateTime.Today), "tenant-a")).Message);
+            TreatmentEstimateMapper.Map(Plan(), Patient(), Insurance(), provider, DateOnly.FromDateTime(DateTime.Today), "tenant-a", Mappings())).Message);
     }
+
+    [Fact]
+    public void MissingBenefitPlanMappingProducesActionableValidation() =>
+        Assert.Contains("benefit plan", Assert.Throws<TreatmentEstimateValidationException>(() =>
+            TreatmentEstimateMapper.Map(Plan(), Patient(), Insurance(), Provider(), DateOnly.FromDateTime(DateTime.Today),
+                "tenant-a", new Dictionary<string, Guid>())).Message);
 
     [Fact]
     public async Task ApiSuccessMapsMoneyAndPropagatesTenant()
     {
         HttpRequestMessage? captured = null;
-        var expected = Result();
+        string? capturedBody = null;
         var service = Service(request =>
         {
             captured = request;
-            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = JsonContent.Create(expected) });
+            capturedBody = request.Content!.ReadAsStringAsync().GetAwaiter().GetResult();
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(SuccessResponseJson(), System.Text.Encoding.UTF8, "application/json")
+            });
         });
 
         var actual = await service.EstimateAsync(Request());
@@ -69,7 +78,13 @@ public sealed class InsuranceEstimateServiceTests
         Assert.Equal(1640m, actual.EstimatedInsurancePayment);
         Assert.Equal(605m, actual.EstimatedPatientResponsibility);
         Assert.Equal(168m, actual.Lines.Single().InsurancePayment);
+        Assert.Equal("planned-41", actual.Lines.Single().LineId);
         Assert.Equal("tenant-a", captured!.Headers.GetValues("X-Tenant-Id").Single());
+        Assert.Contains("\"benefitPlanId\":\"3f2504e0-4f89-41d3-9a0c-0305e82c3301\"", capturedBody);
+        Assert.Contains("\"providerNpi\":\"1234567890\"", capturedBody);
+        Assert.Contains("\"claimType\":\"Dental\"", capturedBody);
+        Assert.Contains("\"codeType\":\"CDT\"", capturedBody);
+        Assert.Contains("\"toothSurface\":\"MO\"", capturedBody);
     }
 
     [Theory]
@@ -116,7 +131,7 @@ public sealed class InsuranceEstimateServiceTests
         procedure.ClaimProcedureId = null;
         plan.Status = "Draft";
 
-        _ = TreatmentEstimateMapper.Map(plan, Patient(), Insurance(), Provider(), DateOnly.FromDateTime(DateTime.Today), "tenant-a");
+        _ = TreatmentEstimateMapper.Map(plan, Patient(), Insurance(), Provider(), DateOnly.FromDateTime(DateTime.Today), "tenant-a", Mappings());
 
         Assert.Equal("Draft", plan.Status);
         Assert.Equal("Planned", procedure.Status);
@@ -139,7 +154,10 @@ public sealed class InsuranceEstimateServiceTests
     }
 
     private static TreatmentEstimateRequest Request() => TreatmentEstimateMapper.Map(
-        Plan(), Patient(), Insurance(), Provider(), new DateOnly(2026, 9, 1), "tenant-a");
+        Plan(), Patient(), Insurance(), Provider(), new DateOnly(2026, 9, 1), "tenant-a", Mappings());
+
+    private static IReadOnlyDictionary<string, Guid> Mappings() =>
+        new Dictionary<string, Guid> { ["PAYER1"] = Guid.Parse("3f2504e0-4f89-41d3-9a0c-0305e82c3301") };
 
     private static TreatmentPlan Plan() => new()
     {
@@ -162,18 +180,15 @@ public sealed class InsuranceEstimateServiceTests
         return new PatientInsurance { PatientInsuranceId = 8, TenantId = "tenant-a", PatientId = 7, InsurancePlanId = 5, MemberId = "MEMBER1", InsurancePlan = plan, IsActive = true };
     }
 
-    private static TreatmentEstimateResult Result() => new()
-    {
-        Status = EstimateStatus.Completed,
-        Authority = EstimateAuthority.CloudHealthOfficeEstimate,
-        Confidence = EstimateConfidence.High,
-        TotalCharges = 2800m,
-        EstimatedAllowed = 2245m,
-        EstimatedInsurancePayment = 1640m,
-        EstimatedPatientResponsibility = 605m,
-        EstimatedContractAdjustment = 555m,
-        Lines = [new TreatmentEstimateLine { LineId = "planned-41", LineNumber = 1, ProcedureCode = "D2392", ChargeAmount = 275m, AllowedAmount = 210m, InsurancePayment = 168m, PatientResponsibility = 42m, ContractAdjustment = 65m }]
-    };
+    private static string SuccessResponseJson() => """
+        {
+          "status":"estimated","authority":"Simulation",
+          "totals":{"billedAmount":2800,"allowedAmount":2245,"contractualAdjustment":555,"payerResponsibility":1640,"patientResponsibility":605},
+          "lines":[{"lineNumber":1,"procedureCode":"D2392","billedAmount":275,"allowedAmount":210,"contractualAdjustment":65,"payerResponsibility":168,"patientResponsibility":42,"deductibleAmount":0,"copayAmount":0,"coinsuranceAmount":42,"status":"payable","messages":[{"code":"COINSURANCE_APPLIED","severity":"Info","description":"Coinsurance applied."}]}],
+          "warnings":[],"confidence":{"level":"High","reasons":["Benefit plan resolved"],"missingData":[]},
+          "disclaimer":"Estimate only."
+        }
+        """;
 
     private sealed class Handler(Func<HttpRequestMessage, Task<HttpResponseMessage>> send) : HttpMessageHandler
     {

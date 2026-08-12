@@ -5,6 +5,7 @@
 @inject IPatientService PatientService
 @inject IInsuranceEstimateService EstimateService
 @inject ITenantProvider TenantProvider
+@inject Microsoft.Extensions.Options.IOptions<CloudHealthOfficeOptions> EstimateOptions
 
 <MudPaper Class="pa-4 mt-4" Style="background: #101010; border: 1px solid rgba(0, 255, 255, 0.35);">
     <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-3">
@@ -145,7 +146,8 @@
             var insurance = _coverages.FirstOrDefault(x => x.PatientInsuranceId == _selectedInsuranceId);
             var provider = Providers.FirstOrDefault(x => x.ProviderId == ProviderId);
             var request = TreatmentEstimateMapper.Map(TreatmentPlan, _patient, insurance, provider,
-                DateOnly.FromDateTime(_serviceDate ?? DateTime.Today), TenantProvider.TenantId);
+                DateOnly.FromDateTime(_serviceDate ?? DateTime.Today), TenantProvider.TenantId,
+                EstimateOptions.Value.BenefitPlanMappings);
             _result = await EstimateService.EstimateAsync(request);
         }
         catch (TreatmentEstimateValidationException ex) { _message = ex.Message; }
