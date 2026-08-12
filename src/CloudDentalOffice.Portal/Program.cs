@@ -395,7 +395,12 @@ using (var scope = app.Services.CreateScope())
         }
         
         logger.LogInformation("Database setup completed successfully");
-        
+
+        // Reconcile databases created by EnsureCreated (which never applies the
+        // migrations that dropped cross-service foreign keys) so inserts no longer
+        // fail with "violates foreign key constraint FK_Appointments_Patients_...".
+        await StaleForeignKeyCleanup.ApplyAsync(dbContext, databaseProvider, logger);
+
         await InitialTenantBootstrap.ApplyAsync(dbContext, builder.Configuration);
 
         // Sample people, claims, and credentials must never be created in production.
