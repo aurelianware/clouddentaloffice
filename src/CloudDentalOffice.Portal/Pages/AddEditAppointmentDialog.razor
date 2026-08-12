@@ -335,7 +335,7 @@
         }
         catch (Exception ex)
         {
-            Snackbar.Add($"Error saving appointment: {ex.Message}", Severity.Error);
+            Snackbar.Add($"Error saving appointment: {ex.GetDetailedMessage()}", Severity.Error);
         }
         finally
         {

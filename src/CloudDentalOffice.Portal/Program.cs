@@ -24,8 +24,12 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddServerSideBlazor(options =>
 {
     options.DetailedErrors = builder.Environment.IsDevelopment();
-    // Increase circuit timeout to prevent 1006 disconnections
-    options.DisconnectedCircuitRetentionPeriod = TimeSpan.FromMinutes(3);
+    // Hold disconnected circuits long enough that a phone whose tab is backgrounded
+    // (screen lock, app switch, brief signal loss) can rejoin the SAME circuit when
+    // it comes back, so in-progress edit forms and dialogs are restored instead of
+    // being lost to a reload. The client retry window in _Host.cshtml is aligned to
+    // this period.
+    options.DisconnectedCircuitRetentionPeriod = TimeSpan.FromMinutes(4);
     options.DisconnectedCircuitMaxRetained = 100;
     options.JSInteropDefaultCallTimeout = TimeSpan.FromMinutes(1);
     options.MaxBufferedUnacknowledgedRenderBatches = 10;
@@ -397,7 +401,12 @@ using (var scope = app.Services.CreateScope())
         }
         
         logger.LogInformation("Database setup completed successfully");
-        
+
+        // Reconcile databases created by EnsureCreated (which never applies the
+        // migrations that dropped cross-service foreign keys) so inserts no longer
+        // fail with "violates foreign key constraint FK_Appointments_Patients_...".
+        await StaleForeignKeyCleanup.ApplyAsync(dbContext, databaseProvider, logger);
+
         await InitialTenantBootstrap.ApplyAsync(dbContext, builder.Configuration);
 
         // Sample people, claims, and credentials must never be created in production.
