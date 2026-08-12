@@ -1,0 +1,172 @@
+@using CloudDentalOffice.Portal.Models
+@using CloudDentalOffice.Portal.Services
+@using CloudDentalOffice.Portal.Services.Tenancy
+@using MudBlazor
+@inject IPatientService PatientService
+@inject IInsuranceEstimateService EstimateService
+@inject ITenantProvider TenantProvider
+@inject Microsoft.Extensions.Options.IOptions<CloudHealthOfficeOptions> EstimateOptions
+
+<MudPaper Class="pa-4 mt-4" Style="background: #101010; border: 1px solid rgba(0, 255, 255, 0.35);">
+    <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-3">
+        <div>
+            <MudText Typo="Typo.h6" Style="color: #00ffff;">Insurance Estimate</MudText>
+            <MudText Typo="Typo.caption" Style="color: #b0b0b0;">Planning estimate only—no claim is created.</MudText>
+        </div>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" StartIcon="@Icons.Material.Filled.Calculate"
+                   Disabled="@_estimating" OnClick="EstimateAsync">
+            @(_estimating ? "Estimating…" : "Estimate Insurance")
+        </MudButton>
+    </MudStack>
+
+    @if (_patient is null)
+    {
+        <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
+    }
+    else if (!_coverages.Any())
+    {
+        <MudAlert Severity="Severity.Warning">This patient does not have active insurance on file.</MudAlert>
+    }
+    else
+    {
+        <MudGrid>
+            <MudItem xs="12" md="8">
+                <MudSelect T="int?" Label="Insurance coverage" Variant="Variant.Outlined" @bind-Value="_selectedInsuranceId">
+                    @foreach (var coverage in _coverages)
+                    {
+                        <MudSelectItem Value="@((int?)coverage.PatientInsuranceId)">
+                            @coverage.InsurancePlan?.PayerName — @coverage.MemberId
+                        </MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12" md="4">
+                <MudDatePicker Label="Proposed service date" Variant="Variant.Outlined" @bind-Date="_serviceDate" />
+            </MudItem>
+        </MudGrid>
+    }
+
+    @if (!string.IsNullOrWhiteSpace(_message))
+    {
+        <MudAlert Class="mt-3" Severity="Severity.Warning">@_message</MudAlert>
+    }
+
+    @if (_result is not null)
+    {
+        <MudDivider Class="my-4" />
+        <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center" Class="mb-3">
+            <MudChip T="string" Color="Color.Info">@TreatmentEstimateDisplay.Authority(_result.Authority)</MudChip>
+            <MudChip T="string" Variant="Variant.Outlined">@TreatmentEstimateDisplay.Confidence(_result.Confidence)</MudChip>
+        </MudStack>
+
+        <MudGrid Class="mb-3">
+            @foreach (var total in SummaryTotals(_result))
+            {
+                <MudItem xs="6" md="4">
+                    <MudPaper Class="pa-3" Style="background:#181818; height:100%;">
+                        <MudText Typo="Typo.caption" Style="color:#b0b0b0">@total.Label</MudText>
+                        <MudText Typo="Typo.h6" Style="color:#f5f5f5">@total.Value.ToString("C2")</MudText>
+                    </MudPaper>
+                </MudItem>
+            }
+        </MudGrid>
+
+        <MudExpansionPanels MultiExpansion="true">
+            @foreach (var line in _result.Lines.OrderBy(x => x.LineNumber))
+            {
+                <MudExpansionPanel Style="background:#181818; color:#e0e0e0;">
+                    <TitleContent>
+                        <MudGrid AlignItems="AlignItems.Center">
+                            <MudItem xs="12" sm="4"><strong>@line.ProcedureCode</strong> @line.Description</MudItem>
+                            <MudItem xs="4" sm="2">Charge<br /><strong>@line.ChargeAmount.ToString("C2")</strong></MudItem>
+                            <MudItem xs="4" sm="2">Allowed<br /><strong>@line.AllowedAmount.ToString("C2")</strong></MudItem>
+                            <MudItem xs="4" sm="2">Insurance<br /><strong>@line.InsurancePayment.ToString("C2")</strong></MudItem>
+                            <MudItem xs="6" sm="2">Patient<br /><strong>@line.PatientResponsibility.ToString("C2")</strong></MudItem>
+                        </MudGrid>
+                    </TitleContent>
+                    <ChildContent>
+                        <MudSimpleTable Dense="true" Style="background:transparent; color:#e0e0e0;">
+                            <tbody>
+                                <tr><td>Contract adjustment</td><td>@line.ContractAdjustment.ToString("C2")</td></tr>
+                                <tr><td>Plan benefit</td><td>@(line.BenefitPercentage.HasValue ? line.BenefitPercentage.Value.ToString("P0") : "Not provided")</td></tr>
+                                <tr><td>Deductible</td><td>@line.Deductible.ToString("C2")</td></tr>
+                                <tr><td>Prior authorization</td><td>@line.PriorAuthorization</td></tr>
+                                <tr><td>Status</td><td>@line.Status</td></tr>
+                            </tbody>
+                        </MudSimpleTable>
+                        @foreach (var explanation in line.Explanations)
+                        {
+                            <MudText Typo="Typo.body2" Class="mt-1">• @explanation</MudText>
+                        }
+                    </ChildContent>
+                </MudExpansionPanel>
+            }
+        </MudExpansionPanels>
+
+        @foreach (var warning in _result.Warnings)
+        {
+            <MudAlert Class="mt-2" Severity="Severity.Warning">@warning.Message</MudAlert>
+        }
+        <MudAlert Class="mt-3" Severity="Severity.Info" Variant="Variant.Outlined">@_result.Disclaimer</MudAlert>
+    }
+</MudPaper>
+
+@code {
+    [Parameter, EditorRequired] public TreatmentPlan TreatmentPlan { get; set; } = null!;
+    [Parameter, EditorRequired] public IReadOnlyCollection<PlannedProcedure> Procedures { get; set; } = [];
+    [Parameter] public int? ProviderId { get; set; }
+    [Parameter, EditorRequired] public IReadOnlyCollection<Provider> Providers { get; set; } = [];
+
+    private Patient? _patient;
+    private List<PatientInsurance> _coverages = [];
+    private int? _selectedInsuranceId;
+    private DateTime? _serviceDate = DateTime.Today;
+    private TreatmentEstimateResult? _result;
+    private string? _message;
+    private bool _estimating;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_patient?.PatientId == TreatmentPlan.PatientId) return;
+        _patient = await PatientService.GetPatientByIdAsync(TreatmentPlan.PatientId.ToString());
+        _coverages = _patient?.Insurances.Where(x => x.IsActive).OrderBy(x => x.SequenceNumber).ToList() ?? [];
+        _selectedInsuranceId = _coverages.FirstOrDefault()?.PatientInsuranceId;
+    }
+
+    private async Task EstimateAsync()
+    {
+        _message = null;
+        _result = null;
+        if (_patient is null) { _message = "Patient information is unavailable."; return; }
+
+        try
+        {
+            _estimating = true;
+            var planForEstimate = new TreatmentPlan
+            {
+                TreatmentPlanId = TreatmentPlan.TreatmentPlanId,
+                PatientId = TreatmentPlan.PatientId,
+                PlannedProcedures = Procedures.ToList()
+            };
+            var insurance = _coverages.FirstOrDefault(x => x.PatientInsuranceId == _selectedInsuranceId);
+            var provider = Providers.FirstOrDefault(x => x.ProviderId == ProviderId);
+            var request = TreatmentEstimateMapper.Map(planForEstimate, _patient, insurance, provider,
+                DateOnly.FromDateTime(_serviceDate ?? DateTime.Today), TenantProvider.TenantId,
+                EstimateOptions.Value.BenefitPlanMappings);
+            _result = await EstimateService.EstimateAsync(request);
+        }
+        catch (TreatmentEstimateValidationException ex) { _message = ex.Message; }
+        catch (TreatmentEstimateUnavailableException ex) { _message = ex.Message; }
+        catch (Exception) { _message = "The estimate could not be calculated. Try again later."; }
+        finally { _estimating = false; }
+    }
+
+    internal static IEnumerable<(string Label, decimal Value)> SummaryTotals(TreatmentEstimateResult result) =>
+    [
+        ("Total treatment charges", result.TotalCharges),
+        ("Estimated allowed amount", result.EstimatedAllowed),
+        ("Estimated insurance payment", result.EstimatedInsurancePayment),
+        ("Estimated patient responsibility", result.EstimatedPatientResponsibility),
+        ("Estimated contractual adjustment", result.EstimatedContractAdjustment)
+    ];
+}

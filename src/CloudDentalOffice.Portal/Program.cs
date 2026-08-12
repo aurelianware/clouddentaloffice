@@ -360,6 +360,12 @@ builder.Services.AddScoped<IClinicalChartService, ClinicalChartService>();
 builder.Services.AddScoped<IEdiX12Service, EdiX12Service>();
 builder.Services.AddScoped<IEdiSftpService, EdiSftpService>();
 builder.Services.AddScoped<ICloudHealthOfficeApiService, CloudHealthOfficeApiService>();
+builder.Services.Configure<CloudHealthOfficeOptions>(builder.Configuration.GetSection("CloudHealthOffice"));
+builder.Services.AddHttpClient<IInsuranceEstimateService, CloudHealthOfficeInsuranceEstimateService>(client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(20);
+    client.DefaultRequestHeaders.Add("Accept", "application/json");
+});
 builder.Services.AddScoped<IEdiSubmissionService, EdiSubmissionService>();
 builder.Services.AddScoped<ITokenService, TokenService>();
 builder.Services.AddScoped<IStripeService, StripeService>();
