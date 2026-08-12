@@ -88,6 +88,8 @@ public sealed class CloudHealthOfficeInsuranceEstimateService : IInsuranceEstima
     {
         if (!_options.Enabled || string.IsNullOrWhiteSpace(_options.BaseUrl))
             throw new TreatmentEstimateUnavailableException("Insurance estimates are not configured for this environment.");
+        if (!Uri.TryCreate(_options.EstimatePath, UriKind.Relative, out _) || _options.EstimatePath.StartsWith("//", StringComparison.Ordinal))
+            throw new TreatmentEstimateUnavailableException("Insurance estimates are misconfigured: the estimate path must be a relative URI.");
         if (string.IsNullOrWhiteSpace(_tenantProvider.TenantId) || request.TenantId != _tenantProvider.TenantId)
             throw new UnauthorizedAccessException("The estimate request is outside the active tenant.");
 
@@ -103,7 +105,7 @@ public sealed class CloudHealthOfficeInsuranceEstimateService : IInsuranceEstima
                 throw new TreatmentEstimateValidationException("CloudHealthOffice could not estimate this plan. Review the insurance, provider, and procedure information.");
             if (!response.IsSuccessStatusCode)
             {
-                _logger.LogWarning("Insurance estimate service returned HTTP {StatusCode} for tenant {TenantId}", (int)response.StatusCode, request.TenantId);
+                _logger.LogWarning("Insurance estimate service returned HTTP {StatusCode} for tenant {TenantId}", (int)response.StatusCode, _tenantProvider.TenantId);
                 throw new TreatmentEstimateUnavailableException("CloudHealthOffice is temporarily unavailable. Try the estimate again later.");
             }
 
@@ -118,7 +120,7 @@ public sealed class CloudHealthOfficeInsuranceEstimateService : IInsuranceEstima
         }
         catch (HttpRequestException ex)
         {
-            _logger.LogWarning("Insurance estimate service could not be reached for tenant {TenantId}", request.TenantId);
+            _logger.LogWarning(ex, "Insurance estimate service could not be reached for tenant {TenantId}", _tenantProvider.TenantId);
             throw new TreatmentEstimateUnavailableException("CloudHealthOffice is temporarily unavailable. Try the estimate again later.", ex);
         }
     }

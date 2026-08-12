@@ -146,7 +146,7 @@
         }
         catch (Exception ex)
         {
-            Snackbar.Add($"Error saving organization: {ex.Message}", Severity.Error);
+            Snackbar.Add($"Error saving organization: {ex.GetDetailedMessage()}", Severity.Error);
         }
     }
 }

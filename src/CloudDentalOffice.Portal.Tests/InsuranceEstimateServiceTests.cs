@@ -116,6 +116,26 @@ public sealed class InsuranceEstimateServiceTests
     }
 
     [Theory]
+    [InlineData("https://evil.example/capture")]
+    [InlineData("//evil.example/capture")]
+    public async Task AbsoluteEstimatePathIsRejectedAsMisconfigured(string badPath)
+    {
+        var tenantProvider = new Mock<ITenantProvider>();
+        tenantProvider.SetupGet(x => x.TenantId).Returns("tenant-a");
+        var options = Options.Create(new CloudHealthOfficeOptions
+        {
+            Enabled = true,
+            BaseUrl = "https://cloudhealthoffice.example",
+            EstimatePath = badPath
+        });
+        var service = new CloudHealthOfficeInsuranceEstimateService(
+            new HttpClient(), options, tenantProvider.Object,
+            NullLogger<CloudHealthOfficeInsuranceEstimateService>.Instance);
+        var ex = await Assert.ThrowsAsync<TreatmentEstimateUnavailableException>(() => service.EstimateAsync(Request()));
+        Assert.Contains("relative", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Theory]
     [InlineData(EstimateConfidence.High, "High confidence")]
     [InlineData(EstimateConfidence.Medium, "Medium confidence")]
     [InlineData(EstimateConfidence.Low, "Low confidence")]

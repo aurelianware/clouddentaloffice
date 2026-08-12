@@ -29,11 +29,20 @@
     </div>
 
     <div id="components-reconnect-modal" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.7); z-index: 9999; align-items: center; justify-content: center;">
-        <div style="background: #0a0a0a; border: 2px solid #00ffff; padding: 2rem; border-radius: 8px; text-align: center; color: #00ffff;">
+        <div style="background: #0a0a0a; border: 2px solid #00ffff; padding: 2rem; border-radius: 8px; text-align: center; color: #00ffff; max-width: 90%;">
             <h3>Connection Lost</h3>
-            <p>Attempting to reconnect...</p>
-            <div style="margin-top: 1rem;">
-                <div class="spinner"></div>
+            <div data-reconnect-state="retrying">
+                <p>Reconnecting&hellip; your work is being kept.</p>
+                <div style="margin-top: 1rem;">
+                    <div class="spinner"></div>
+                </div>
+            </div>
+            <div data-reconnect-state="failed" style="display: none;">
+                <p>We couldn't restore your session. Please reload to continue.</p>
+                <button type="button" onclick="location.reload()"
+                        style="margin-top: 1rem; background: #00ffff; color: #0a0a0a; border: none; padding: 0.6rem 1.4rem; border-radius: 6px; font-weight: bold; cursor: pointer;">
+                    Reload
+                </button>
             </div>
         </div>
     </div>
@@ -56,16 +65,103 @@
 
     <script src="_framework/blazor.server.js" autostart="false"></script>
     <script>
-        Blazor.start({
-            reconnectionOptions: {
-                maxRetries: 8,
-                retryIntervalMilliseconds: 2000
-            },
-            reconnectionHandler: {
-                onConnectionDown: () => document.getElementById("components-reconnect-modal").style.display = "flex",
-                onConnectionUp: () => document.getElementById("components-reconnect-modal").style.display = "none"
+        // Custom reconnection handler.
+        //
+        // Blazor Server keeps the state of open pages (edit forms, dialogs) in an
+        // in-memory circuit on the server. That state is fully restored if the
+        // browser rejoins the SAME circuit; it is only lost when a page reload
+        // happens because the circuit is gone. The server retains a disconnected
+        // circuit for 4 minutes (see Program.cs), but the default client stops
+        // retrying after ~16s, so a phone whose tab is backgrounded longer than
+        // that reloads and loses the form even though the server was still holding
+        // it. This handler keeps retrying across the whole retention window and
+        // reconnects immediately when the user returns to the tab or the network
+        // comes back, so in-progress work survives transient mobile drops.
+        (function () {
+            const RETRY_INTERVAL_MS = 3000;
+            const MAX_ATTEMPTS = 80; // ~4 minutes, matching the server circuit retention window
+
+            let reconnecting = false;
+            let attempts = 0;
+            let timer = null;
+
+            function modal() { return document.getElementById("components-reconnect-modal"); }
+
+            function showState(state) {
+                const m = modal();
+                if (!m) return;
+                m.style.display = "flex";
+                m.querySelectorAll("[data-reconnect-state]").forEach(function (el) {
+                    el.style.display = el.getAttribute("data-reconnect-state") === state ? "block" : "none";
+                });
             }
-        });
+
+            function hide() {
+                const m = modal();
+                if (m) m.style.display = "none";
+            }
+
+            async function attemptReconnect() {
+                if (!reconnecting) return;
+                if (timer) { clearTimeout(timer); timer = null; }
+                attempts++;
+
+                try {
+                    const reconnected = await Blazor.reconnect();
+                    if (reconnected) {
+                        // Rejoined the existing circuit - open forms/dialogs are intact.
+                        reconnecting = false;
+                        attempts = 0;
+                        hide();
+                        return;
+                    }
+                    // reconnect() resolves false only when the server circuit is gone,
+                    // so the state cannot be recovered - a reload is required. Stop
+                    // retrying so later visibility/online events don't keep hammering
+                    // a circuit that will never come back.
+                    reconnecting = false;
+                    showState("failed");
+                } catch (e) {
+                    // Server unreachable (still offline). Keep trying until the window closes.
+                    if (attempts >= MAX_ATTEMPTS) {
+                        showState("failed");
+                        return;
+                    }
+                    timer = setTimeout(attemptReconnect, RETRY_INTERVAL_MS);
+                }
+            }
+
+            function startReconnecting() {
+                if (reconnecting) return;
+                reconnecting = true;
+                attempts = 0;
+                showState("retrying");
+                attemptReconnect();
+            }
+
+            // Retry right away when the user returns to the tab or regains connectivity,
+            // rather than waiting for the next scheduled attempt.
+            document.addEventListener("visibilitychange", function () {
+                if (document.visibilityState === "visible" && reconnecting) {
+                    attemptReconnect();
+                }
+            });
+            window.addEventListener("online", function () {
+                if (reconnecting) attemptReconnect();
+            });
+
+            Blazor.start({
+                reconnectionHandler: {
+                    onConnectionDown: startReconnecting,
+                    onConnectionUp: function () {
+                        reconnecting = false;
+                        attempts = 0;
+                        if (timer) { clearTimeout(timer); timer = null; }
+                        hide();
+                    }
+                }
+            });
+        })();
     </script>
     <script src="_content/MudBlazor/MudBlazor.min.js"></script>
 

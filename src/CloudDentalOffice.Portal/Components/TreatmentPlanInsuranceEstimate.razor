@@ -164,10 +164,15 @@
         try
         {
             _estimating = true;
-            TreatmentPlan.PlannedProcedures = Procedures.ToList();
+            var planForEstimate = new TreatmentPlan
+            {
+                TreatmentPlanId = TreatmentPlan.TreatmentPlanId,
+                PatientId = TreatmentPlan.PatientId,
+                PlannedProcedures = Procedures.ToList()
+            };
             var insurance = _coverages.FirstOrDefault(x => x.PatientInsuranceId == _selectedInsuranceId);
             var provider = Providers.FirstOrDefault(x => x.ProviderId == ProviderId);
-            var request = TreatmentEstimateMapper.Map(TreatmentPlan, _patient, insurance, provider,
+            var request = TreatmentEstimateMapper.Map(planForEstimate, _patient, insurance, provider,
                 DateOnly.FromDateTime(_serviceDate ?? DateTime.Today), TenantProvider.TenantId,
                 EstimateOptions.Value.BenefitPlanMappings);
             var routed = await PayerRouter.GetEstimateAsync(new PayerEstimateRoutingRequest
