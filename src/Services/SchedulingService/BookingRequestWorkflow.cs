@@ -2,6 +2,7 @@ using CloudDentalOffice.Contracts.Events;
 using CloudDentalOffice.Contracts.Scheduling;
 using Microsoft.EntityFrameworkCore;
 using System.Data;
+using System.Text.Json;
 
 public sealed class BookingRequestWorkflow(SchedulingDbContext db)
 {
@@ -49,11 +50,17 @@ public sealed class BookingRequestWorkflow(SchedulingDbContext db)
         db.BookingRequests.Add(new BookingRequest
         {
             EventId = evt.EventId, TenantId = evt.TenantId, Name = evt.Name.Trim(), Phone = evt.Phone.Trim(),
-            Email = evt.Email?.Trim(), PatientRelationship = evt.PatientRelationship,
+            Email = evt.Email?.Trim(), WebsiteRequestId = evt.WebsiteRequestId, PatientRelationship = evt.PatientRelationship,
             PreferredStartUtc = evt.PreferredStartUtc.Kind == DateTimeKind.Utc ? evt.PreferredStartUtc : evt.PreferredStartUtc.ToUniversalTime(),
+            AlternateStartUtc = evt.AlternateStartUtc,
             PreferredDurationMinutes = evt.DurationMinutes, Reason = evt.Reason, Message = evt.Message,
+            PreferredContact = evt.PreferredContact, InsuranceIntent = evt.InsuranceIntent,
+            InsuranceCarrier = evt.InsuranceCarrier, Campaign = evt.Campaign, AttributionId = evt.AttributionId,
+            AttributionMetadataJson = evt.AttributionMetadata is { Count: > 0 }
+                ? JsonSerializer.Serialize(evt.AttributionMetadata) : null,
             Source = string.IsNullOrWhiteSpace(evt.Source) ? "PublicWebsite" : evt.Source,
-            SourceReference = evt.SourceReference
+            SourceReference = evt.SourceReference,
+            SubmittedAtUtc = evt.SubmittedAtUtc ?? evt.OccurredAt
         });
         try { await db.SaveChangesAsync(cancellationToken); return true; }
         catch (DbUpdateException)

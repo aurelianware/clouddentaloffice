@@ -34,7 +34,21 @@ public record BookingRequestedEvent(
     Scheduling.PatientRelationship PatientRelationship = Scheduling.PatientRelationship.Unknown,
     string TenantId = "default",
     string Source = "PublicWebsite",
-    string? SourceReference = null) : IntegrationEvent;
+    string? SourceReference = null) : IntegrationEvent
+{
+    // Additive v2 fields keep the original positional contract deserializable
+    // for existing publishers and consumers.
+    public int ContractVersion { get; init; } = 2;
+    public string? WebsiteRequestId { get; init; }
+    public string? PreferredContact { get; init; }
+    public DateTime? AlternateStartUtc { get; init; }
+    public string? InsuranceIntent { get; init; }
+    public string? InsuranceCarrier { get; init; }
+    public string? Campaign { get; init; }
+    public string? AttributionId { get; init; }
+    public IReadOnlyDictionary<string, string>? AttributionMetadata { get; init; }
+    public DateTime? SubmittedAtUtc { get; init; }
+}
 
 public record AppointmentScheduledEvent(Guid AppointmentId, int PatientId, int ProviderId, DateTime StartTime) : IntegrationEvent;
 public record AppointmentCompletedEvent(Guid AppointmentId, int PatientId, string? ProcedureCodes) : IntegrationEvent;

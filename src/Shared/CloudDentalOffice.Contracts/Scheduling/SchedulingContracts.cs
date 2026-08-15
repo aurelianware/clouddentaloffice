@@ -37,6 +37,9 @@ public record CreateAppointmentRequest
 /// </summary>
 public record PublicBookingRequest
 {
+    public string? RequestId { get; init; }
+    public string? Status { get; init; }
+    public DateTime? CreatedAt { get; init; }
     public string Name { get; init; } = string.Empty;
     public string Phone { get; init; } = string.Empty;
     public string? Email { get; init; }
@@ -45,6 +48,13 @@ public record PublicBookingRequest
     public string? Reason { get; init; }
     public string? Message { get; init; }
     public PatientRelationship PatientRelationship { get; init; } = PatientRelationship.Unknown;
+    public string? PreferredContact { get; init; }
+    public DateTime? AlternateStart { get; init; }
+    public string? InsuranceIntent { get; init; }
+    public string? InsuranceCarrier { get; init; }
+    public string? Source { get; init; }
+    public string? Campaign { get; init; }
+    public Dictionary<string, string>? Attribution { get; init; }
 }
 
 public enum PatientRelationship
@@ -73,12 +83,20 @@ public record BookingRequestDto
     public string Name { get; init; } = string.Empty;
     public string Phone { get; init; } = string.Empty;
     public string? Email { get; init; }
+    public string? WebsiteRequestId { get; init; }
     public PatientRelationship PatientRelationship { get; init; }
     public DateTime PreferredStartUtc { get; init; }
+    public DateTime? AlternateStartUtc { get; init; }
     public int? PreferredDurationMinutes { get; init; }
     public string? Reason { get; init; }
     public string? Message { get; init; }
+    public string? PreferredContact { get; init; }
+    public string? InsuranceIntent { get; init; }
+    public string? InsuranceCarrier { get; init; }
     public string Source { get; init; } = string.Empty;
+    public string? Campaign { get; init; }
+    public string? AttributionId { get; init; }
+    public string? AttributionMetadataJson { get; init; }
     public string? SourceReference { get; init; }
     public BookingRequestStatus Status { get; init; }
     public int? MatchedPatientId { get; init; }
@@ -86,6 +104,7 @@ public record BookingRequestDto
     public Guid? RequestedLocationId { get; init; }
     public Guid? ApprovedAppointmentId { get; init; }
     public DateTime CreatedAt { get; init; }
+    public DateTime SubmittedAtUtc { get; init; }
     public DateTime UpdatedAt { get; init; }
     public DateTime? ReviewedAt { get; init; }
     public DateTime? ApprovedAt { get; init; }

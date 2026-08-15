@@ -30,16 +30,16 @@
         {
             <MudTable Items="_requests" Hover Dense>
                 <HeaderContent>
-                    <MudTh>Name</MudTh><MudTh>Contact</MudTh><MudTh>Patient</MudTh><MudTh>Preferred time</MudTh>
-                    <MudTh>Reason</MudTh><MudTh>Source</MudTh><MudTh>Age</MudTh><MudTh>Status</MudTh><MudTh></MudTh>
+                    <MudTh>Name</MudTh><MudTh>Preferred contact</MudTh><MudTh>Patient</MudTh><MudTh>Preferred time</MudTh>
+                    <MudTh>Insurance</MudTh><MudTh>Source</MudTh><MudTh>Age</MudTh><MudTh>Status</MudTh><MudTh></MudTh>
                 </HeaderContent>
                 <RowTemplate>
                     <MudTd DataLabel="Name">@context.Name</MudTd>
-                    <MudTd DataLabel="Contact">@context.Phone<br />@context.Email</MudTd>
+                    <MudTd DataLabel="Preferred contact">@BookingRequestDisplay.Contact(context)</MudTd>
                     <MudTd DataLabel="Patient">@context.PatientRelationship</MudTd>
                     <MudTd DataLabel="Preferred time">@context.PreferredStartUtc.ToLocalTime().ToString("g")</MudTd>
-                    <MudTd DataLabel="Reason">@context.Reason</MudTd>
-                    <MudTd DataLabel="Source">@context.Source</MudTd>
+                    <MudTd DataLabel="Insurance">@BookingRequestDisplay.Insurance(context)</MudTd>
+                    <MudTd DataLabel="Source">@BookingRequestDisplay.Acquisition(context)</MudTd>
                     <MudTd DataLabel="Age">@FormatAge(context.CreatedAt)</MudTd>
                     <MudTd DataLabel="Status"><MudChip T="string" Size="Size.Small" Color="@StatusColor(context.Status)">@context.Status</MudChip></MudTd>
                     <MudTd><MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Primary" OnClick="@(() => Review(context))">Review</MudButton></MudTd>

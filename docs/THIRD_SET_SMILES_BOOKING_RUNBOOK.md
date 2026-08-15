@@ -10,16 +10,21 @@ This path records a **booking request for staff review**. A `202` never means an
 - API keys map to a tenant server-side. Use a unique 32-byte random key per site/environment; rotate by temporarily adding a second `Clients` entry, updating Cloudflare, then removing the old entry.
 - IntakeService has no database connection and exposes only POST intake plus `/health`. Swagger is development-only.
 - Scheduling/API gateway ingress stays internal. Never route `/api/booking-requests` or `/api/appointments` from a public ingress.
-- Accepted data is limited to name, phone, optional email, new/existing relationship, preferred instant, optional 15–240 minute duration, reason (500), and message (2,000). Times must include an offset and be 5 minutes–1 year ahead.
-- `Idempotency-Key` (8–128 characters) deterministically sets the event ID. Service Bus suppresses the same message ID for 24 hours and `(TenantId, EventId)` is uniquely indexed in PostgreSQL. Without the header, each accepted retry is a new request.
+- Accepted data is limited to name, phone, optional email, new/existing relationship, preferred and optional alternate instants, preferred contact, optional 15–240 minute duration, reason (500), scheduling message (2,000), insurance intent/carrier, source/campaign, and allowlisted attribution metadata. Times must include an offset and the preferred time must be 5 minutes–1 year ahead. Member/subscriber IDs, card images, and clinical data are not accepted.
+- The website creates one `requestId` per loaded form and sends it as `Idempotency-Key` (8–128 characters). The tenant/key pair deterministically sets the event ID; Service Bus duplicate detection and the `(TenantId, EventId)` unique index make a replay an accepted success with one persisted request. Without the header, legacy callers remain supported and each accepted retry is a new request.
 - Broker unavailable/unconfigured returns `503`; unauthorized returns `401`; invalid returns `400`; throttled returns `429`; accepted returns `202 { status: "requested" }`. Cloudflare then retains Resend as its fallback/copy.
+
+### Contract v2 and migration
+
+`BookingRequestedEvent` remains the same event subject and retains its original positional fields. Additive `ContractVersion=2` properties carry website request ID, preferred contact, alternate time, insurance intent/carrier, campaign, attribution ID/allowlisted metadata, and submitted timestamp. Older messages deserialize with null optional fields.
+
+Scheduling startup adds the corresponding nullable columns to existing SQLite, PostgreSQL, or SQL Server `BookingRequests` tables and backfills `SubmittedAtUtc` with the database current timestamp. Back up the scheduling database before the first upgraded deployment. No new secrets or public routes are required.
 
 ## Assumptions requiring confirmation
 
 - Azure Container Apps, Azure Service Bus Standard, and PostgreSQL Flexible Server are the intended production platform.
 - Confirm the desired public hostname. The generated ACA URL works immediately; `https://book-api.3rdsetsmiles.com` is the recommended custom domain.
 - Dr. Matthew Phillips's NPI, Arizona license number, exact suffix, and staff identity/login are intentionally not seeded. Add them through the authenticated Portal after confirming the values.
-- Current website code does not send `Idempotency-Key`; server support is ready, but end-to-end retry deduplication requires a small follow-up in `3rdsetsmiles` to generate and reuse one per form submission.
 
 ## Deploy in order
 
