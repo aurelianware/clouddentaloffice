@@ -51,15 +51,15 @@ public sealed class BookingRequestWorkflow(SchedulingDbContext db)
         {
             EventId = evt.EventId, TenantId = evt.TenantId, Name = evt.Name.Trim(), Phone = evt.Phone.Trim(),
             Email = evt.Email?.Trim(), WebsiteRequestId = TrimTo(evt.WebsiteRequestId, 128), PatientRelationship = evt.PatientRelationship,
-            PreferredStartUtc = evt.PreferredStartUtc.Kind == DateTimeKind.Utc ? evt.PreferredStartUtc : evt.PreferredStartUtc.ToUniversalTime(),
+            PreferredStartUtc = NormalizeUtc(evt.PreferredStartUtc),
             AlternateStartUtc = NormalizeUtc(evt.AlternateStartUtc),
             PreferredDurationMinutes = evt.DurationMinutes, Reason = evt.Reason, Message = evt.Message,
             PreferredContact = TrimTo(evt.PreferredContact, 20), InsuranceIntent = TrimTo(evt.InsuranceIntent, 20),
             InsuranceCarrier = TrimTo(evt.InsuranceCarrier, 120), Campaign = TrimTo(evt.Campaign, 200),
             AttributionId = TrimTo(evt.AttributionId, 200),
             AttributionMetadataJson = SerializeMetadata(evt.AttributionMetadata),
-            Source = string.IsNullOrWhiteSpace(evt.Source) ? "PublicWebsite" : evt.Source,
-            SourceReference = evt.SourceReference,
+            Source = TrimTo(evt.Source, 100) ?? "PublicWebsite",
+            SourceReference = TrimTo(evt.SourceReference, 200),
             SubmittedAtUtc = NormalizeUtc(evt.SubmittedAtUtc ?? evt.OccurredAt)
         });
         try { await db.SaveChangesAsync(cancellationToken); return true; }
