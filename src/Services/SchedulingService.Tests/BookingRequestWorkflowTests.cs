@@ -108,6 +108,41 @@ public sealed class BookingRequestWorkflowTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task V2FieldsAreBoundedAndTimestampsAreNormalizedBeforePersistence()
+    {
+        var alternate = DateTime.SpecifyKind(DateTime.UtcNow.AddDays(2), DateTimeKind.Unspecified);
+        var submitted = DateTime.SpecifyKind(DateTime.UtcNow.AddMinutes(-5), DateTimeKind.Unspecified);
+        var preferred = DateTime.SpecifyKind(DateTime.UtcNow.AddDays(1), DateTimeKind.Unspecified);
+        var evt = NewEvent(PatientRelationship.New) with
+        {
+            WebsiteRequestId = new string('r', 200), PreferredContact = new string('c', 40),
+            InsuranceIntent = new string('i', 40), InsuranceCarrier = new string('n', 200),
+            Campaign = new string('p', 300), AttributionId = new string('a', 300),
+            AttributionMetadata = Enumerable.Range(0, 20).ToDictionary(i => $"key-{i}", _ => new string('v', 500)),
+            PreferredStartUtc = preferred, AlternateStartUtc = alternate, SubmittedAtUtc = submitted,
+            Source = new string('s', 150), SourceReference = new string('x', 250)
+        };
+
+        Assert.True(await new BookingRequestWorkflow(_db).PersistEventAsync(evt));
+        var saved = await _db.BookingRequests.SingleAsync();
+        Assert.Equal(128, saved.WebsiteRequestId!.Length);
+        Assert.Equal(20, saved.PreferredContact!.Length);
+        Assert.Equal(20, saved.InsuranceIntent!.Length);
+        Assert.Equal(120, saved.InsuranceCarrier!.Length);
+        Assert.Equal(200, saved.Campaign!.Length);
+        Assert.Equal(200, saved.AttributionId!.Length);
+        Assert.Equal(100, saved.Source.Length);
+        Assert.Equal(200, saved.SourceReference!.Length);
+        Assert.InRange(saved.AttributionMetadataJson!.Length, 1, 2000);
+        Assert.Equal(DateTimeKind.Utc, saved.PreferredStartUtc.Kind);
+        Assert.Equal(DateTimeKind.Utc, saved.AlternateStartUtc!.Value.Kind);
+        Assert.Equal(DateTimeKind.Utc, saved.SubmittedAtUtc.Kind);
+        Assert.Equal(preferred.Ticks, saved.PreferredStartUtc.Ticks);
+        Assert.Equal(alternate.Ticks, saved.AlternateStartUtc.Value.Ticks);
+        Assert.Equal(submitted.Ticks, saved.SubmittedAtUtc.Ticks);
+    }
+
+    [Fact]
     public async Task ApprovalRequiresPatientAndCreatesExactlyOneAppointment()
     {
         var workflow = new BookingRequestWorkflow(_db);

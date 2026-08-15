@@ -119,6 +119,7 @@ app.MapPost("/api/public/booking-requests", async (
         Source: PublicBookingSanitizer.Text(request.Source, 100) ?? section.GetValue<string>("Source") ?? "PublicWebsite",
         SourceReference: null)
     {
+        ContractVersion = 2,
         EventId = string.IsNullOrEmpty(idempotencyKey)
             ? Guid.NewGuid()
             : Idempotency.CreateEventId(tenantId, idempotencyKey),
