@@ -50,17 +50,17 @@ public sealed class BookingRequestWorkflow(SchedulingDbContext db)
         db.BookingRequests.Add(new BookingRequest
         {
             EventId = evt.EventId, TenantId = evt.TenantId, Name = evt.Name.Trim(), Phone = evt.Phone.Trim(),
-            Email = evt.Email?.Trim(), WebsiteRequestId = evt.WebsiteRequestId, PatientRelationship = evt.PatientRelationship,
+            Email = evt.Email?.Trim(), WebsiteRequestId = TrimTo(evt.WebsiteRequestId, 128), PatientRelationship = evt.PatientRelationship,
             PreferredStartUtc = evt.PreferredStartUtc.Kind == DateTimeKind.Utc ? evt.PreferredStartUtc : evt.PreferredStartUtc.ToUniversalTime(),
-            AlternateStartUtc = evt.AlternateStartUtc,
+            AlternateStartUtc = NormalizeUtc(evt.AlternateStartUtc),
             PreferredDurationMinutes = evt.DurationMinutes, Reason = evt.Reason, Message = evt.Message,
-            PreferredContact = evt.PreferredContact, InsuranceIntent = evt.InsuranceIntent,
-            InsuranceCarrier = evt.InsuranceCarrier, Campaign = evt.Campaign, AttributionId = evt.AttributionId,
-            AttributionMetadataJson = evt.AttributionMetadata is { Count: > 0 }
-                ? JsonSerializer.Serialize(evt.AttributionMetadata) : null,
+            PreferredContact = TrimTo(evt.PreferredContact, 20), InsuranceIntent = TrimTo(evt.InsuranceIntent, 20),
+            InsuranceCarrier = TrimTo(evt.InsuranceCarrier, 120), Campaign = TrimTo(evt.Campaign, 200),
+            AttributionId = TrimTo(evt.AttributionId, 200),
+            AttributionMetadataJson = SerializeMetadata(evt.AttributionMetadata),
             Source = string.IsNullOrWhiteSpace(evt.Source) ? "PublicWebsite" : evt.Source,
             SourceReference = evt.SourceReference,
-            SubmittedAtUtc = evt.SubmittedAtUtc ?? evt.OccurredAt
+            SubmittedAtUtc = NormalizeUtc(evt.SubmittedAtUtc ?? evt.OccurredAt)
         });
         try { await db.SaveChangesAsync(cancellationToken); return true; }
         catch (DbUpdateException)
@@ -69,6 +69,40 @@ public sealed class BookingRequestWorkflow(SchedulingDbContext db)
             if (await db.BookingRequests.AnyAsync(r => r.TenantId == evt.TenantId && r.EventId == evt.EventId, cancellationToken)) return false;
             throw;
         }
+    }
+
+    private static string? TrimTo(string? value, int maxLength)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return null;
+        var trimmed = value.Trim();
+        return trimmed[..Math.Min(trimmed.Length, maxLength)];
+    }
+
+    private static DateTime NormalizeUtc(DateTime value) => value.Kind switch
+    {
+        DateTimeKind.Utc => value,
+        DateTimeKind.Local => value.ToUniversalTime(),
+        _ => DateTime.SpecifyKind(value, DateTimeKind.Utc)
+    };
+
+    private static DateTime? NormalizeUtc(DateTime? value) => value.HasValue ? NormalizeUtc(value.Value) : null;
+
+    private static string? SerializeMetadata(IReadOnlyDictionary<string, string>? metadata)
+    {
+        if (metadata is not { Count: > 0 }) return null;
+        var bounded = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var pair in metadata.Take(20))
+        {
+            var key = TrimTo(pair.Key, 100);
+            var value = TrimTo(pair.Value, 200);
+            if (key is null || value is null) continue;
+            bounded[key] = value;
+            var json = JsonSerializer.Serialize(bounded);
+            if (json.Length <= 2000) continue;
+            bounded.Remove(key);
+            break;
+        }
+        return bounded.Count == 0 ? null : JsonSerializer.Serialize(bounded);
     }
 
     public async Task<(BookingRequest Request, Appointment Appointment, bool Created)> ApproveAsync(

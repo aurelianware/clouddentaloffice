@@ -38,7 +38,9 @@ public record BookingRequestedEvent(
 {
     // Additive v2 fields keep the original positional contract deserializable
     // for existing publishers and consumers.
-    public int ContractVersion { get; init; } = 2;
+    // Missing on legacy payloads, so v1 must remain the deserialization default.
+    // V2 publishers set this explicitly when they populate the additive fields.
+    public int ContractVersion { get; init; } = 1;
     public string? WebsiteRequestId { get; init; }
     public string? PreferredContact { get; init; }
     public DateTime? AlternateStartUtc { get; init; }

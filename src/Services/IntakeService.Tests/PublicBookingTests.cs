@@ -134,4 +134,14 @@ public sealed class PublicBookingTests
         Assert.Empty(PublicBookingValidator.Validate(request!, DateTime.UtcNow));
         Assert.Null(request!.RequestId);
     }
+
+    [Fact]
+    public void LegacyEventWithoutVersionDeserializesAsV1()
+    {
+        var evt = System.Text.Json.JsonSerializer.Deserialize<CloudDentalOffice.Contracts.Events.BookingRequestedEvent>(
+            $$"""{"name":"Sam","phone":"4805550100","preferredStartUtc":"{{DateTime.UtcNow.AddDays(1):O}}"}""");
+
+        Assert.NotNull(evt);
+        Assert.Equal(1, evt!.ContractVersion);
+    }
 }
