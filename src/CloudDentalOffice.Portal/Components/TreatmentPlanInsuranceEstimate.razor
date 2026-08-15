@@ -3,7 +3,7 @@
 @using CloudDentalOffice.Portal.Services.Tenancy
 @using MudBlazor
 @inject IPatientService PatientService
-@inject IInsuranceEstimateService EstimateService
+@inject IPayerTransactionRouter PayerRouter
 @inject ITenantProvider TenantProvider
 @inject Microsoft.Extensions.Options.IOptions<CloudHealthOfficeOptions> EstimateOptions
 
@@ -44,6 +44,21 @@
                 <MudDatePicker Label="Proposed service date" Variant="Variant.Outlined" @bind-Date="_serviceDate" />
             </MudItem>
         </MudGrid>
+        <MudButton Class="mt-2" Variant="Variant.Outlined" Color="Color.Info" StartIcon="@Icons.Material.Filled.VerifiedUser"
+                   Disabled="@_checkingEligibility" OnClick="CheckEligibilityAsync">
+            @(_checkingEligibility ? "Checking…" : "Check Eligibility")
+        </MudButton>
+    }
+
+    @if (_eligibility is not null)
+    {
+        <MudAlert Class="mt-3" Severity="@(_eligibility.CoverageStatus == CoverageStatus.Active ? Severity.Success : Severity.Warning)">
+            <strong>@_eligibility.CoverageStatus coverage</strong> via @_eligibility.Source · verified @_eligibility.VerifiedAt.LocalDateTime.ToString("g")
+            @if (_eligibility.AnnualMaximumRemaining.HasValue)
+            {
+                <span> · Annual maximum remaining: @_eligibility.AnnualMaximumRemaining.Value.ToString("C2")</span>
+            }
+        </MudAlert>
     }
 
     @if (!string.IsNullOrWhiteSpace(_message))
@@ -56,6 +71,10 @@
         <MudDivider Class="my-4" />
         <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center" Class="mb-3">
             <MudChip T="string" Color="Color.Info">@TreatmentEstimateDisplay.Authority(_result.Authority)</MudChip>
+            @if (!string.IsNullOrWhiteSpace(_estimateSource))
+            {
+                <MudChip T="string" Variant="Variant.Outlined">Source: @_estimateSource</MudChip>
+            }
             <MudChip T="string" Variant="Variant.Outlined">@TreatmentEstimateDisplay.Confidence(_result.Confidence)</MudChip>
         </MudStack>
 
@@ -124,6 +143,9 @@
     private TreatmentEstimateResult? _result;
     private string? _message;
     private bool _estimating;
+    private bool _checkingEligibility;
+    private EligibilityResult? _eligibility;
+    private string? _estimateSource;
 
     protected override async Task OnParametersSetAsync()
     {
@@ -153,12 +175,42 @@
             var request = TreatmentEstimateMapper.Map(planForEstimate, _patient, insurance, provider,
                 DateOnly.FromDateTime(_serviceDate ?? DateTime.Today), TenantProvider.TenantId,
                 EstimateOptions.Value.BenefitPlanMappings);
-            _result = await EstimateService.EstimateAsync(request);
+            var routed = await PayerRouter.GetEstimateAsync(new PayerEstimateRoutingRequest
+            {
+                PayerId = insurance!.InsurancePlan!.PayerId,
+                EstimateRequest = request
+            });
+            _result = routed.Result;
+            _estimateSource = routed.AdapterType;
         }
         catch (TreatmentEstimateValidationException ex) { _message = ex.Message; }
         catch (TreatmentEstimateUnavailableException ex) { _message = ex.Message; }
         catch (Exception) { _message = "The estimate could not be calculated. Try again later."; }
         finally { _estimating = false; }
+    }
+
+    private async Task CheckEligibilityAsync()
+    {
+        _message = null;
+        _eligibility = null;
+        var insurance = _coverages.FirstOrDefault(x => x.PatientInsuranceId == _selectedInsuranceId);
+        var provider = Providers.FirstOrDefault(x => x.ProviderId == ProviderId);
+        if (insurance?.InsurancePlan is null) { _message = "Select an insurance coverage before checking eligibility."; return; }
+        if (string.IsNullOrWhiteSpace(insurance.MemberId)) { _message = "This coverage does not have a member ID on file."; return; }
+        if (provider is null || string.IsNullOrWhiteSpace(provider.NPI)) { _message = "Select a rendering provider with an NPI before checking eligibility."; return; }
+        try
+        {
+            _checkingEligibility = true;
+            _eligibility = await PayerRouter.CheckEligibilityAsync(new NormalizedEligibilityRequest
+            {
+                TenantId = TenantProvider.TenantId, PayerId = insurance.InsurancePlan.PayerId,
+                MemberId = insurance.MemberId, SubscriberId = insurance.MemberId, ProviderNpi = provider.NPI,
+                ServiceDate = DateOnly.FromDateTime(_serviceDate ?? DateTime.Today)
+            });
+        }
+        catch (TreatmentEstimateUnavailableException ex) { _message = ex.Message; }
+        catch (UnauthorizedAccessException) { _message = "The eligibility request was denied for this practice."; }
+        finally { _checkingEligibility = false; }
     }
 
     internal static IEnumerable<(string Label, decimal Value)> SummaryTotals(TreatmentEstimateResult result) =>

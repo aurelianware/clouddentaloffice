@@ -366,6 +366,12 @@ builder.Services.AddHttpClient<IInsuranceEstimateService, CloudHealthOfficeInsur
     client.Timeout = TimeSpan.FromSeconds(20);
     client.DefaultRequestHeaders.Add("Accept", "application/json");
 });
+builder.Services.Configure<PayerConnectivityOptions>(builder.Configuration.GetSection("PayerConnectivity"));
+builder.Services.AddScoped<ITradingPartnerAdapter, CloudHealthOfficeTradingPartnerAdapter>();
+if (builder.Environment.IsDevelopment())
+    builder.Services.AddScoped<ITradingPartnerAdapter, MockEligibilityTradingPartnerAdapter>();
+builder.Services.AddScoped<ITransactionAuditSink, LoggingTransactionAuditSink>();
+builder.Services.AddScoped<IPayerTransactionRouter, PayerTransactionRouter>();
 builder.Services.AddScoped<IEdiSubmissionService, EdiSubmissionService>();
 builder.Services.AddScoped<ITokenService, TokenService>();
 builder.Services.AddScoped<IStripeService, StripeService>();
