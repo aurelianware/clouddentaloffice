@@ -82,6 +82,15 @@ public sealed class PublicBookingTests
     }
 
     [Fact]
+    public void RequestIdCanBeUsedDirectlyAsTheIdempotencyBasis()
+    {
+        const string requestId = "11111111-1111-4111-8111-111111111111";
+        Assert.Equal(
+            Idempotency.CreateEventId("third-set-smiles", requestId),
+            Idempotency.CreateEventId("third-set-smiles", requestId));
+    }
+
+    [Fact]
     public void CredentialCannotResolveAnotherClientsTenant()
     {
         var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
@@ -94,5 +103,35 @@ public sealed class PublicBookingTests
         var http = new DefaultHttpContext();
         http.Request.Headers.Authorization = "Bearer first-practice-secret";
         Assert.Equal("third-set-smiles", IntakeAuth.ResolveTenant(http, config.GetSection("PublicBooking")));
+    }
+
+    [Fact]
+    public void AttributionKeepsOnlyAllowlistedBoundedMetadata()
+    {
+        var sanitized = PublicBookingSanitizer.SanitizeAttribution(new Dictionary<string, string>
+        {
+            ["utm_source"] = "google",
+            ["attribution_id"] = "aid-123",
+            ["patient_name"] = "must-not-pass",
+            ["member_id"] = "must-not-pass",
+            ["utm_term"] = new string('x', 500)
+        });
+
+        Assert.Equal("google", sanitized["utm_source"]);
+        Assert.Equal("aid-123", sanitized["attribution_id"]);
+        Assert.Equal(200, sanitized["utm_term"].Length);
+        Assert.DoesNotContain("patient_name", sanitized.Keys);
+        Assert.DoesNotContain("member_id", sanitized.Keys);
+    }
+
+    [Fact]
+    public void LegacyMinimalPayloadStillDeserializesAndValidates()
+    {
+        var request = System.Text.Json.JsonSerializer.Deserialize<PublicBookingRequest>(
+            $$"""{"name":"Sam","phone":"4805550100","preferredStart":"{{DateTime.UtcNow.AddDays(1):O}}","patientRelationship":1}""");
+
+        Assert.NotNull(request);
+        Assert.Empty(PublicBookingValidator.Validate(request!, DateTime.UtcNow));
+        Assert.Null(request!.RequestId);
     }
 }

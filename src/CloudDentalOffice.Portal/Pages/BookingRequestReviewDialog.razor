@@ -11,7 +11,12 @@
         <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Class="mb-4">
             <MudText Typo="Typo.h6">Original website request</MudText>
             <MudText><b>@Request.Name</b> · @Request.Phone · @Request.Email</MudText>
+            <MudText>Preferred contact: @BookingRequestDisplay.Contact(Request)</MudText>
             <MudText>@Request.PatientRelationship patient · Preferred @Request.PreferredStartUtc.ToLocalTime().ToString("f")</MudText>
+            @if (Request.AlternateStartUtc.HasValue) { <MudText>Alternate @Request.AlternateStartUtc.Value.ToLocalTime().ToString("f")</MudText> }
+            <MudText>Insurance: @BookingRequestDisplay.Insurance(Request)</MudText>
+            <MudText>Acquisition: @BookingRequestDisplay.Acquisition(Request)</MudText>
+            @if (!string.IsNullOrWhiteSpace(Request.WebsiteRequestId)) { <MudText Typo="Typo.caption">Website request @Request.WebsiteRequestId</MudText> }
             <MudText>@Request.Reason</MudText>
             @if (!string.IsNullOrWhiteSpace(Request.Message)) { <MudText>@Request.Message</MudText> }
         </MudAlert>

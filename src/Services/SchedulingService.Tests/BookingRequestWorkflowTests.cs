@@ -54,6 +54,60 @@ public sealed class BookingRequestWorkflowTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task RepeatedIdempotencyKeyCreatesOneRequestAndDifferentRequestIdsCreateSeparateRequests()
+    {
+        var workflow = new BookingRequestWorkflow(_db);
+        var firstId = Guid.Parse("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa");
+        var secondId = Guid.Parse("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb");
+        var first = NewEvent(PatientRelationship.New) with { EventId = firstId, WebsiteRequestId = "11111111-1111-4111-8111-111111111111" };
+        var second = NewEvent(PatientRelationship.New) with { EventId = secondId, WebsiteRequestId = "22222222-2222-4222-8222-222222222222" };
+
+        Assert.True(await workflow.PersistEventAsync(first));
+        Assert.False(await workflow.PersistEventAsync(first));
+        Assert.True(await workflow.PersistEventAsync(second));
+        Assert.Equal(2, await _db.BookingRequests.CountAsync());
+    }
+
+    [Fact]
+    public async Task SameEventIdIsIsolatedByTenant()
+    {
+        var workflow = new BookingRequestWorkflow(_db);
+        var first = NewEvent(PatientRelationship.New);
+        var otherTenant = first with { TenantId = "practice-b" };
+
+        Assert.True(await workflow.PersistEventAsync(first));
+        Assert.True(await workflow.PersistEventAsync(otherTenant));
+        Assert.Equal(2, await _db.BookingRequests.CountAsync());
+    }
+
+    [Fact]
+    public async Task OptionalV2FieldsRoundTrip()
+    {
+        var submitted = DateTime.UtcNow.AddMinutes(-10);
+        var alternate = DateTime.UtcNow.AddDays(2);
+        var evt = NewEvent(PatientRelationship.Existing) with
+        {
+            WebsiteRequestId = "11111111-1111-4111-8111-111111111111",
+            PreferredContact = "Text", AlternateStartUtc = alternate,
+            InsuranceIntent = "Yes", InsuranceCarrier = "Delta Dental",
+            Source = "google", Campaign = "implants", AttributionId = "aid-123",
+            AttributionMetadata = new Dictionary<string, string> { ["utm_medium"] = "cpc" },
+            SubmittedAtUtc = submitted
+        };
+
+        Assert.True(await new BookingRequestWorkflow(_db).PersistEventAsync(evt));
+        var dto = (await _db.BookingRequests.SingleAsync()).ToDto();
+        Assert.Equal(evt.WebsiteRequestId, dto.WebsiteRequestId);
+        Assert.Equal("Text", dto.PreferredContact);
+        Assert.Equal(alternate, dto.AlternateStartUtc);
+        Assert.Equal("Delta Dental", dto.InsuranceCarrier);
+        Assert.Equal("implants", dto.Campaign);
+        Assert.Equal("aid-123", dto.AttributionId);
+        Assert.Contains("utm_medium", dto.AttributionMetadataJson);
+        Assert.Equal(submitted, dto.SubmittedAtUtc);
+    }
+
+    [Fact]
     public async Task ApprovalRequiresPatientAndCreatesExactlyOneAppointment()
     {
         var workflow = new BookingRequestWorkflow(_db);

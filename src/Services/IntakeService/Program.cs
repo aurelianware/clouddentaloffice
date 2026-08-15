@@ -93,13 +93,19 @@ app.MapPost("/api/public/booking-requests", async (
     var errors = PublicBookingValidator.Validate(request, DateTime.UtcNow);
     var preferredStartUtc = request.PreferredStart.ToUniversalTime();
 
+    var websiteRequestId = PublicBookingSanitizer.Text(request.RequestId, 128);
     var idempotencyKey = http.Request.Headers["Idempotency-Key"].ToString().Trim();
+    if (string.IsNullOrEmpty(idempotencyKey) && websiteRequestId is not null)
+        idempotencyKey = websiteRequestId;
     if (!string.IsNullOrEmpty(idempotencyKey) && idempotencyKey.Length is < 8 or > 128)
         errors["Idempotency-Key"] = ["Idempotency-Key must be 8 to 128 characters."];
+    if (websiteRequestId is not null && !string.Equals(websiteRequestId, idempotencyKey, StringComparison.Ordinal))
+        errors["requestId"] = ["requestId must match Idempotency-Key when both are supplied."];
 
     if (errors.Count > 0)
         return Results.ValidationProblem(errors);
 
+    var attribution = PublicBookingSanitizer.SanitizeAttribution(request.Attribution);
     var evt = new BookingRequestedEvent(
         Name: request.Name.Trim(),
         Phone: request.Phone.Trim(),
@@ -110,12 +116,21 @@ app.MapPost("/api/public/booking-requests", async (
         Message: string.IsNullOrWhiteSpace(request.Message) ? null : request.Message.Trim(),
         PatientRelationship: request.PatientRelationship,
         TenantId: tenantId,
-        Source: section.GetValue<string>("Source") ?? "PublicWebsite",
+        Source: PublicBookingSanitizer.Text(request.Source, 100) ?? section.GetValue<string>("Source") ?? "PublicWebsite",
         SourceReference: null)
     {
         EventId = string.IsNullOrEmpty(idempotencyKey)
             ? Guid.NewGuid()
-            : Idempotency.CreateEventId(tenantId, idempotencyKey)
+            : Idempotency.CreateEventId(tenantId, idempotencyKey),
+        WebsiteRequestId = websiteRequestId,
+        PreferredContact = PublicBookingSanitizer.Text(request.PreferredContact, 20),
+        AlternateStartUtc = request.AlternateStart?.ToUniversalTime(),
+        InsuranceIntent = PublicBookingSanitizer.Text(request.InsuranceIntent, 20),
+        InsuranceCarrier = PublicBookingSanitizer.Text(request.InsuranceCarrier, 120),
+        Campaign = PublicBookingSanitizer.Text(request.Campaign, 200),
+        AttributionId = attribution.GetValueOrDefault("attribution_id"),
+        AttributionMetadata = attribution,
+        SubmittedAtUtc = PublicBookingSanitizer.SubmittedAt(request.CreatedAt, DateTime.UtcNow)
     };
 
     try
@@ -155,6 +170,14 @@ public static class PublicBookingValidator
         if (request.DurationMinutes is < 15 or > 240) errors["durationMinutes"] = ["Duration must be between 15 and 240 minutes."];
         if (request.Reason?.Length > 500) errors["reason"] = ["Reason must be 500 characters or fewer."];
         if (request.Message?.Length > 2000) errors["message"] = ["Message must be 2000 characters or fewer."];
+        if (request.RequestId?.Length > 128) errors["requestId"] = ["requestId must be 128 characters or fewer."];
+        if (request.PreferredContact is not null && request.PreferredContact is not ("Phone" or "Text" or "Email"))
+            errors["preferredContact"] = ["preferredContact must be Phone, Text, or Email."];
+        if (request.InsuranceIntent is not null && request.InsuranceIntent is not ("Yes" or "No" or "Not sure"))
+            errors["insuranceIntent"] = ["insuranceIntent must be Yes, No, or Not sure."];
+        if (request.InsuranceCarrier?.Length > 120) errors["insuranceCarrier"] = ["insuranceCarrier must be 120 characters or fewer."];
+        if (request.Source?.Length > 100) errors["source"] = ["source must be 100 characters or fewer."];
+        if (request.Campaign?.Length > 200) errors["campaign"] = ["campaign must be 200 characters or fewer."];
         if (!Enum.IsDefined(request.PatientRelationship) || request.PatientRelationship == PatientRelationship.Unknown)
             errors["patientRelationship"] = ["Patient relationship must be New or Existing."];
         if (request.PreferredStart == default) errors["preferredStart"] = ["A preferred start time is required."];
@@ -164,7 +187,33 @@ public static class PublicBookingValidator
             errors["preferredStart"] = ["preferredStart must be at least 5 minutes in the future."];
         else if (request.PreferredStart.ToUniversalTime() > utcNow.AddYears(1))
             errors["preferredStart"] = ["preferredStart must be within one year."];
+        if (request.AlternateStart.HasValue && request.AlternateStart.Value.Kind == DateTimeKind.Unspecified)
+            errors["alternateStart"] = ["alternateStart must include a timezone."];
         return errors;
+    }
+}
+
+public static class PublicBookingSanitizer
+{
+    private static readonly HashSet<string> AllowedAttributionKeys = new(StringComparer.Ordinal)
+    { "utm_source", "utm_medium", "utm_campaign", "utm_content", "utm_term", "landing_page", "referrer", "attribution_id" };
+
+    public static string? Text(string? value, int max) =>
+        string.IsNullOrWhiteSpace(value) ? null : value.Trim()[..Math.Min(value.Trim().Length, max)];
+
+    public static Dictionary<string, string> SanitizeAttribution(IReadOnlyDictionary<string, string>? values) =>
+        values?.Where(pair => AllowedAttributionKeys.Contains(pair.Key))
+            .Select(pair => new KeyValuePair<string, string>(pair.Key, Text(pair.Value, 200) ?? string.Empty))
+            .Where(pair => pair.Value.Length > 0)
+            .Take(8)
+            .ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal)
+        ?? [];
+
+    public static DateTime SubmittedAt(DateTime? value, DateTime utcNow)
+    {
+        if (!value.HasValue || value.Value.Kind == DateTimeKind.Unspecified) return utcNow;
+        var utc = value.Value.ToUniversalTime();
+        return utc > utcNow.AddMinutes(5) || utc < utcNow.AddDays(-7) ? utcNow : utc;
     }
 }
 
