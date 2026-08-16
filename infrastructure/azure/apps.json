@@ -1,0 +1,1207 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.46.1.21595",
+      "templateHash": "3101743471211669532"
+    }
+  },
+  "parameters": {
+    "location": {
+      "type": "string",
+      "defaultValue": "[resourceGroup().location]"
+    },
+    "acrLoginServer": {
+      "type": "string",
+      "metadata": {
+        "description": "ACR login server (from main.bicep output acrLoginServer)"
+      }
+    },
+    "identityId": {
+      "type": "string",
+      "metadata": {
+        "description": "Managed identity resource ID (from main.bicep output identityId)"
+      }
+    },
+    "environmentId": {
+      "type": "string",
+      "metadata": {
+        "description": "Container App Environment resource ID (from main.bicep output environmentId)"
+      }
+    },
+    "imageTag": {
+      "type": "string",
+      "defaultValue": "latest",
+      "metadata": {
+        "description": "Image tag to deploy"
+      }
+    },
+    "postgresHost": {
+      "type": "string",
+      "metadata": {
+        "description": "PostgreSQL server FQDN"
+      }
+    },
+    "postgresAdminUser": {
+      "type": "string",
+      "defaultValue": "cdoadmin",
+      "metadata": {
+        "description": "PostgreSQL admin username"
+      }
+    },
+    "postgresAdminPassword": {
+      "type": "securestring"
+    },
+    "jwtKey": {
+      "type": "securestring"
+    },
+    "serviceBusSendConnection": {
+      "type": "securestring"
+    },
+    "serviceBusListenConnection": {
+      "type": "securestring"
+    },
+    "publicBookingApiKey": {
+      "type": "securestring"
+    },
+    "initialTenantId": {
+      "type": "string",
+      "defaultValue": "third-set-smiles",
+      "metadata": {
+        "description": "Initial tenant identifier to configure in the Portal app"
+      }
+    },
+    "googleOAuthClientId": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Google OAuth client ID for Portal sign-in; leave empty to disable Google sign-in"
+      }
+    },
+    "googleOAuthClientSecret": {
+      "type": "securestring",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Google OAuth client secret for Portal sign-in; leave empty to disable Google sign-in"
+      }
+    },
+    "cloudHealthOfficeBaseUrl": {
+      "type": "string",
+      "defaultValue": "https://benefit-plan-estimate.lemoncoast-a1e8528c.westus3.azurecontainerapps.io",
+      "metadata": {
+        "description": "Base URL for the CloudHealthOffice payment estimate API"
+      }
+    },
+    "cloudHealthOfficeApiKey": {
+      "type": "securestring",
+      "metadata": {
+        "description": "API key for the CloudHealthOffice payment estimate API"
+      }
+    },
+    "cloudHealthOfficeBenefitPlanId": {
+      "type": "string",
+      "defaultValue": "3e8c59e8-47dd-4aa9-b318-9828fbdcb072",
+      "metadata": {
+        "description": "CloudHealthOffice benefit plan ID mapped to the configured payer"
+      }
+    },
+    "cloudHealthOfficePayerId": {
+      "type": "string",
+      "defaultValue": "00001",
+      "metadata": {
+        "description": "Payer ID that should route payment estimates through CloudHealthOffice"
+      }
+    },
+    "jwtIssuer": {
+      "type": "string",
+      "defaultValue": "CloudDentalOffice"
+    },
+    "jwtAudience": {
+      "type": "string",
+      "defaultValue": "CloudDentalOfficeUsers"
+    }
+  },
+  "variables": {
+    "pgBase": "[format('Host={0};Port=5432;Username={1};Password={2};SSL Mode=Require;Trust Server Certificate=true;Database=', parameters('postgresHost'), parameters('postgresAdminUser'), parameters('postgresAdminPassword'))]"
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "containerApps",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "environmentId": {
+            "value": "[parameters('environmentId')]"
+          },
+          "acrLoginServer": {
+            "value": "[parameters('acrLoginServer')]"
+          },
+          "identityId": {
+            "value": "[parameters('identityId')]"
+          },
+          "imageTag": {
+            "value": "[parameters('imageTag')]"
+          },
+          "connPortal": {
+            "value": "[format('{0}cdo_portal;', variables('pgBase'))]"
+          },
+          "connPatient": {
+            "value": "[format('{0}cdo_patients;', variables('pgBase'))]"
+          },
+          "connScheduling": {
+            "value": "[format('{0}cdo_scheduling;', variables('pgBase'))]"
+          },
+          "connClaims": {
+            "value": "[format('{0}cdo_claims;', variables('pgBase'))]"
+          },
+          "connPrescription": {
+            "value": "[format('{0}cdo_prescriptions;', variables('pgBase'))]"
+          },
+          "connVision": {
+            "value": "[format('{0}cdo_vision;', variables('pgBase'))]"
+          },
+          "jwtKey": {
+            "value": "[parameters('jwtKey')]"
+          },
+          "jwtIssuer": {
+            "value": "[parameters('jwtIssuer')]"
+          },
+          "jwtAudience": {
+            "value": "[parameters('jwtAudience')]"
+          },
+          "serviceBusSendConnection": {
+            "value": "[parameters('serviceBusSendConnection')]"
+          },
+          "serviceBusListenConnection": {
+            "value": "[parameters('serviceBusListenConnection')]"
+          },
+          "publicBookingApiKey": {
+            "value": "[parameters('publicBookingApiKey')]"
+          },
+          "initialTenantId": {
+            "value": "[parameters('initialTenantId')]"
+          },
+          "googleOAuthClientId": {
+            "value": "[parameters('googleOAuthClientId')]"
+          },
+          "googleOAuthClientSecret": {
+            "value": "[parameters('googleOAuthClientSecret')]"
+          },
+          "cloudHealthOfficeBaseUrl": {
+            "value": "[parameters('cloudHealthOfficeBaseUrl')]"
+          },
+          "cloudHealthOfficeApiKey": {
+            "value": "[parameters('cloudHealthOfficeApiKey')]"
+          },
+          "cloudHealthOfficeBenefitPlanId": {
+            "value": "[parameters('cloudHealthOfficeBenefitPlanId')]"
+          },
+          "cloudHealthOfficePayerId": {
+            "value": "[parameters('cloudHealthOfficePayerId')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.46.1.21595",
+              "templateHash": "1065299927895639023"
+            }
+          },
+          "parameters": {
+            "location": {
+              "type": "string"
+            },
+            "environmentId": {
+              "type": "string"
+            },
+            "acrLoginServer": {
+              "type": "string"
+            },
+            "identityId": {
+              "type": "string"
+            },
+            "imageTag": {
+              "type": "string",
+              "defaultValue": "latest",
+              "metadata": {
+                "description": "Docker image tag to deploy (defaults to \"latest\"; CI overrides with commit SHA)"
+              }
+            },
+            "connPortal": {
+              "type": "securestring"
+            },
+            "connPatient": {
+              "type": "securestring"
+            },
+            "connScheduling": {
+              "type": "securestring"
+            },
+            "connClaims": {
+              "type": "securestring"
+            },
+            "connPrescription": {
+              "type": "securestring"
+            },
+            "connVision": {
+              "type": "securestring"
+            },
+            "jwtKey": {
+              "type": "securestring"
+            },
+            "jwtIssuer": {
+              "type": "string"
+            },
+            "jwtAudience": {
+              "type": "string"
+            },
+            "serviceBusSendConnection": {
+              "type": "securestring"
+            },
+            "serviceBusListenConnection": {
+              "type": "securestring"
+            },
+            "publicBookingApiKey": {
+              "type": "securestring"
+            },
+            "initialTenantId": {
+              "type": "string",
+              "defaultValue": "third-set-smiles"
+            },
+            "googleOAuthClientId": {
+              "type": "string",
+              "defaultValue": ""
+            },
+            "googleOAuthClientSecret": {
+              "type": "securestring",
+              "defaultValue": ""
+            },
+            "cloudHealthOfficeBaseUrl": {
+              "type": "string"
+            },
+            "cloudHealthOfficeApiKey": {
+              "type": "securestring"
+            },
+            "cloudHealthOfficeBenefitPlanId": {
+              "type": "string"
+            },
+            "cloudHealthOfficePayerId": {
+              "type": "string",
+              "defaultValue": "00001"
+            }
+          },
+          "variables": {
+            "registry": [
+              {
+                "server": "[parameters('acrLoginServer')]",
+                "identity": "[parameters('identityId')]"
+              }
+            ],
+            "identityObj": {
+              "type": "UserAssigned",
+              "userAssignedIdentities": {
+                "[format('{0}', parameters('identityId'))]": {}
+              }
+            }
+          },
+          "resources": [
+            {
+              "type": "Microsoft.App/containerApps",
+              "apiVersion": "2023-05-01",
+              "name": "portal",
+              "location": "[parameters('location')]",
+              "identity": "[variables('identityObj')]",
+              "properties": {
+                "environmentId": "[parameters('environmentId')]",
+                "configuration": {
+                  "registries": "[variables('registry')]",
+                  "ingress": {
+                    "external": true,
+                    "targetPort": 5000,
+                    "transport": "http",
+                    "allowInsecure": false
+                  },
+                  "secrets": [
+                    {
+                      "name": "conn-default",
+                      "value": "[parameters('connPortal')]"
+                    },
+                    {
+                      "name": "jwt-key",
+                      "value": "[parameters('jwtKey')]"
+                    },
+                    {
+                      "name": "google-oauth-client-secret",
+                      "value": "[parameters('googleOAuthClientSecret')]"
+                    },
+                    {
+                      "name": "cloudhealthoffice-api-key",
+                      "value": "[parameters('cloudHealthOfficeApiKey')]"
+                    }
+                  ]
+                },
+                "template": {
+                  "containers": [
+                    {
+                      "name": "portal",
+                      "image": "[format('{0}/portal:{1}', parameters('acrLoginServer'), parameters('imageTag'))]",
+                      "resources": {
+                        "cpu": "[json('0.5')]",
+                        "memory": "1Gi"
+                      },
+                      "env": [
+                        {
+                          "name": "ASPNETCORE_ENVIRONMENT",
+                          "value": "Production"
+                        },
+                        {
+                          "name": "Database__Provider",
+                          "value": "PostgreSQL"
+                        },
+                        {
+                          "name": "Database__UseMigrations",
+                          "value": "false"
+                        },
+                        {
+                          "name": "ApiGateway__BaseUrl",
+                          "value": "http://api-gateway"
+                        },
+                        {
+                          "name": "Microservices__Patient__Enabled",
+                          "value": "true"
+                        },
+                        {
+                          "name": "ConnectionStrings__DefaultConnection",
+                          "secretRef": "conn-default"
+                        },
+                        {
+                          "name": "Jwt__Key",
+                          "secretRef": "jwt-key"
+                        },
+                        {
+                          "name": "Jwt__Issuer",
+                          "value": "[parameters('jwtIssuer')]"
+                        },
+                        {
+                          "name": "Jwt__Audience",
+                          "value": "[parameters('jwtAudience')]"
+                        },
+                        {
+                          "name": "InitialTenant__Enabled",
+                          "value": "true"
+                        },
+                        {
+                          "name": "InitialTenant__TenantId",
+                          "value": "[parameters('initialTenantId')]"
+                        },
+                        {
+                          "name": "InitialTenant__Name",
+                          "value": "3rd Set Smiles"
+                        },
+                        {
+                          "name": "InitialTenant__Domain",
+                          "value": "3rdsetsmiles.com"
+                        },
+                        {
+                          "name": "AzureAd__Enabled",
+                          "value": "false"
+                        },
+                        {
+                          "name": "StaffAuth__Enabled",
+                          "value": "[if(not(empty(parameters('googleOAuthClientId'))), 'true', 'false')]"
+                        },
+                        {
+                          "name": "StaffAuth__TenantId",
+                          "value": "[parameters('initialTenantId')]"
+                        },
+                        {
+                          "name": "StaffAuth__Users__0__Email",
+                          "value": "matt@3rdsetsmiles.com"
+                        },
+                        {
+                          "name": "StaffAuth__Users__0__Role",
+                          "value": "Admin"
+                        },
+                        {
+                          "name": "StaffAuth__Users__1__Email",
+                          "value": "markus.phillips@gmail.com"
+                        },
+                        {
+                          "name": "StaffAuth__Users__1__Role",
+                          "value": "Admin"
+                        },
+                        {
+                          "name": "CloudHealthOffice__Enabled",
+                          "value": "true"
+                        },
+                        {
+                          "name": "CloudHealthOffice__BaseUrl",
+                          "value": "[parameters('cloudHealthOfficeBaseUrl')]"
+                        },
+                        {
+                          "name": "CloudHealthOffice__EstimatePath",
+                          "value": "/api/v1/adjudication/estimate"
+                        },
+                        {
+                          "name": "CloudHealthOffice__ApiKey",
+                          "secretRef": "cloudhealthoffice-api-key"
+                        },
+                        {
+                          "name": "[format('CloudHealthOffice__BenefitPlanMappings__{0}', parameters('cloudHealthOfficePayerId'))]",
+                          "value": "[parameters('cloudHealthOfficeBenefitPlanId')]"
+                        },
+                        {
+                          "name": "[format('PayerConnectivity__Payers__{0}__PaymentEstimate__0', parameters('cloudHealthOfficePayerId'))]",
+                          "value": "CloudHealthOffice"
+                        }
+                      ]
+                    }
+                  ],
+                  "scale": {
+                    "minReplicas": 1,
+                    "maxReplicas": 3
+                  }
+                }
+              }
+            },
+            {
+              "condition": "[not(empty(parameters('googleOAuthClientId')))]",
+              "type": "Microsoft.App/containerApps/authConfigs",
+              "apiVersion": "2024-03-01",
+              "name": "[format('{0}/{1}', 'portal', 'current')]",
+              "properties": {
+                "platform": {
+                  "enabled": true
+                },
+                "globalValidation": {
+                  "unauthenticatedClientAction": "RedirectToLoginPage",
+                  "redirectToProvider": "google"
+                },
+                "identityProviders": {
+                  "google": {
+                    "registration": {
+                      "clientId": "[parameters('googleOAuthClientId')]",
+                      "clientSecretSettingName": "google-oauth-client-secret"
+                    },
+                    "validation": {
+                      "allowedAudiences": [
+                        "[parameters('googleOAuthClientId')]"
+                      ]
+                    }
+                  }
+                },
+                "login": {
+                  "tokenStore": {
+                    "enabled": false
+                  }
+                },
+                "httpSettings": {
+                  "requireHttps": true
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.App/containerApps', 'portal')]"
+              ]
+            },
+            {
+              "type": "Microsoft.App/containerApps",
+              "apiVersion": "2023-05-01",
+              "name": "api-gateway",
+              "location": "[parameters('location')]",
+              "identity": "[variables('identityObj')]",
+              "properties": {
+                "environmentId": "[parameters('environmentId')]",
+                "configuration": {
+                  "registries": "[variables('registry')]",
+                  "ingress": {
+                    "external": false,
+                    "targetPort": 5200,
+                    "transport": "http"
+                  }
+                },
+                "template": {
+                  "containers": [
+                    {
+                      "name": "api-gateway",
+                      "image": "[format('{0}/api-gateway:{1}', parameters('acrLoginServer'), parameters('imageTag'))]",
+                      "resources": {
+                        "cpu": "[json('0.25')]",
+                        "memory": "0.5Gi"
+                      },
+                      "env": [
+                        {
+                          "name": "ASPNETCORE_ENVIRONMENT",
+                          "value": "Production"
+                        },
+                        {
+                          "name": "ReverseProxy__Clusters__patient-cluster__Destinations__primary__Address",
+                          "value": "http://patient-service"
+                        },
+                        {
+                          "name": "ReverseProxy__Clusters__scheduling-cluster__Destinations__primary__Address",
+                          "value": "http://scheduling-service"
+                        },
+                        {
+                          "name": "ReverseProxy__Clusters__claims-cluster__Destinations__primary__Address",
+                          "value": "http://claims-service"
+                        },
+                        {
+                          "name": "ReverseProxy__Clusters__eligibility-cluster__Destinations__primary__Address",
+                          "value": "http://eligibility-service"
+                        },
+                        {
+                          "name": "ReverseProxy__Clusters__era-cluster__Destinations__primary__Address",
+                          "value": "http://era-service"
+                        },
+                        {
+                          "name": "ReverseProxy__Clusters__auth-cluster__Destinations__primary__Address",
+                          "value": "http://auth-service"
+                        },
+                        {
+                          "name": "ReverseProxy__Clusters__prescription-cluster__Destinations__primary__Address",
+                          "value": "http://prescription-service"
+                        },
+                        {
+                          "name": "ReverseProxy__Clusters__vision-cluster__Destinations__primary__Address",
+                          "value": "http://vision-service"
+                        }
+                      ]
+                    }
+                  ],
+                  "scale": {
+                    "minReplicas": 1,
+                    "maxReplicas": 3
+                  }
+                }
+              }
+            },
+            {
+              "type": "Microsoft.App/containerApps",
+              "apiVersion": "2023-05-01",
+              "name": "patient-service",
+              "location": "[parameters('location')]",
+              "identity": "[variables('identityObj')]",
+              "properties": {
+                "environmentId": "[parameters('environmentId')]",
+                "configuration": {
+                  "registries": "[variables('registry')]",
+                  "ingress": {
+                    "external": false,
+                    "targetPort": 5101,
+                    "transport": "http"
+                  },
+                  "secrets": [
+                    {
+                      "name": "conn-patient",
+                      "value": "[parameters('connPatient')]"
+                    }
+                  ]
+                },
+                "template": {
+                  "containers": [
+                    {
+                      "name": "patient-service",
+                      "image": "[format('{0}/patient-service:{1}', parameters('acrLoginServer'), parameters('imageTag'))]",
+                      "resources": {
+                        "cpu": "[json('0.25')]",
+                        "memory": "0.5Gi"
+                      },
+                      "env": [
+                        {
+                          "name": "ASPNETCORE_ENVIRONMENT",
+                          "value": "Production"
+                        },
+                        {
+                          "name": "DatabaseProvider",
+                          "value": "PostgreSQL"
+                        },
+                        {
+                          "name": "ConnectionStrings__PatientDb",
+                          "secretRef": "conn-patient"
+                        }
+                      ]
+                    }
+                  ],
+                  "scale": {
+                    "minReplicas": 0,
+                    "maxReplicas": 3
+                  }
+                }
+              }
+            },
+            {
+              "type": "Microsoft.App/containerApps",
+              "apiVersion": "2023-05-01",
+              "name": "scheduling-service",
+              "location": "[parameters('location')]",
+              "identity": "[variables('identityObj')]",
+              "properties": {
+                "environmentId": "[parameters('environmentId')]",
+                "configuration": {
+                  "registries": "[variables('registry')]",
+                  "ingress": {
+                    "external": false,
+                    "targetPort": 5102,
+                    "transport": "http"
+                  },
+                  "secrets": [
+                    {
+                      "name": "conn-scheduling",
+                      "value": "[parameters('connScheduling')]"
+                    },
+                    {
+                      "name": "servicebus-listen",
+                      "value": "[parameters('serviceBusListenConnection')]"
+                    }
+                  ]
+                },
+                "template": {
+                  "containers": [
+                    {
+                      "name": "scheduling-service",
+                      "image": "[format('{0}/scheduling-service:{1}', parameters('acrLoginServer'), parameters('imageTag'))]",
+                      "resources": {
+                        "cpu": "[json('0.25')]",
+                        "memory": "0.5Gi"
+                      },
+                      "env": [
+                        {
+                          "name": "ASPNETCORE_ENVIRONMENT",
+                          "value": "Production"
+                        },
+                        {
+                          "name": "DatabaseProvider",
+                          "value": "PostgreSQL"
+                        },
+                        {
+                          "name": "ConnectionStrings__SchedulingDb",
+                          "secretRef": "conn-scheduling"
+                        },
+                        {
+                          "name": "ServiceBus__ConnectionString",
+                          "secretRef": "servicebus-listen"
+                        }
+                      ]
+                    }
+                  ],
+                  "scale": {
+                    "minReplicas": 0,
+                    "maxReplicas": 3,
+                    "rules": [
+                      {
+                        "name": "booking-request-messages",
+                        "custom": {
+                          "type": "azure-servicebus",
+                          "metadata": {
+                            "topicName": "booking-requests",
+                            "subscriptionName": "scheduling",
+                            "messageCount": "1"
+                          },
+                          "auth": [
+                            {
+                              "secretRef": "servicebus-listen",
+                              "triggerParameter": "connection"
+                            }
+                          ]
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            },
+            {
+              "type": "Microsoft.App/containerApps",
+              "apiVersion": "2023-05-01",
+              "name": "intake-service",
+              "location": "[parameters('location')]",
+              "identity": "[variables('identityObj')]",
+              "properties": {
+                "environmentId": "[parameters('environmentId')]",
+                "configuration": {
+                  "registries": "[variables('registry')]",
+                  "ingress": {
+                    "external": true,
+                    "targetPort": 5109,
+                    "transport": "http",
+                    "allowInsecure": false
+                  },
+                  "secrets": [
+                    {
+                      "name": "servicebus-send",
+                      "value": "[parameters('serviceBusSendConnection')]"
+                    },
+                    {
+                      "name": "booking-key",
+                      "value": "[parameters('publicBookingApiKey')]"
+                    }
+                  ]
+                },
+                "template": {
+                  "containers": [
+                    {
+                      "name": "intake-service",
+                      "image": "[format('{0}/intake-service:{1}', parameters('acrLoginServer'), parameters('imageTag'))]",
+                      "resources": {
+                        "cpu": "[json('0.25')]",
+                        "memory": "0.5Gi"
+                      },
+                      "env": [
+                        {
+                          "name": "ASPNETCORE_ENVIRONMENT",
+                          "value": "Production"
+                        },
+                        {
+                          "name": "ServiceBus__ConnectionString",
+                          "secretRef": "servicebus-send"
+                        },
+                        {
+                          "name": "PublicBooking__Enabled",
+                          "value": "true"
+                        },
+                        {
+                          "name": "PublicBooking__Clients__0__TenantId",
+                          "value": "[parameters('initialTenantId')]"
+                        },
+                        {
+                          "name": "PublicBooking__Clients__0__ApiKey",
+                          "secretRef": "booking-key"
+                        },
+                        {
+                          "name": "PublicBooking__Source",
+                          "value": "3rdsetsmiles.com"
+                        }
+                      ],
+                      "probes": [
+                        {
+                          "type": "Liveness",
+                          "httpGet": {
+                            "path": "/health",
+                            "port": 5109
+                          },
+                          "initialDelaySeconds": 10,
+                          "periodSeconds": 10
+                        },
+                        {
+                          "type": "Readiness",
+                          "httpGet": {
+                            "path": "/health",
+                            "port": 5109
+                          },
+                          "initialDelaySeconds": 5,
+                          "periodSeconds": 5
+                        }
+                      ]
+                    }
+                  ],
+                  "scale": {
+                    "minReplicas": 1,
+                    "maxReplicas": 3
+                  }
+                }
+              }
+            },
+            {
+              "type": "Microsoft.App/containerApps",
+              "apiVersion": "2023-05-01",
+              "name": "claims-service",
+              "location": "[parameters('location')]",
+              "identity": "[variables('identityObj')]",
+              "properties": {
+                "environmentId": "[parameters('environmentId')]",
+                "configuration": {
+                  "registries": "[variables('registry')]",
+                  "ingress": {
+                    "external": false,
+                    "targetPort": 5103,
+                    "transport": "http"
+                  },
+                  "secrets": [
+                    {
+                      "name": "conn-claims",
+                      "value": "[parameters('connClaims')]"
+                    }
+                  ]
+                },
+                "template": {
+                  "containers": [
+                    {
+                      "name": "claims-service",
+                      "image": "[format('{0}/claims-service:{1}', parameters('acrLoginServer'), parameters('imageTag'))]",
+                      "resources": {
+                        "cpu": "[json('0.25')]",
+                        "memory": "0.5Gi"
+                      },
+                      "env": [
+                        {
+                          "name": "ASPNETCORE_ENVIRONMENT",
+                          "value": "Production"
+                        },
+                        {
+                          "name": "DatabaseProvider",
+                          "value": "PostgreSQL"
+                        },
+                        {
+                          "name": "ConnectionStrings__ClaimsDb",
+                          "secretRef": "conn-claims"
+                        }
+                      ]
+                    }
+                  ],
+                  "scale": {
+                    "minReplicas": 0,
+                    "maxReplicas": 3
+                  }
+                }
+              }
+            },
+            {
+              "type": "Microsoft.App/containerApps",
+              "apiVersion": "2023-05-01",
+              "name": "eligibility-service",
+              "location": "[parameters('location')]",
+              "identity": "[variables('identityObj')]",
+              "properties": {
+                "environmentId": "[parameters('environmentId')]",
+                "configuration": {
+                  "registries": "[variables('registry')]",
+                  "ingress": {
+                    "external": false,
+                    "targetPort": 5104,
+                    "transport": "http"
+                  }
+                },
+                "template": {
+                  "containers": [
+                    {
+                      "name": "eligibility-service",
+                      "image": "[format('{0}/eligibility-service:{1}', parameters('acrLoginServer'), parameters('imageTag'))]",
+                      "resources": {
+                        "cpu": "[json('0.25')]",
+                        "memory": "0.5Gi"
+                      },
+                      "env": [
+                        {
+                          "name": "ASPNETCORE_ENVIRONMENT",
+                          "value": "Production"
+                        }
+                      ]
+                    }
+                  ],
+                  "scale": {
+                    "minReplicas": 0,
+                    "maxReplicas": 3
+                  }
+                }
+              }
+            },
+            {
+              "type": "Microsoft.App/containerApps",
+              "apiVersion": "2023-05-01",
+              "name": "era-service",
+              "location": "[parameters('location')]",
+              "identity": "[variables('identityObj')]",
+              "properties": {
+                "environmentId": "[parameters('environmentId')]",
+                "configuration": {
+                  "registries": "[variables('registry')]",
+                  "ingress": {
+                    "external": false,
+                    "targetPort": 5105,
+                    "transport": "http"
+                  }
+                },
+                "template": {
+                  "containers": [
+                    {
+                      "name": "era-service",
+                      "image": "[format('{0}/era-service:{1}', parameters('acrLoginServer'), parameters('imageTag'))]",
+                      "resources": {
+                        "cpu": "[json('0.25')]",
+                        "memory": "0.5Gi"
+                      },
+                      "env": [
+                        {
+                          "name": "ASPNETCORE_ENVIRONMENT",
+                          "value": "Production"
+                        }
+                      ]
+                    }
+                  ],
+                  "scale": {
+                    "minReplicas": 0,
+                    "maxReplicas": 3
+                  }
+                }
+              }
+            },
+            {
+              "type": "Microsoft.App/containerApps",
+              "apiVersion": "2023-05-01",
+              "name": "auth-service",
+              "location": "[parameters('location')]",
+              "identity": "[variables('identityObj')]",
+              "properties": {
+                "environmentId": "[parameters('environmentId')]",
+                "configuration": {
+                  "registries": "[variables('registry')]",
+                  "ingress": {
+                    "external": false,
+                    "targetPort": 5106,
+                    "transport": "http"
+                  },
+                  "secrets": [
+                    {
+                      "name": "jwt-key",
+                      "value": "[parameters('jwtKey')]"
+                    }
+                  ]
+                },
+                "template": {
+                  "containers": [
+                    {
+                      "name": "auth-service",
+                      "image": "[format('{0}/auth-service:{1}', parameters('acrLoginServer'), parameters('imageTag'))]",
+                      "resources": {
+                        "cpu": "[json('0.25')]",
+                        "memory": "0.5Gi"
+                      },
+                      "env": [
+                        {
+                          "name": "ASPNETCORE_ENVIRONMENT",
+                          "value": "Production"
+                        },
+                        {
+                          "name": "Jwt__Key",
+                          "secretRef": "jwt-key"
+                        },
+                        {
+                          "name": "Jwt__Issuer",
+                          "value": "[parameters('jwtIssuer')]"
+                        },
+                        {
+                          "name": "Jwt__Audience",
+                          "value": "[parameters('jwtAudience')]"
+                        }
+                      ]
+                    }
+                  ],
+                  "scale": {
+                    "minReplicas": 0,
+                    "maxReplicas": 3
+                  }
+                }
+              }
+            },
+            {
+              "type": "Microsoft.App/containerApps",
+              "apiVersion": "2023-05-01",
+              "name": "prescription-service",
+              "location": "[parameters('location')]",
+              "identity": "[variables('identityObj')]",
+              "properties": {
+                "environmentId": "[parameters('environmentId')]",
+                "configuration": {
+                  "registries": "[variables('registry')]",
+                  "ingress": {
+                    "external": false,
+                    "targetPort": 5107,
+                    "transport": "http"
+                  },
+                  "secrets": [
+                    {
+                      "name": "conn-prescription",
+                      "value": "[parameters('connPrescription')]"
+                    }
+                  ]
+                },
+                "template": {
+                  "containers": [
+                    {
+                      "name": "prescription-service",
+                      "image": "[format('{0}/prescription-service:{1}', parameters('acrLoginServer'), parameters('imageTag'))]",
+                      "resources": {
+                        "cpu": "[json('0.25')]",
+                        "memory": "0.5Gi"
+                      },
+                      "env": [
+                        {
+                          "name": "ASPNETCORE_ENVIRONMENT",
+                          "value": "Production"
+                        },
+                        {
+                          "name": "DatabaseProvider",
+                          "value": "PostgreSQL"
+                        },
+                        {
+                          "name": "ConnectionStrings__PrescriptionDb",
+                          "secretRef": "conn-prescription"
+                        },
+                        {
+                          "name": "ErxProvider",
+                          "value": "Mock"
+                        }
+                      ],
+                      "probes": [
+                        {
+                          "type": "Liveness",
+                          "httpGet": {
+                            "path": "/health",
+                            "port": 5107
+                          },
+                          "initialDelaySeconds": 30,
+                          "periodSeconds": 10,
+                          "failureThreshold": 3
+                        },
+                        {
+                          "type": "Readiness",
+                          "httpGet": {
+                            "path": "/health",
+                            "port": 5107
+                          },
+                          "initialDelaySeconds": 20,
+                          "periodSeconds": 5,
+                          "failureThreshold": 3
+                        }
+                      ]
+                    }
+                  ],
+                  "scale": {
+                    "minReplicas": 0,
+                    "maxReplicas": 3
+                  }
+                }
+              }
+            },
+            {
+              "type": "Microsoft.App/containerApps",
+              "apiVersion": "2023-05-01",
+              "name": "vision-service",
+              "location": "[parameters('location')]",
+              "identity": "[variables('identityObj')]",
+              "properties": {
+                "environmentId": "[parameters('environmentId')]",
+                "configuration": {
+                  "registries": "[variables('registry')]",
+                  "ingress": {
+                    "external": false,
+                    "targetPort": 5108,
+                    "transport": "http"
+                  },
+                  "secrets": [
+                    {
+                      "name": "conn-vision",
+                      "value": "[parameters('connVision')]"
+                    }
+                  ]
+                },
+                "template": {
+                  "containers": [
+                    {
+                      "name": "vision-service",
+                      "image": "[format('{0}/vision-service:{1}', parameters('acrLoginServer'), parameters('imageTag'))]",
+                      "resources": {
+                        "cpu": "[json('0.25')]",
+                        "memory": "0.5Gi"
+                      },
+                      "env": [
+                        {
+                          "name": "ASPNETCORE_ENVIRONMENT",
+                          "value": "Production"
+                        },
+                        {
+                          "name": "DatabaseProvider",
+                          "value": "PostgreSQL"
+                        },
+                        {
+                          "name": "ConnectionStrings__VisionDb",
+                          "secretRef": "conn-vision"
+                        },
+                        {
+                          "name": "OcrProvider",
+                          "value": "Mock"
+                        },
+                        {
+                          "name": "CorrelationProvider",
+                          "value": "Mock"
+                        },
+                        {
+                          "name": "ApiGatewayUrl",
+                          "value": "http://api-gateway"
+                        }
+                      ],
+                      "probes": [
+                        {
+                          "type": "Liveness",
+                          "httpGet": {
+                            "path": "/health",
+                            "port": 5108
+                          },
+                          "initialDelaySeconds": 30,
+                          "periodSeconds": 10,
+                          "failureThreshold": 3
+                        },
+                        {
+                          "type": "Readiness",
+                          "httpGet": {
+                            "path": "/health",
+                            "port": 5108
+                          },
+                          "initialDelaySeconds": 20,
+                          "periodSeconds": 5,
+                          "failureThreshold": 3
+                        }
+                      ]
+                    }
+                  ],
+                  "scale": {
+                    "minReplicas": 0,
+                    "maxReplicas": 3
+                  }
+                }
+              }
+            }
+          ],
+          "outputs": {
+            "portalFqdn": {
+              "type": "string",
+              "metadata": {
+                "description": "Public FQDN of the portal — use this as your app URL"
+              },
+              "value": "[reference(resourceId('Microsoft.App/containerApps', 'portal'), '2023-05-01').configuration.ingress.fqdn]"
+            },
+            "intakeFqdn": {
+              "type": "string",
+              "metadata": {
+                "description": "Public HTTPS host for Cloudflare Pages CLOUDDENTAL_API_BASE"
+              },
+              "value": "[reference(resourceId('Microsoft.App/containerApps', 'intake-service'), '2023-05-01').configuration.ingress.fqdn]"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "portalFqdn": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.Resources/deployments', 'containerApps'), '2025-04-01').outputs.portalFqdn.value]"
+    },
+    "intakeFqdn": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.Resources/deployments', 'containerApps'), '2025-04-01').outputs.intakeFqdn.value]"
+    }
+  }
+}

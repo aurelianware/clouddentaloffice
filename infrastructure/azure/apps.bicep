@@ -46,14 +46,21 @@ param serviceBusSendConnection string
 param serviceBusListenConnection string
 @secure()
 param publicBookingApiKey string
+@description('Initial tenant identifier to configure in the Portal app')
 param initialTenantId string = 'third-set-smiles'
+@description('Google OAuth client ID for Portal sign-in; leave empty to disable Google sign-in')
 param googleOAuthClientId string = ''
 @secure()
+@description('Google OAuth client secret for Portal sign-in; leave empty to disable Google sign-in')
 param googleOAuthClientSecret string = ''
+@description('Base URL for the CloudHealthOffice payment estimate API')
 param cloudHealthOfficeBaseUrl string = 'https://benefit-plan-estimate.lemoncoast-a1e8528c.westus3.azurecontainerapps.io'
 @secure()
+@description('API key for the CloudHealthOffice payment estimate API')
 param cloudHealthOfficeApiKey string
+@description('CloudHealthOffice benefit plan ID mapped to the configured payer')
 param cloudHealthOfficeBenefitPlanId string = '3e8c59e8-47dd-4aa9-b318-9828fbdcb072'
+@description('Payer ID that should route payment estimates through CloudHealthOffice')
 param cloudHealthOfficePayerId string = '00001'
 
 param jwtIssuer string = 'CloudDentalOffice'
