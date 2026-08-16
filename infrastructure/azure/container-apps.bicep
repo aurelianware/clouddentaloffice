@@ -38,6 +38,11 @@ param initialTenantId string = 'third-set-smiles'
 param googleOAuthClientId string = ''
 @secure()
 param googleOAuthClientSecret string = ''
+param cloudHealthOfficeBaseUrl string
+@secure()
+param cloudHealthOfficeApiKey string
+param cloudHealthOfficeBenefitPlanId string
+param cloudHealthOfficePayerId string = '00001'
 
 // Shared registry config — Managed Identity pulls from ACR (no admin credentials)
 var registry = [
@@ -75,6 +80,7 @@ resource portal 'Microsoft.App/containerApps@2023-05-01' = {
         { name: 'conn-default', value: connPortal }
         { name: 'jwt-key', value: jwtKey }
         { name: 'google-oauth-client-secret', value: googleOAuthClientSecret }
+        { name: 'cloudhealthoffice-api-key', value: cloudHealthOfficeApiKey }
       ]
     }
     template: {
@@ -105,6 +111,12 @@ resource portal 'Microsoft.App/containerApps@2023-05-01' = {
             { name: 'StaffAuth__Users__0__Role', value: 'Admin' }
             { name: 'StaffAuth__Users__1__Email', value: 'markus.phillips@gmail.com' }
             { name: 'StaffAuth__Users__1__Role', value: 'Admin' }
+            { name: 'CloudHealthOffice__Enabled', value: 'true' }
+            { name: 'CloudHealthOffice__BaseUrl', value: cloudHealthOfficeBaseUrl }
+            { name: 'CloudHealthOffice__EstimatePath', value: '/api/v1/adjudication/estimate' }
+            { name: 'CloudHealthOffice__ApiKey', secretRef: 'cloudhealthoffice-api-key' }
+            { name: 'CloudHealthOffice__BenefitPlanMappings__${cloudHealthOfficePayerId}', value: cloudHealthOfficeBenefitPlanId }
+            { name: 'PayerConnectivity__Payers__${cloudHealthOfficePayerId}__PaymentEstimate__0', value: 'CloudHealthOffice' }
           ]
         }
       ]

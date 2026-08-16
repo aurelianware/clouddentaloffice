@@ -50,6 +50,11 @@ param initialTenantId string = 'third-set-smiles'
 param googleOAuthClientId string = ''
 @secure()
 param googleOAuthClientSecret string = ''
+param cloudHealthOfficeBaseUrl string = 'https://benefit-plan-estimate.lemoncoast-a1e8528c.westus3.azurecontainerapps.io'
+@secure()
+param cloudHealthOfficeApiKey string
+param cloudHealthOfficeBenefitPlanId string = '3e8c59e8-47dd-4aa9-b318-9828fbdcb072'
+param cloudHealthOfficePayerId string = '00001'
 
 param jwtIssuer string = 'CloudDentalOffice'
 param jwtAudience string = 'CloudDentalOfficeUsers'
@@ -79,6 +84,10 @@ module apps 'container-apps.bicep' = {
     initialTenantId: initialTenantId
     googleOAuthClientId: googleOAuthClientId
     googleOAuthClientSecret: googleOAuthClientSecret
+    cloudHealthOfficeBaseUrl: cloudHealthOfficeBaseUrl
+    cloudHealthOfficeApiKey: cloudHealthOfficeApiKey
+    cloudHealthOfficeBenefitPlanId: cloudHealthOfficeBenefitPlanId
+    cloudHealthOfficePayerId: cloudHealthOfficePayerId
   }
 }
 

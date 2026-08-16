@@ -16,6 +16,7 @@ name: Deploy to Azure Container Apps
 #   PUBLIC_BOOKING_API_KEY – 32+ character website-to-IntakeService credential
 #   GOOGLE_OAUTH_CLIENT_ID – Google OAuth web client for the Portal ACA hostname
 #   GOOGLE_OAUTH_CLIENT_SECRET – matching Google OAuth client secret
+#   CHO_ESTIMATE_API_KEY   – API key for the estimate-only CloudHealthOffice endpoint
 #
 # One-time infrastructure setup (run locally, not in CI):
 #   az group create --name cdo-prod-rg --location westus3
@@ -225,7 +226,8 @@ jobs:
               serviceBusListenConnection='${{ steps.servicebus.outputs.listen_connection }}' \
               publicBookingApiKey='${{ secrets.PUBLIC_BOOKING_API_KEY }}' \
               googleOAuthClientId='${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}' \
-              googleOAuthClientSecret='${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}'
+              googleOAuthClientSecret='${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}' \
+              cloudHealthOfficeApiKey='${{ secrets.CHO_ESTIMATE_API_KEY }}'
 
       # DNS is hosted in Cloudflare. The CNAME and asuid TXT records must exist
       # before this step runs. Keeping hostname/certificate binding here makes
