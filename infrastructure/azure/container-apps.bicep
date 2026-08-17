@@ -111,6 +111,8 @@ resource portal 'Microsoft.App/containerApps@2023-05-01' = {
             { name: 'StaffAuth__Users__0__Role', value: 'Admin' }
             { name: 'StaffAuth__Users__1__Email', value: 'markus.phillips@gmail.com' }
             { name: 'StaffAuth__Users__1__Role', value: 'Admin' }
+            { name: 'StaffAuth__Users__2__Email', value: 'cindy@3rdsetsmiles.com' }
+            { name: 'StaffAuth__Users__2__Role', value: 'Admin' }
             { name: 'CloudHealthOffice__Enabled', value: 'true' }
             { name: 'CloudHealthOffice__BaseUrl', value: cloudHealthOfficeBaseUrl }
             { name: 'CloudHealthOffice__EstimatePath', value: '/api/v1/adjudication/estimate' }
