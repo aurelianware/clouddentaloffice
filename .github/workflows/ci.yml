@@ -1,0 +1,70 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_call:
+
+permissions:
+  contents: read
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 8 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+          cache: true
+          cache-dependency-path: '**/*.csproj'
+
+      - name: Restore
+        run: dotnet restore CloudDentalOffice.sln
+
+      - name: Build
+        run: dotnet build CloudDentalOffice.sln --configuration Release --no-restore
+
+  tests:
+    name: Tests
+    needs: [build]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 8 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+          cache: true
+          cache-dependency-path: '**/*.csproj'
+
+      - name: Restore
+        run: dotnet restore CloudDentalOffice.sln
+
+      - name: Run deterministic test suite
+        run: >-
+          dotnet test CloudDentalOffice.sln
+          --configuration Release
+          --no-restore
+          --logger "trx;LogFilePrefix=ci"
+          --results-directory "${{ github.workspace }}/TestResults"
+
+      - name: Upload test results
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-${{ github.run_id }}-${{ github.run_attempt }}
+          path: TestResults/**/*.trx
+          if-no-files-found: warn
+          retention-days: 14

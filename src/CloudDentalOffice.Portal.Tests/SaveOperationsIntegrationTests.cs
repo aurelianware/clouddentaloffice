@@ -331,7 +331,8 @@ public class SaveOperationsIntegrationTests : IDisposable
             TenantId = _testTenantId,
             PatientId = 1,
             ProviderId = 1,
-            AppointmentDateTime = DateTime.Today.AddDays(1).AddHours(9),
+            AppointmentDateTime = DateTime.SpecifyKind(
+                DateTime.Today.AddDays(1).AddHours(9), DateTimeKind.Unspecified),
             DurationMinutes = 60,
             AppointmentType = "Exam",
             Status = "Scheduled",
@@ -343,7 +344,8 @@ public class SaveOperationsIntegrationTests : IDisposable
             TenantId = _testTenantId,
             PatientId = 2,
             ProviderId = 1,
-            AppointmentDateTime = DateTime.Today.AddDays(1).AddHours(10).AddMinutes(30),
+            AppointmentDateTime = DateTime.SpecifyKind(
+                DateTime.Today.AddDays(1).AddHours(10).AddMinutes(30), DateTimeKind.Unspecified),
             DurationMinutes = 30,
             AppointmentType = "Cleaning",
             Status = "Scheduled",

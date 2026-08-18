@@ -394,9 +394,21 @@ public class CloudDentalDbContext : DbContext
             {
                 if (property.CurrentValue is DateTime dateTime && dateTime.Kind != DateTimeKind.Utc)
                 {
-                    property.CurrentValue = dateTime.Kind == DateTimeKind.Local
+                    var normalized = dateTime.Kind == DateTimeKind.Local
                         ? dateTime.ToUniversalTime()
                         : DateTime.SpecifyKind(dateTime, DateTimeKind.Utc);
+                    // DateTime.Equals compares ticks but not Kind. EF can therefore
+                    // discard a CurrentValue assignment that changes only Kind.
+                    // Write through the CLR property so the UTC stamp reaches the
+                    // entity before a relational provider validates the value.
+                    if (property.Metadata.PropertyInfo is { } propertyInfo)
+                    {
+                        propertyInfo.SetValue(entry.Entity, normalized);
+                    }
+                    else
+                    {
+                        property.CurrentValue = normalized;
+                    }
                 }
             }
         }

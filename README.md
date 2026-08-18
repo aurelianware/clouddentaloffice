@@ -228,9 +228,10 @@ Swagger (per service): http://localhost:510x/swagger
 git clone https://github.com/aurelianware/clouddentaloffice.git
 cd clouddentaloffice
 
-# Restore and build all projects
+# Restore, build, and run all deterministic tests
 dotnet restore CloudDentalOffice.sln
-dotnet build CloudDentalOffice.sln
+dotnet build CloudDentalOffice.sln --no-restore
+dotnet test CloudDentalOffice.sln --no-restore --no-build
 
 # Run individual services
 dotnet run --project src/Services/PatientService
@@ -240,6 +241,40 @@ dotnet run --project src/CloudDentalOffice.Portal
 ```
 
 Each service defaults to SQLite for local dev — no database setup required.
+
+### Continuous integration
+
+`.github/workflows/ci.yml` runs for pull requests and pushes to `main` using the
+.NET 8 SDK selected by `Directory.Build.props` and the .NET 8 deployment
+Dockerfiles. It restores and builds the complete solution, then runs every test
+project included in `CloudDentalOffice.sln`:
+
+- `CloudDentalOffice.Portal.Tests`
+- `SchedulingService.Tests`
+- `IntakeService.Tests`
+
+Test output is written as TRX and uploaded for 14 days, including on failure.
+Configure the following checks as required status checks for `main` branch
+protection:
+
+```text
+CI / Build
+CI / Tests
+```
+
+Azure deployment runs only after the `CI` workflow succeeds for the exact
+`main` commit. Manually dispatched Azure and DOKS deployments invoke the same
+reusable validation workflow before any registry login, image build, push, or
+deployment step.
+
+The `Zocdoc.IntegrationTests` project is deliberately not in the normal solution.
+It contacts Zocdoc's external sandbox and requires partner-issued credentials.
+Run it locally as documented in
+[`src/Services/Zocdoc.IntegrationTests/README.md`](src/Services/Zocdoc.IntegrationTests/README.md),
+or manually dispatch **Zocdoc Sandbox Certification**. Store
+`ZOCDOC_SANDBOX_CLIENT_ID` and `ZOCDOC_SANDBOX_CLIENT_SECRET` in the protected
+`zocdoc-sandbox` GitHub environment. The workflow fails with a configuration
+message when either secret is absent and never runs for pull requests.
 
 ### Local Kubernetes
 
