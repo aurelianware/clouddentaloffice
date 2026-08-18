@@ -60,6 +60,9 @@ param zocdocWebhookIntegrationId string = ''
 @secure()
 @description('Base64 webhook signing key issued by Zocdoc')
 param zocdocWebhookSecret string = ''
+@secure()
+@description('Tenant-scoped credential for IntakeService inbox status and retry operations')
+param integrationInboxAdminApiKey string = ''
 @description('Initial tenant identifier to configure in the Portal app')
 param initialTenantId string = 'third-set-smiles'
 @description('Google OAuth client ID for Portal sign-in; leave empty to disable Google sign-in')
@@ -93,6 +96,7 @@ module apps 'container-apps.bicep' = {
     connPortal: '${pgBase}cdo_portal;'
     connPatient: '${pgBase}cdo_patients;'
     connScheduling: '${pgBase}cdo_scheduling;'
+    connIntake: '${pgBase}cdo_intake;'
     connClaims: '${pgBase}cdo_claims;'
     connPrescription: '${pgBase}cdo_prescriptions;'
     connVision: '${pgBase}cdo_vision;'
@@ -107,6 +111,7 @@ module apps 'container-apps.bicep' = {
     publicAvailabilitySlotKey: publicAvailabilitySlotKey
     zocdocWebhookIntegrationId: zocdocWebhookIntegrationId
     zocdocWebhookSecret: zocdocWebhookSecret
+    integrationInboxAdminApiKey: integrationInboxAdminApiKey
     initialTenantId: initialTenantId
     googleOAuthClientId: googleOAuthClientId
     googleOAuthClientSecret: googleOAuthClientSecret

@@ -19,6 +19,8 @@ param connPatient string
 @secure()
 param connScheduling string
 @secure()
+param connIntake string
+@secure()
 param connClaims string
 @secure()
 param connPrescription string
@@ -43,6 +45,8 @@ param publicAvailabilitySlotKey string
 param zocdocWebhookIntegrationId string = ''
 @secure()
 param zocdocWebhookSecret string = ''
+@secure()
+param integrationInboxAdminApiKey string = ''
 param initialTenantId string = 'third-set-smiles'
 param googleOAuthClientId string = ''
 @secure()
@@ -369,7 +373,8 @@ resource schedulingService 'Microsoft.App/containerApps@2023-05-01' = {
 }
 
 // ── intake-service ───────────────────────────────────────────────────────────
-// The only public API. It has no database secret and cannot reach patient data.
+// The only public API. Its isolated database contains only minimized inbox data;
+// it cannot reach patient, clinical, or scheduling databases.
 resource intakeService 'Microsoft.App/containerApps@2023-05-01' = {
   name: 'intake-service'
   location: location
@@ -380,9 +385,11 @@ resource intakeService 'Microsoft.App/containerApps@2023-05-01' = {
       registries: registry
       ingress: { external: true, targetPort: 5109, transport: 'http', allowInsecure: false }
       secrets: [
+        { name: 'conn-intake', value: connIntake }
         { name: 'servicebus-send', value: serviceBusSendConnection }
         { name: 'booking-key', value: publicBookingApiKey }
         { name: 'zocdoc-webhook-secret', value: zocdocWebhookSecret }
+        { name: 'inbox-admin-key', value: integrationInboxAdminApiKey }
         { name: 'scheduling-service-api-key', value: publicSchedulingServiceApiKey }
       ]
     }
@@ -394,6 +401,8 @@ resource intakeService 'Microsoft.App/containerApps@2023-05-01' = {
           resources: { cpu: json('0.25'), memory: '0.5Gi' }
           env: [
             { name: 'ASPNETCORE_ENVIRONMENT', value: 'Production' }
+            { name: 'DatabaseProvider', value: 'PostgreSQL' }
+            { name: 'ConnectionStrings__IntakeDb', secretRef: 'conn-intake' }
             { name: 'ServiceBus__ConnectionString', secretRef: 'servicebus-send' }
             { name: 'PublicBooking__Enabled', value: 'true' }
             { name: 'PublicBooking__RequireAvailabilitySelection', value: 'true' }
@@ -407,6 +416,8 @@ resource intakeService 'Microsoft.App/containerApps@2023-05-01' = {
             { name: 'ZocdocWebhooks__Integrations__0__TenantId', value: initialTenantId }
             { name: 'ZocdocWebhooks__Integrations__0__WebhookSecret', secretRef: 'zocdoc-webhook-secret' }
             { name: 'ZocdocWebhooks__Integrations__0__Enabled', value: 'true' }
+            { name: 'IntegrationInbox__AdminClients__0__TenantId', value: initialTenantId }
+            { name: 'IntegrationInbox__AdminClients__0__ApiKey', secretRef: 'inbox-admin-key' }
           ]
           probes: [
             { type: 'Liveness', httpGet: { path: '/health', port: 5109 }, initialDelaySeconds: 10, periodSeconds: 10 }

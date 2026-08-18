@@ -11,16 +11,30 @@ using System.Diagnostics.Metrics;
 using CloudDentalOffice.Contracts.Events;
 using CloudDentalOffice.Contracts.Scheduling;
 using CloudDentalOffice.Messaging;
+using Microsoft.EntityFrameworkCore;
 
 // IntakeService is the ONLY component intended to be exposed to the public
 // internet. It authenticates and validates website booking requests and
-// publishes a BookingRequestedEvent to Service Bus. It has NO database context
-// and no read access to patient, clinical, or scheduling databases. It accepts
-// only the minimum contact and preference data required for appointment intake.
+// publishes a BookingRequestedEvent to Service Bus. Its isolated database stores
+// only minimized integration inbox records; it has no read access to patient,
+// clinical, or scheduling databases.
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<ZocdocWebhookMetrics>();
+builder.Services.AddDbContext<IntakeDbContext>(options =>
+{
+    if (builder.Configuration.GetValue("DatabaseProvider", "Sqlite") == "PostgreSQL")
+        options.UseNpgsql(builder.Configuration.GetConnectionString("IntakeDb"));
+    else
+        options.UseSqlite(builder.Configuration.GetConnectionString("IntakeDb") ?? "Data Source=intake.db");
+});
+builder.Services.AddScoped<IIntegrationInbox, IntegrationInbox>();
+builder.Services.AddScoped<IIntegrationInboxDispatcher, IntegrationInboxDispatcher>();
+builder.Services.AddHostedService<IntegrationInboxWorker>();
+builder.Services.AddOptions<IntegrationInboxOptions>()
+    .Bind(builder.Configuration.GetSection(IntegrationInboxOptions.SectionName))
+    .ValidateDataAnnotations().ValidateOnStart();
 builder.Services.AddHttpClient<IPublicSchedulingClient, PublicSchedulingClient>(client =>
 {
     client.BaseAddress = new Uri(builder.Configuration["Services:SchedulingService"] ?? "http://scheduling-service:5102/");
@@ -68,9 +82,21 @@ builder.Services.AddRateLimiter(options =>
             QueueLimit = 0
         });
     });
+    options.AddPolicy("integration-inbox-admin", httpContext =>
+    {
+        var clientKey = httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+        return RateLimitPartition.GetFixedWindowLimiter(clientKey, _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = 30,
+            Window = TimeSpan.FromMinutes(1),
+            QueueLimit = 0
+        });
+    });
 });
 
 var app = builder.Build();
+await using (var scope = app.Services.CreateAsyncScope())
+    await scope.ServiceProvider.GetRequiredService<IntakeDbContext>().Database.EnsureCreatedAsync();
 if (app.Environment.IsDevelopment()) { app.UseSwagger(); app.UseSwaggerUI(); }
 app.UseForwardedHeaders();
 app.UseRateLimiter();
@@ -100,7 +126,7 @@ app.MapGet("/api/public/availability", async (
 
 app.MapPost("/api/integrations/zocdoc/{integrationId}/webhooks", async (
     string integrationId, HttpContext http, IConfiguration configuration,
-    IEventPublisher publisher, ServiceBusOptions serviceBus, TimeProvider timeProvider,
+    IIntegrationInbox inbox, TimeProvider timeProvider,
     ZocdocWebhookMetrics metrics) =>
 {
     metrics.Received.Add(1);
@@ -109,8 +135,6 @@ app.MapPost("/api/integrations/zocdoc/{integrationId}/webhooks", async (
         .FirstOrDefault(x => x is not null && string.Equals(x.IntegrationId, integrationId, StringComparison.Ordinal));
     if (integration is not { Enabled: true } || string.IsNullOrWhiteSpace(integration.TenantId) ||
         string.IsNullOrWhiteSpace(integration.WebhookSecret)) return Results.NotFound();
-    if (!serviceBus.IsConfigured) return Results.StatusCode(StatusCodes.Status503ServiceUnavailable);
-
     byte[] body;
     try
     {
@@ -152,12 +176,43 @@ app.MapPost("/api/integrations/zocdoc/{integrationId}/webhooks", async (
     }
 
     var externalEventId = $"{appointment.AppointmentId}:{appointment.UpdatedAt:O}:{appointment.AppointmentUpdateType}";
-    await publisher.PublishAsync(new ZocdocAppointmentWebhookEvent(
+    var integrationEvent = new ZocdocAppointmentWebhookEvent(
         integration.TenantId, externalEventId, appointment.AppointmentId, appointment.AppointmentUpdateType)
-        { ExternalUpdatedAt = appointment.UpdatedAt.UtcDateTime },
-        http.RequestAborted);
+        { ExternalUpdatedAt = appointment.UpdatedAt.UtcDateTime };
+    try
+    {
+        await inbox.PersistAsync(integration.TenantId, "Zocdoc", externalEventId,
+            nameof(ZocdocAppointmentWebhookEvent), integrationEvent, http.RequestAborted);
+        metrics.Persisted.Add(1);
+    }
+    catch (Exception ex) when (ex is not OperationCanceledException)
+    {
+        http.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger("ZocdocInbox")
+            .LogError("Could not durably accept Zocdoc event {ExternalEventId} for tenant {TenantId}; failure {FailureKind}.",
+                externalEventId, integration.TenantId, ex.GetType().Name);
+        return Results.StatusCode(StatusCodes.Status503ServiceUnavailable);
+    }
     return Results.Accepted();
 }).RequireRateLimiting("zocdoc-webhooks").WithTags("ZocdocWebhooks");
+
+app.MapGet("/api/internal/integration-inbox/status", async (
+    HttpContext http, IConfiguration configuration, IIntegrationInbox inbox,
+    CancellationToken cancellationToken) =>
+{
+    var tenantId = IntegrationInboxAdminAuth.ResolveTenant(http, configuration);
+    return tenantId is null ? Results.Unauthorized() : Results.Ok(
+        await inbox.GetStatusAsync(tenantId, cancellationToken));
+}).RequireRateLimiting("integration-inbox-admin").WithTags("IntegrationInbox");
+
+app.MapPost("/api/internal/integration-inbox/{id:guid}/retry", async (
+    Guid id, HttpContext http, IConfiguration configuration, IIntegrationInbox inbox,
+    CancellationToken cancellationToken) =>
+{
+    var tenantId = IntegrationInboxAdminAuth.ResolveTenant(http, configuration);
+    if (tenantId is null) return Results.Unauthorized();
+    return await inbox.RequeueAsync(tenantId, id, cancellationToken)
+        ? Results.Accepted() : Results.NotFound();
+}).RequireRateLimiting("integration-inbox-admin").WithTags("IntegrationInbox");
 
 app.MapPost("/api/public/booking-requests", async (
     PublicBookingRequest request,
@@ -370,11 +425,23 @@ public sealed class ZocdocWebhookMetrics : IDisposable
     private readonly Meter _meter = new("CloudDentalOffice.Intake.Zocdoc");
     public Counter<long> Received { get; }
     public Counter<long> ValidationFailures { get; }
+    public Counter<long> Persisted { get; }
+    public Counter<long> PublishSuccesses { get; }
+    public Counter<long> PublishFailures { get; }
+    public Counter<long> Retries { get; }
+    public Counter<long> PoisonMessages { get; }
+    public Histogram<double> OldestPendingAge { get; }
 
     public ZocdocWebhookMetrics()
     {
         Received = _meter.CreateCounter<long>("intake.zocdoc.webhook.received");
         ValidationFailures = _meter.CreateCounter<long>("intake.zocdoc.webhook.validation_failures");
+        Persisted = _meter.CreateCounter<long>("intake.zocdoc.inbox.persisted");
+        PublishSuccesses = _meter.CreateCounter<long>("intake.zocdoc.inbox.publish_successes");
+        PublishFailures = _meter.CreateCounter<long>("intake.zocdoc.inbox.publish_failures");
+        Retries = _meter.CreateCounter<long>("intake.zocdoc.inbox.retries");
+        PoisonMessages = _meter.CreateCounter<long>("intake.zocdoc.inbox.poison_messages");
+        OldestPendingAge = _meter.CreateHistogram<double>("intake.zocdoc.inbox.oldest_pending_age", "s");
     }
 
     public void Dispose() => _meter.Dispose();

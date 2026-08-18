@@ -66,6 +66,11 @@ resource schedulingDb 'Microsoft.DBforPostgreSQL/flexibleServers/databases@2023-
   name: 'cdo_scheduling'
 }
 
+resource intakeDb 'Microsoft.DBforPostgreSQL/flexibleServers/databases@2023-06-01-preview' = {
+  parent: postgresServer
+  name: 'cdo_intake'
+}
+
 resource claimsDb 'Microsoft.DBforPostgreSQL/flexibleServers/databases@2023-06-01-preview' = {
   parent: postgresServer
   name: 'cdo_claims'
