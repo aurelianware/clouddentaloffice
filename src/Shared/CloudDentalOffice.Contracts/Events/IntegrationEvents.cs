@@ -18,8 +18,9 @@ public record PatientUpdatedEvent(Guid PatientId) : IntegrationEvent;
 
 /// <summary>
 /// Raised by the public IntakeService when a website visitor submits a booking
-/// request. Carries only visitor-supplied contact details and a preferred time —
-/// no PatientId/ProviderId/LocationId. A private consumer (SchedulingService)
+/// request. Carries visitor-supplied contact details plus optional routing IDs
+/// that IntakeService resolved from a server-validated opaque slot token. It
+/// never carries PatientId or arbitrary public-supplied CDO identifiers. A private consumer (SchedulingService)
 /// persists a BookingRequest for explicit staff review. The public tier has no
 /// read access to patient, clinical, or scheduling databases.
 /// </summary>
@@ -50,6 +51,11 @@ public record BookingRequestedEvent(
     public string? AttributionId { get; init; }
     public IReadOnlyDictionary<string, string>? AttributionMetadata { get; init; }
     public DateTime? SubmittedAtUtc { get; init; }
+    // V3 fields are resolved from an opaque availability token by IntakeService.
+    // They are never accepted as arbitrary identifiers from the public caller.
+    public int? RequestedProviderId { get; init; }
+    public Guid? RequestedLocationId { get; init; }
+    public string? RequestedAppointmentTypeId { get; init; }
 }
 
 public record AppointmentScheduledEvent(Guid AppointmentId, int PatientId, int ProviderId, DateTime StartTime) : IntegrationEvent;

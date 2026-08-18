@@ -31,6 +31,7 @@ public sealed class BookingRequest
     public int? MatchedPatientId { get; set; }
     public int? RequestedProviderId { get; set; }
     public Guid? RequestedLocationId { get; set; }
+    [MaxLength(128)] public string? RequestedAppointmentTypeId { get; set; }
     public Guid? ApprovedAppointmentId { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime SubmittedAtUtc { get; set; } = DateTime.UtcNow;
@@ -53,7 +54,8 @@ public sealed class BookingRequest
         Source = Source, Campaign = Campaign, AttributionId = AttributionId,
         AttributionMetadataJson = AttributionMetadataJson, SourceReference = SourceReference, Status = Status,
         MatchedPatientId = MatchedPatientId, RequestedProviderId = RequestedProviderId,
-        RequestedLocationId = RequestedLocationId, ApprovedAppointmentId = ApprovedAppointmentId,
+        RequestedLocationId = RequestedLocationId, RequestedAppointmentTypeId = RequestedAppointmentTypeId,
+        ApprovedAppointmentId = ApprovedAppointmentId,
         CreatedAt = CreatedAt, SubmittedAtUtc = SubmittedAtUtc, UpdatedAt = UpdatedAt, ReviewedAt = ReviewedAt,
         ApprovedAt = ApprovedAt, RejectedAt = RejectedAt, ReviewedBy = ReviewedBy,
         ApprovedBy = ApprovedBy, RejectionReason = RejectionReason, StaffNotes = StaffNotes

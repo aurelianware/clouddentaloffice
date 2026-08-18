@@ -19,6 +19,11 @@ using CloudDentalOffice.Messaging;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.AddHttpClient<IPublicSchedulingClient, PublicSchedulingClient>(client =>
+{
+    client.BaseAddress = new Uri(builder.Configuration["Services:SchedulingService"] ?? "http://scheduling-service:5102/");
+    client.Timeout = TimeSpan.FromSeconds(5);
+});
 
 builder.Services.AddOptions<PublicBookingOptions>()
     .Bind(builder.Configuration.GetSection(PublicBookingOptions.SectionName))
@@ -49,12 +54,7 @@ builder.Services.AddRateLimiter(options =>
     options.AddPolicy("public-booking", httpContext =>
     {
         var clientKey = httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
-        return RateLimitPartition.GetFixedWindowLimiter(clientKey, _ => new FixedWindowRateLimiterOptions
-        {
-            PermitLimit = 5,
-            Window = TimeSpan.FromMinutes(1),
-            QueueLimit = 0
-        });
+        return RateLimitPartition.GetFixedWindowLimiter(clientKey, _ => PublicBookingRateLimits.Create());
     });
     options.AddPolicy("zocdoc-webhooks", httpContext =>
     {
@@ -73,6 +73,28 @@ if (app.Environment.IsDevelopment()) { app.UseSwagger(); app.UseSwaggerUI(); }
 app.UseForwardedHeaders();
 app.UseRateLimiter();
 app.MapHealthChecks("/health");
+
+app.MapGet("/api/public/availability", async (
+    PatientRelationship patientRelationship, DateTimeOffset from, DateTimeOffset to,
+    string? appointmentType, string? provider, string? location,
+    IConfiguration config, IPublicSchedulingClient scheduling, HttpContext http) =>
+{
+    var section = config.GetSection("PublicBooking");
+    if (!section.GetValue("Enabled", false)) return Results.NotFound();
+    var tenantId = IntakeAuth.ResolveTenant(http, section);
+    if (tenantId is null) return Results.Unauthorized();
+    if (patientRelationship == PatientRelationship.Unknown || to <= from || to - from > TimeSpan.FromDays(31))
+        return Results.ValidationProblem(new Dictionary<string, string[]> { ["request"] = ["Choose New or Existing and a valid date range of 31 days or less."] });
+    try
+    {
+        return Results.Ok(await scheduling.GetAvailabilityAsync(tenantId,
+            new(patientRelationship, from, to, appointmentType, provider, location), http.RequestAborted));
+    }
+    catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or InvalidOperationException)
+    {
+        return Results.Problem(title: "Availability is temporarily unavailable.", statusCode: StatusCodes.Status503ServiceUnavailable);
+    }
+}).RequireRateLimiting("public-booking").WithTags("PublicBooking");
 
 app.MapPost("/api/integrations/zocdoc/{integrationId}/webhooks", async (
     string integrationId, HttpContext http, IConfiguration configuration,
@@ -125,6 +147,7 @@ app.MapPost("/api/public/booking-requests", async (
     IEventPublisher publisher,
     ServiceBusOptions serviceBus,
     ILoggerFactory loggerFactory,
+    IPublicSchedulingClient scheduling,
     HttpContext http) =>
 {
     var section = config.GetSection("PublicBooking");
@@ -134,6 +157,8 @@ app.MapPost("/api/public/booking-requests", async (
     var tenantId = IntakeAuth.ResolveTenant(http, section);
     if (tenantId is null)
         return Results.Unauthorized();
+    if (section.GetValue("RequireAvailabilitySelection", false) && string.IsNullOrWhiteSpace(request.AvailabilityToken))
+        return Results.ValidationProblem(new Dictionary<string, string[]> { ["availabilityToken"] = ["Choose one of the currently available appointment times."] });
 
     // Don't falsely accept a booking we can't deliver: if Service Bus isn't
     // configured, the publisher would drop the event. Return 503 so the caller
@@ -162,13 +187,28 @@ app.MapPost("/api/public/booking-requests", async (
     if (errors.Count > 0)
         return Results.ValidationProblem(errors);
 
+    ValidatedPublicSchedulingSelection? selection = null;
+    if (!string.IsNullOrWhiteSpace(request.AvailabilityToken))
+    {
+        try { selection = await scheduling.ValidateAsync(tenantId, request.AvailabilityToken, request.PatientRelationship, http.RequestAborted); }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or InvalidOperationException)
+        {
+            return Results.Problem(title: "Booking is temporarily unavailable. Please try again shortly.", statusCode: StatusCodes.Status503ServiceUnavailable);
+        }
+        if (selection is null)
+            return Results.Conflict(new { message = "That appointment time is no longer available. Please choose another time." });
+        if (request.PreferredStart.ToUniversalTime() != selection.Start.UtcDateTime)
+            return Results.ValidationProblem(new Dictionary<string, string[]> { ["preferredStart"] = ["The selected time does not match the availability selection."] });
+        preferredStartUtc = selection.Start.UtcDateTime;
+    }
+
     var attribution = PublicBookingSanitizer.SanitizeAttribution(request.Attribution);
     var evt = new BookingRequestedEvent(
         Name: request.Name.Trim(),
         Phone: request.Phone.Trim(),
         Email: string.IsNullOrWhiteSpace(request.Email) ? null : request.Email.Trim(),
         PreferredStartUtc: preferredStartUtc,
-        DurationMinutes: request.DurationMinutes,
+        DurationMinutes: selection is null ? request.DurationMinutes : (int)(selection.End - selection.Start).TotalMinutes,
         Reason: string.IsNullOrWhiteSpace(request.Reason) ? null : request.Reason.Trim(),
         Message: string.IsNullOrWhiteSpace(request.Message) ? null : request.Message.Trim(),
         PatientRelationship: request.PatientRelationship,
@@ -176,7 +216,7 @@ app.MapPost("/api/public/booking-requests", async (
         Source: PublicBookingSanitizer.Text(request.Source, 100) ?? section.GetValue<string>("Source") ?? "PublicWebsite",
         SourceReference: null)
     {
-        ContractVersion = 2,
+        ContractVersion = selection is null ? 2 : 3,
         EventId = string.IsNullOrEmpty(idempotencyKey)
             ? Guid.NewGuid()
             : Idempotency.CreateEventId(tenantId, idempotencyKey),
@@ -188,7 +228,12 @@ app.MapPost("/api/public/booking-requests", async (
         Campaign = PublicBookingSanitizer.Text(request.Campaign, 200),
         AttributionId = attribution.GetValueOrDefault("attribution_id"),
         AttributionMetadata = attribution,
-        SubmittedAtUtc = PublicBookingSanitizer.SubmittedAt(request.CreatedAt, DateTime.UtcNow)
+        SubmittedAtUtc = PublicBookingSanitizer.SubmittedAt(request.CreatedAt, DateTime.UtcNow),
+        SourceReference = string.IsNullOrWhiteSpace(request.AvailabilityToken) ? null :
+            Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(request.AvailabilityToken)))[..32],
+        RequestedProviderId = selection?.ProviderId,
+        RequestedLocationId = selection?.LocationId,
+        RequestedAppointmentTypeId = selection?.AppointmentTypeId
     };
 
     try
@@ -229,6 +274,7 @@ public static class PublicBookingValidator
         if (request.Reason?.Length > 500) errors["reason"] = ["Reason must be 500 characters or fewer."];
         if (request.Message?.Length > 2000) errors["message"] = ["Message must be 2000 characters or fewer."];
         if (request.RequestId?.Length > 128) errors["requestId"] = ["requestId must be 128 characters or fewer."];
+        if (request.AvailabilityToken?.Length > 4096) errors["availabilityToken"] = ["Availability selection is invalid."];
         if (request.PreferredContact is not null && request.PreferredContact is not ("Phone" or "Text" or "Email"))
             errors["preferredContact"] = ["preferredContact must be Phone, Text, or Email."];
         if (request.InsuranceIntent is not null && request.InsuranceIntent is not ("Yes" or "No" or "Not sure"))
@@ -249,6 +295,14 @@ public static class PublicBookingValidator
             errors["alternateStart"] = ["alternateStart must include a timezone."];
         return errors;
     }
+}
+
+public static class PublicBookingRateLimits
+{
+    public static FixedWindowRateLimiterOptions Create() => new()
+    {
+        PermitLimit = 5, Window = TimeSpan.FromMinutes(1), QueueLimit = 0
+    };
 }
 
 public static class PublicBookingSanitizer

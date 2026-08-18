@@ -72,6 +72,29 @@ app.UseAuthorization();
 app.MapHealthChecks("/health");
 app.MapSchedulingIntegrationAdminApi();
 
+// Private, tenant-bound boundary used only by IntakeService. It returns a
+// data-minimized website projection and revalidates opaque selections against
+// the same canonical availability engine used by marketplace adapters.
+app.MapPost("/api/internal/public-scheduling/availability", async (
+    PublicSchedulingAvailabilityRequest request, HttpContext http, IConfiguration configuration,
+    IPublicWebsiteSchedulingService service, CancellationToken cancellationToken) =>
+{
+    var tenantId = SchedulingInternalAuth.ResolveTenant(http, configuration);
+    if (tenantId is null) return Results.Unauthorized();
+    try { return Results.Ok(await service.GetAsync(tenantId, request, cancellationToken)); }
+    catch (ArgumentException ex) { return Results.ValidationProblem(new Dictionary<string, string[]> { ["request"] = [ex.Message] }); }
+}).WithTags("InternalPublicScheduling");
+
+app.MapPost("/api/internal/public-scheduling/validate", async (
+    ValidatePublicSlotRequest request, HttpContext http, IConfiguration configuration,
+    IPublicWebsiteSchedulingService service, CancellationToken cancellationToken) =>
+{
+    var tenantId = SchedulingInternalAuth.ResolveTenant(http, configuration);
+    if (tenantId is null) return Results.Unauthorized();
+    var selection = await service.ValidateAsync(tenantId, request.AvailabilityToken, request.PatientRelationship, cancellationToken);
+    return selection is null ? Results.Conflict(new { message = "That time is no longer available." }) : Results.Ok(selection);
+}).WithTags("InternalPublicScheduling");
+
 // These read endpoints return full appointment records, including the free-text
 // Notes that public booking intakes use to carry patient contact details. They
 // are anonymous by default (trusted internal callers such as the Portal reach
@@ -224,6 +247,8 @@ public class Appointment
     public string? AppointmentTypeId { get; set; }
     public DateTime CreatedAt { get; set; }
 }
+
+public sealed record ValidatePublicSlotRequest(string AvailabilityToken, PatientRelationship PatientRelationship);
 
 public class SchedulingDbContext(DbContextOptions<SchedulingDbContext> options) : DbContext(options)
 {

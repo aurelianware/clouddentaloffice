@@ -299,6 +299,7 @@ public static class SchedulingIntegrationServiceCollectionExtensions
             .AddScoped<ISchedulingEntityMappingService, SchedulingEntityMappingService>()
             .AddSingleton<ISchedulingClock, SchedulingClock>()
             .AddScoped<ISchedulingAvailabilityService, SchedulingAvailabilityService>()
+            .AddScoped<IPublicWebsiteSchedulingService, PublicWebsiteSchedulingService>()
             .AddScoped<IExternalSchedulingResourceMappingStore, ExternalSchedulingResourceMappingStore>()
             .AddScoped<IExternalAppointmentReferenceStore, ExternalAppointmentReferenceStore>()
             .AddScoped<ISchedulingIntegrationIdempotencyStore, SchedulingIntegrationIdempotencyStore>()

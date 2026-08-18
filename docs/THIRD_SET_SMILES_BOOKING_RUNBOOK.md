@@ -6,6 +6,28 @@ This path records a **booking request for staff review**. A `202` never means an
 
 `3rdsetsmiles.com /book` → Cloudflare Pages Function → HTTPS IntakeService → Azure Service Bus topic `booking-requests` → private SchedulingService subscription `scheduling` → tenant-scoped `BookingRequests` table → staff review/approval.
 
+Availability follows a separate read path:
+
+`3rdsetsmiles.com /book` → same-origin Cloudflare Function → authenticated IntakeService → tenant-authenticated private SchedulingService → canonical `ISchedulingAvailabilityService` (`PublicWebsite` channel).
+
+The response contains public aliases, display labels, times, and an opaque signed
+selection only. It contains no tenant ID, patient data, integration configuration,
+or internal provider/location/appointment-type IDs. IntakeService revalidates the
+opaque selection immediately before publishing `BookingRequestedEvent`; a stale
+slot returns HTTP `409` and publishes nothing.
+
+## Booking semantics
+
+- **Request-based website booking:** an anonymous visitor selects canonical
+  availability, but submission creates only a `BookingRequest`. Staff match the
+  patient and use **Approve & Schedule** before an `Appointment` exists.
+- **Confirmed marketplace booking:** an authenticated marketplace such as Zocdoc
+  uses the external confirmed-booking workflow and may create/confirm an
+  appointment after webhook verification and patient resolution.
+
+Never route the website through the confirmed marketplace workflow, and never
+turn the public POST into anonymous appointment creation.
+
 - Tenant: `third-set-smiles`; practice: 3rd Set Smiles; domain: `3rdsetsmiles.com`; timezone: `America/Phoenix` (the website sends an offset-bearing UTC instant).
 - API keys map to a tenant server-side. Use a unique 32-byte random key per site/environment; rotate by temporarily adding a second `Clients` entry, updating Cloudflare, then removing the old entry.
 - IntakeService has no database connection and exposes only POST intake plus `/health`. Swagger is development-only.
@@ -80,6 +102,19 @@ Minimum runtime settings:
 |---|---|
 | Intake | `ASPNETCORE_ENVIRONMENT=Production`, `PublicBooking__Enabled=true`, `PublicBooking__Clients__0__TenantId=third-set-smiles`, `PublicBooking__Clients__0__ApiKey`, `PublicBooking__Source=3rdsetsmiles.com`, send-only `ServiceBus__ConnectionString` |
 | Scheduling | `ASPNETCORE_ENVIRONMENT=Production`, `DatabaseProvider=PostgreSQL`, `ConnectionStrings__SchedulingDb`, listen-only `ServiceBus__ConnectionString`, topic `booking-requests`, subscription `scheduling` |
+| Scheduling public availability | `InternalApi__PublicIntakeClients__0__TenantId`, secret `InternalApi__PublicIntakeClients__0__ApiKey`, secret `PublicAvailability__SlotTokenKey`; enable a tenant `PublicWebsite` channel configuration and create active provider/location/visit-reason mappings |
+| Intake scheduling client | `Services__SchedulingService=http://scheduling-service`, matching tenant/key under `Services__SchedulingServiceClients__0__*` |
+
+The deployment workflow requires two independent 32+ character GitHub secrets:
+`PUBLIC_SCHEDULING_SERVICE_API_KEY` for the Intake→Scheduling tenant boundary
+and `PUBLIC_AVAILABILITY_SLOT_KEY` for HMAC signing. Do not reuse the website's
+`PUBLIC_BOOKING_API_KEY` for either purpose.
+
+An administrator can enable the channel using
+`PUT /api/scheduling-integrations/PublicWebsite/configuration`, then manage the
+public aliases with the existing authenticated
+`/api/scheduling-integrations/PublicWebsite/mappings` endpoints. Map only the
+providers, locations, and appointment types that the website may offer.
 | Portal bootstrap | `InitialTenant__Enabled=true`, `InitialTenant__TenantId=third-set-smiles`, `InitialTenant__Name=3rd Set Smiles`, `InitialTenant__Domain=3rdsetsmiles.com` |
 
 ## Staff portal Google Workspace authentication

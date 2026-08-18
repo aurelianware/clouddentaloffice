@@ -51,10 +51,12 @@ public static class SchedulingIntegrationAdminApi
                     mappings.GetValueOrDefault(SchedulingResourceType.VisitReason));
             })).RequireAuthorization("SchedulingIntegrationAdmin").WithTags("SchedulingIntegrations");
 
-        endpoints.MapPut("/api/scheduling-integrations/zocdoc/configuration", async (
-            UpdateSchedulingIntegrationConfiguration request, ClaimsPrincipal user, SchedulingDbContext db,
+        endpoints.MapPut("/api/scheduling-integrations/{channel}/configuration", async (
+            SchedulingChannel channel, UpdateSchedulingIntegrationConfiguration request, ClaimsPrincipal user, SchedulingDbContext db,
             CancellationToken cancellationToken) => await ExecuteAsync(user, async tenantId =>
             {
+                if (channel is not (SchedulingChannel.PublicWebsite or SchedulingChannel.Zocdoc or SchedulingChannel.Google))
+                    throw new UnsupportedSchedulingChannelException(channel);
                 if (request.Environment is not ("Sandbox" or "Production"))
                     throw new ArgumentException("Environment must be Sandbox or Production.");
                 if (request.MinimumBookingLeadMinutes < 0 || request.MaximumBookingHorizonDays is < 1 or > 365)
@@ -63,10 +65,10 @@ public static class SchedulingIntegrationAdminApi
                 catch (Exception ex) when (ex is TimeZoneNotFoundException or InvalidTimeZoneException)
                 { throw new ArgumentException("Time zone is invalid."); }
                 var configuration = await db.SchedulingIntegrationConfigurations.SingleOrDefaultAsync(x =>
-                    x.TenantId == tenantId && x.Channel == SchedulingChannel.Zocdoc, cancellationToken);
+                    x.TenantId == tenantId && x.Channel == channel, cancellationToken);
                 if (configuration is null)
                 {
-                    configuration = new() { TenantId = tenantId, Channel = SchedulingChannel.Zocdoc };
+                    configuration = new() { TenantId = tenantId, Channel = channel };
                     db.SchedulingIntegrationConfigurations.Add(configuration);
                 }
                 configuration.Enabled = request.Enabled;

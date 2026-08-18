@@ -119,6 +119,13 @@ Slots remain channel-neutral and contain only tenant, provider, location,
 appointment type, UTC start/end, and patient relationship. Structured summary
 logs contain rule and collision counts but no patient-identifying fields.
 
+The `PublicWebsite` channel consumes this same service through the private,
+tenant-authenticated SchedulingService boundary. IntakeService exposes only a
+data-minimized projection and never calculates slots. Website selections are
+opaque signed tokens and are recalculated at submission time before the existing
+`BookingRequestedEvent` is published. Revalidation does not reserve or create an
+appointment; staff approval remains mandatory.
+
 ## Existing public website flow
 
 This boundary does not change the public booking workflow:

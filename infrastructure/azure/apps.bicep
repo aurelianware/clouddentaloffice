@@ -49,6 +49,12 @@ param publicBookingApiKey string
 @secure()
 @description('Tenant-scoped key authorizing SchedulingService to call PatientService internal APIs')
 param patientServiceApiKey string = ''
+@secure()
+@description('Tenant-scoped key authorizing IntakeService to call SchedulingService availability APIs')
+param publicSchedulingServiceApiKey string
+@secure()
+@description('HMAC key used by SchedulingService for opaque public availability selections')
+param publicAvailabilitySlotKey string
 @description('Opaque route identifier configured in the Zocdoc webhook URL')
 param zocdocWebhookIntegrationId string = ''
 @secure()
@@ -97,6 +103,8 @@ module apps 'container-apps.bicep' = {
     serviceBusListenConnection: serviceBusListenConnection
     publicBookingApiKey: publicBookingApiKey
     patientServiceApiKey: patientServiceApiKey
+    publicSchedulingServiceApiKey: publicSchedulingServiceApiKey
+    publicAvailabilitySlotKey: publicAvailabilitySlotKey
     zocdocWebhookIntegrationId: zocdocWebhookIntegrationId
     zocdocWebhookSecret: zocdocWebhookSecret
     initialTenantId: initialTenantId
