@@ -62,6 +62,8 @@ public interface ISchedulingIntegrationIdempotencyStore
         CancellationToken cancellationToken = default);
     Task CompleteAsync(string tenantId, SchedulingChannel channel, string externalEventId, Guid appointmentId,
         CancellationToken cancellationToken = default);
+    Task FailAsync(string tenantId, SchedulingChannel channel, string externalEventId, string reason,
+        CancellationToken cancellationToken = default);
 }
 
 public sealed class SchedulingIntegrationDisabledException(SchedulingChannel channel)
@@ -215,7 +217,18 @@ public sealed class SchedulingIntegrationIdempotencyStore(SchedulingDbContext db
     {
         Validate(tenantId, externalEventId);
         var existing = await FindAsync(tenantId, channel, externalEventId, cancellationToken);
-        if (existing is not null) return new(existing.Id, false, existing.AppointmentId);
+        if (existing is not null)
+        {
+            if (existing.Status == SchedulingIntegrationEventStatus.Failed)
+            {
+                existing.Status = SchedulingIntegrationEventStatus.Processing;
+                existing.FailureReason = null;
+                existing.UpdatedAt = DateTime.UtcNow;
+                await db.SaveChangesAsync(cancellationToken);
+                return new(existing.Id, true, existing.AppointmentId);
+            }
+            return new(existing.Id, false, existing.AppointmentId);
+        }
 
         var record = new SchedulingIntegrationEvent
         {
@@ -249,6 +262,18 @@ public sealed class SchedulingIntegrationIdempotencyStore(SchedulingDbContext db
         await db.SaveChangesAsync(cancellationToken);
     }
 
+    public async Task FailAsync(string tenantId, SchedulingChannel channel, string externalEventId,
+        string reason, CancellationToken cancellationToken = default)
+    {
+        Validate(tenantId, externalEventId);
+        var record = await FindAsync(tenantId, channel, externalEventId, cancellationToken)
+            ?? throw new KeyNotFoundException("Integration event not found for this tenant and channel.");
+        record.Status = SchedulingIntegrationEventStatus.Failed;
+        record.FailureReason = reason[..Math.Min(reason.Length, 1000)];
+        record.UpdatedAt = DateTime.UtcNow;
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
     private Task<SchedulingIntegrationEvent?> FindAsync(string tenantId, SchedulingChannel channel, string eventId,
         CancellationToken cancellationToken) => db.SchedulingIntegrationEvents.SingleOrDefaultAsync(x =>
             x.TenantId == tenantId && x.Channel == channel && x.ExternalEventId == eventId.Trim(), cancellationToken);
@@ -273,6 +298,7 @@ public static class SchedulingIntegrationServiceCollectionExtensions
             .AddScoped<IExternalSchedulingResourceMappingStore, ExternalSchedulingResourceMappingStore>()
             .AddScoped<IExternalAppointmentReferenceStore, ExternalAppointmentReferenceStore>()
             .AddScoped<ISchedulingIntegrationIdempotencyStore, SchedulingIntegrationIdempotencyStore>()
+            .AddScoped<IZocdocAppointmentWebhookProcessor, ZocdocAppointmentWebhookProcessor>()
             .AddSingleton<IZocdocCredentialProvider, ConfigurationZocdocCredentialProvider>()
             .AddSingleton<IZocdocAccessTokenProvider, ZocdocAccessTokenProvider>()
             .AddSingleton<ZocdocAvailabilityMetrics>()
@@ -284,6 +310,12 @@ public static class SchedulingIntegrationServiceCollectionExtensions
         services.AddHttpClient("ZocdocAuth").AddStandardResilienceHandler();
         services.AddHttpClient<IZocdocApiClient, ZocdocApiClient>(client =>
         {
+            client.Timeout = TimeSpan.FromSeconds(30);
+        }).AddStandardResilienceHandler();
+        services.AddHttpClient<IExternalPatientResolver, ExternalPatientResolver>((provider, client) =>
+        {
+            var configuration = provider.GetRequiredService<IConfiguration>();
+            client.BaseAddress = new Uri(configuration["Services:PatientService"] ?? "http://patient-service:5101/");
             client.Timeout = TimeSpan.FromSeconds(30);
         }).AddStandardResilienceHandler();
         return services;

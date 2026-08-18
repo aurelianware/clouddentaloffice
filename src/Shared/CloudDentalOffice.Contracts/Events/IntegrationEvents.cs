@@ -64,6 +64,13 @@ public record SchedulingAvailabilityChangedEvent(
     DateTime ToUtc,
     string Reason) : IntegrationEvent;
 
+/// <summary>Verified Zocdoc webhook metadata. Contains no patient demographics.</summary>
+public record ZocdocAppointmentWebhookEvent(
+    string TenantId,
+    string ExternalEventId,
+    string AppointmentId,
+    string UpdateType) : IntegrationEvent;
+
 // ── Claims Events ──
 public record ClaimCreatedEvent(Guid ClaimId, Guid PatientId, decimal TotalCharge) : IntegrationEvent;
 public record ClaimSubmittedEvent(Guid ClaimId, string? ClaimControlNumber, string SubmissionMethod) : IntegrationEvent;

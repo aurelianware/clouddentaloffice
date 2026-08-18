@@ -112,6 +112,22 @@ resource zocdocAvailabilitySubscription 'Microsoft.ServiceBus/namespaces/topics/
   properties: { maxDeliveryCount: 10, deadLetteringOnMessageExpiration: true }
 }
 
+resource zocdocWebhookTopic 'Microsoft.ServiceBus/namespaces/topics@2024-01-01' = {
+  parent: serviceBus
+  name: 'zocdoc-webhooks'
+  properties: {
+    requiresDuplicateDetection: true
+    duplicateDetectionHistoryTimeWindow: 'P1D'
+    defaultMessageTimeToLive: 'P14D'
+  }
+}
+
+resource zocdocWebhookSubscription 'Microsoft.ServiceBus/namespaces/topics/subscriptions@2024-01-01' = {
+  parent: zocdocWebhookTopic
+  name: 'scheduling'
+  properties: { maxDeliveryCount: 10, deadLetteringOnMessageExpiration: true }
+}
+
 resource bookingSendPolicy 'Microsoft.ServiceBus/namespaces/authorizationRules@2024-01-01' = {
   parent: serviceBus
   name: 'booking-intake-send'

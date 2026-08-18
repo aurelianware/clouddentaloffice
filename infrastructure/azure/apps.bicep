@@ -46,6 +46,11 @@ param serviceBusSendConnection string
 param serviceBusListenConnection string
 @secure()
 param publicBookingApiKey string
+@description('Opaque route identifier configured in the Zocdoc webhook URL')
+param zocdocWebhookIntegrationId string = ''
+@secure()
+@description('Base64 webhook signing key issued by Zocdoc')
+param zocdocWebhookSecret string = ''
 @description('Initial tenant identifier to configure in the Portal app')
 param initialTenantId string = 'third-set-smiles'
 @description('Google OAuth client ID for Portal sign-in; leave empty to disable Google sign-in')
@@ -88,6 +93,8 @@ module apps 'container-apps.bicep' = {
     serviceBusSendConnection: serviceBusSendConnection
     serviceBusListenConnection: serviceBusListenConnection
     publicBookingApiKey: publicBookingApiKey
+    zocdocWebhookIntegrationId: zocdocWebhookIntegrationId
+    zocdocWebhookSecret: zocdocWebhookSecret
     initialTenantId: initialTenantId
     googleOAuthClientId: googleOAuthClientId
     googleOAuthClientSecret: googleOAuthClientSecret

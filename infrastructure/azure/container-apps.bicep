@@ -34,6 +34,9 @@ param serviceBusSendConnection string
 param serviceBusListenConnection string
 @secure()
 param publicBookingApiKey string
+param zocdocWebhookIntegrationId string = ''
+@secure()
+param zocdocWebhookSecret string = ''
 param initialTenantId string = 'third-set-smiles'
 param googleOAuthClientId string = ''
 @secure()
@@ -273,6 +276,7 @@ resource schedulingService 'Microsoft.App/containerApps@2023-05-01' = {
             { name: 'DatabaseProvider', value: 'PostgreSQL' }
             { name: 'ConnectionStrings__SchedulingDb', secretRef: 'conn-scheduling' }
             { name: 'ServiceBus__ConnectionString', secretRef: 'servicebus-listen' }
+            { name: 'Services__PatientService', value: 'http://patient-service' }
             { name: 'Jwt__Key', secretRef: 'jwt-key' }
             { name: 'Jwt__Issuer', value: jwtIssuer }
             { name: 'Jwt__Audience', value: jwtAudience }
@@ -313,6 +317,20 @@ resource schedulingService 'Microsoft.App/containerApps@2023-05-01' = {
               ]
             }
           }
+          {
+            name: 'zocdoc-webhook-messages'
+            custom: {
+              type: 'azure-servicebus'
+              metadata: {
+                topicName: 'zocdoc-webhooks'
+                subscriptionName: 'scheduling'
+                messageCount: '1'
+              }
+              auth: [
+                { secretRef: 'servicebus-listen', triggerParameter: 'connection' }
+              ]
+            }
+          }
         ]
       }
     }
@@ -333,6 +351,7 @@ resource intakeService 'Microsoft.App/containerApps@2023-05-01' = {
       secrets: [
         { name: 'servicebus-send', value: serviceBusSendConnection }
         { name: 'booking-key', value: publicBookingApiKey }
+        { name: 'zocdoc-webhook-secret', value: zocdocWebhookSecret }
       ]
     }
     template: {
@@ -348,6 +367,10 @@ resource intakeService 'Microsoft.App/containerApps@2023-05-01' = {
             { name: 'PublicBooking__Clients__0__TenantId', value: initialTenantId }
             { name: 'PublicBooking__Clients__0__ApiKey', secretRef: 'booking-key' }
             { name: 'PublicBooking__Source', value: '3rdsetsmiles.com' }
+            { name: 'ZocdocWebhooks__Integrations__0__IntegrationId', value: zocdocWebhookIntegrationId }
+            { name: 'ZocdocWebhooks__Integrations__0__TenantId', value: initialTenantId }
+            { name: 'ZocdocWebhooks__Integrations__0__WebhookSecret', secretRef: 'zocdoc-webhook-secret' }
+            { name: 'ZocdocWebhooks__Integrations__0__Enabled', value: 'true' }
           ]
           probes: [
             { type: 'Liveness', httpGet: { path: '/health', port: 5109 }, initialDelaySeconds: 10, periodSeconds: 10 }

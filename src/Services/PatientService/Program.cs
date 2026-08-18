@@ -111,6 +111,45 @@ app.MapPost("/api/patients", async (CreatePatientRequest request, PatientDbConte
 .WithName("CreatePatient")
 .WithTags("Patients");
 
+app.MapPost("/api/internal/patients/match-or-create", async (
+    MatchOrCreateExternalPatientRequest request, PatientDbContext db, string tenantId) =>
+{
+    if (string.IsNullOrWhiteSpace(tenantId) || string.IsNullOrWhiteSpace(request.FirstName) ||
+        string.IsNullOrWhiteSpace(request.LastName) || request.DateOfBirth == default)
+        return Results.BadRequest();
+
+    if (int.TryParse(request.DeveloperPatientId, out var knownId))
+    {
+        var known = await db.Patients.SingleOrDefaultAsync(x =>
+            x.PatientId == knownId && x.TenantId == tenantId && x.Status != "Archived");
+        if (known is not null) return Results.Ok(new MatchOrCreateExternalPatientResult(known.PatientId, false));
+    }
+
+    var dob = request.DateOfBirth.ToDateTime(TimeOnly.MinValue);
+    var firstName = request.FirstName.Trim().ToLower();
+    var lastName = request.LastName.Trim().ToLower();
+    var candidates = await db.Patients.Where(x => x.TenantId == tenantId && x.Status != "Archived" &&
+        x.FirstName.ToLower() == firstName && x.LastName.ToLower() == lastName && x.DateOfBirth.Date == dob.Date)
+        .ToListAsync();
+    if (candidates.Count > 1 && !string.IsNullOrWhiteSpace(request.Email))
+        candidates = candidates.Where(x => string.Equals(x.Email, request.Email, StringComparison.OrdinalIgnoreCase)).ToList();
+    if (candidates.Count > 1 && !string.IsNullOrWhiteSpace(request.Phone))
+        candidates = candidates.Where(x => x.PrimaryPhone == request.Phone).ToList();
+    if (candidates.Count == 1)
+        return Results.Ok(new MatchOrCreateExternalPatientResult(candidates[0].PatientId, false));
+    if (candidates.Count > 1) return Results.Conflict();
+
+    var patient = new PatientEntity
+    {
+        TenantId = tenantId, FirstName = request.FirstName.Trim(), LastName = request.LastName.Trim(),
+        DateOfBirth = DateTime.SpecifyKind(dob, DateTimeKind.Utc), Gender = request.Gender ?? "U",
+        Email = request.Email, PrimaryPhone = request.Phone, Status = "Active", CreatedDate = DateTime.UtcNow
+    };
+    db.Patients.Add(patient);
+    await db.SaveChangesAsync();
+    return Results.Ok(new MatchOrCreateExternalPatientResult(patient.PatientId, true));
+}).WithTags("Patients");
+
 app.MapPut("/api/patients/{id:int}", async (int id, UpdatePatientRequest request, PatientDbContext db) =>
 {
     var patient = await db.Patients.FindAsync(id);
@@ -556,4 +595,3 @@ public class PatientDbContext(DbContextOptions<PatientDbContext> options) : DbCo
         });
     }
 }
-

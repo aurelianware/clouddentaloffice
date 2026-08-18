@@ -61,6 +61,7 @@ builder.Services.AddAuthorization();
 // service directly — the internet-facing IntakeService publishes the events.
 builder.Services.AddHostedService<BookingRequestConsumer>();
 builder.Services.AddHostedService<SchedulingService.Integrations.Zocdoc.ZocdocAvailabilityConsumer>();
+builder.Services.AddHostedService<SchedulingService.Integrations.Zocdoc.ZocdocAppointmentWebhookConsumer>();
 
 var app = builder.Build();
 if (app.Environment.IsDevelopment()) { app.UseSwagger(); app.UseSwaggerUI(); }
