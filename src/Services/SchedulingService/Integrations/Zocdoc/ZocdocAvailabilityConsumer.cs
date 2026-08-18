@@ -18,7 +18,7 @@ public sealed class ZocdocAvailabilityConsumer(
         _client = new ServiceBusClient(options.ConnectionString!);
         _processor = _client.CreateProcessor(options.SchedulingAvailabilityTopic,
             options.SchedulingAvailabilitySubscription, new ServiceBusProcessorOptions
-            { AutoCompleteMessages = false, MaxConcurrentCalls = 2 });
+            { AutoCompleteMessages = false, MaxConcurrentCalls = 1 });
         _processor.ProcessMessageAsync += ProcessAsync;
         _processor.ProcessErrorAsync += args =>
         {
@@ -37,7 +37,16 @@ public sealed class ZocdocAvailabilityConsumer(
             await args.DeadLetterMessageAsync(args.Message, "UnexpectedSubject");
             return;
         }
-        var evt = JsonSerializer.Deserialize<SchedulingAvailabilityChangedEvent>(args.Message.Body.ToString());
+        SchedulingAvailabilityChangedEvent? evt;
+        try
+        {
+            evt = JsonSerializer.Deserialize<SchedulingAvailabilityChangedEvent>(args.Message.Body.ToString());
+        }
+        catch (JsonException ex)
+        {
+            await args.DeadLetterMessageAsync(args.Message, "DeserializationError", ex.Message);
+            return;
+        }
         if (evt is null || string.IsNullOrWhiteSpace(evt.TenantId) || evt.ToUtc <= evt.FromUtc)
         {
             await args.DeadLetterMessageAsync(args.Message, "InvalidEvent");

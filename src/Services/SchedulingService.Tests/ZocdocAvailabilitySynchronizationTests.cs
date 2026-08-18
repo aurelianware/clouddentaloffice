@@ -91,6 +91,23 @@ public sealed class ZocdocAvailabilitySynchronizationTests : IAsyncLifetime
         var state = await _db.SchedulingAvailabilitySyncStates.SingleAsync();
         Assert.Equal(AvailabilitySyncStatus.SkippedMapping, state.Status);
         Assert.Contains("VisitReason", state.Diagnostic);
+
+        _api.Calls.Clear();
+        var duplicate = await Service().ReconcileAsync(Request());
+        Assert.Equal(1, duplicate.Unchanged);
+        Assert.Empty(_api.Calls);
+    }
+
+    [Fact]
+    public async Task ExplicitProviderWithoutWorkingHoursClearsRemoteDate()
+    {
+        _db.SchedulingProviderWorkingHours.RemoveRange(_db.SchedulingProviderWorkingHours);
+        await _db.SaveChangesAsync();
+
+        var result = await Service().ReconcileAsync(Request());
+
+        Assert.Equal(1, result.Succeeded);
+        Assert.Empty(Assert.Single(_api.Calls).Timeslots);
     }
 
     [Fact]
@@ -193,6 +210,10 @@ public sealed class ZocdocAvailabilitySynchronizationTests : IAsyncLifetime
         {
             var date = DateOnly.FromDateTime(query.FromUtc.UtcDateTime);
             var start = new DateTimeOffset(date.ToDateTime(new TimeOnly(9, 0)), TimeSpan.Zero);
+            var hasWorkingHours = await db.SchedulingProviderWorkingHours.AsNoTracking().AnyAsync(x =>
+                x.TenantId == query.TenantId && x.ProviderId == query.ProviderId && x.IsActive &&
+                x.DayOfWeek == date.DayOfWeek, cancellationToken);
+            if (!hasWorkingHours) return [];
             var appointments = await db.Appointments.AsNoTracking()
                 .Where(x => x.TenantId == query.TenantId).ToListAsync(cancellationToken);
             var blocked = appointments.Any(x => x.ProviderId == query.ProviderId &&

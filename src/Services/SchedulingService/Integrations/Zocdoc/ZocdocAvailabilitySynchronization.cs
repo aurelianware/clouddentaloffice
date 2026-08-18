@@ -62,19 +62,11 @@ internal sealed class ZocdocAvailabilitySynchronizer(
         var mappings = await db.ExternalSchedulingResourceMappings.AsNoTracking().Where(x =>
             x.TenantId == request.TenantId && x.Channel == SchedulingChannel.Zocdoc && x.IsActive)
             .ToListAsync(cancellationToken);
-        var providers = await db.SchedulingProviderWorkingHours.AsNoTracking().Where(x =>
-            x.TenantId == request.TenantId && x.IsActive).Select(x => x.ProviderId)
-            .Distinct().ToListAsync(cancellationToken);
-        if (request.ProviderId.HasValue) providers = providers.Where(x => x == request.ProviderId.Value).ToList();
-        var providerIds = providers.Distinct().ToList();
-        if (request.ProviderId.HasValue && !providerIds.Contains(request.ProviderId.Value))
-        {
-            await SaveStateAsync(request.TenantId, request.ProviderId.Value,
-                DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(request.FromUtc, zone).DateTime),
-                AvailabilitySyncStatus.SkippedMapping, null, "Missing active provider mapping.", cancellationToken);
-            metrics.MappingSkips.Add(1, Tags(request.TenantId));
-            return new(1, 0, 0, 1, 0);
-        }
+        List<int> providerIds = request.ProviderId.HasValue
+            ? [request.ProviderId.Value]
+            : await db.SchedulingProviderWorkingHours.AsNoTracking().Where(x =>
+                x.TenantId == request.TenantId && x.IsActive).Select(x => x.ProviderId)
+                .Distinct().ToListAsync(cancellationToken);
 
         var fromDate = DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(request.FromUtc, zone).DateTime);
         var toDate = DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(request.ToUtc.AddTicks(-1), zone).DateTime);
@@ -132,7 +124,13 @@ internal sealed class ZocdocAvailabilitySynchronizer(
         var slots = canonical.Select(slot => Map(slot, providerMapping.ExternalId, zone, mappings, missing))
             .Where(x => x is not null).Cast<ZocdocTimeslotRequest>()
             .DistinctBy(x => new { x.ProviderId, x.LocationId, x.StartTime, x.PatientType,
-                Reasons = string.Join('|', x.AllowedVisitReasonIds.Order()) }).ToList();
+                Reasons = string.Join('|', x.AllowedVisitReasonIds.Order()) })
+            .OrderBy(x => x.ProviderId, StringComparer.Ordinal)
+            .ThenBy(x => x.LocationId, StringComparer.Ordinal)
+            .ThenBy(x => x.StartTime, StringComparer.Ordinal)
+            .ThenBy(x => x.PatientType, StringComparer.Ordinal)
+            .ThenBy(x => string.Join('|', x.AllowedVisitReasonIds.Order()), StringComparer.Ordinal)
+            .ToList();
         if (missing.Count > 0)
         {
             result.Skipped += missing.Count;
@@ -144,7 +142,8 @@ internal sealed class ZocdocAvailabilitySynchronizer(
         var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(slots))));
         var state = await db.SchedulingAvailabilitySyncStates.SingleOrDefaultAsync(x => x.TenantId == tenantId &&
             x.Channel == SchedulingChannel.Zocdoc && x.ProviderId == providerId && x.LocalDate == date, cancellationToken);
-        if (state is { Status: AvailabilitySyncStatus.Succeeded } && state.ContentHash == hash)
+        if (state is { Status: AvailabilitySyncStatus.Succeeded or AvailabilitySyncStatus.SkippedMapping } &&
+            state.ContentHash == hash)
         {
             result.Unchanged++;
             return;

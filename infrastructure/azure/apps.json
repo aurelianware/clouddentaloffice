@@ -4,8 +4,8 @@
   "metadata": {
     "_generator": {
       "name": "bicep",
-      "version": "0.45.15.27210",
-      "templateHash": "1782210675283396806"
+      "version": "0.46.1.21595",
+      "templateHash": "3101743471211669532"
     }
   },
   "parameters": {
@@ -216,8 +216,8 @@
           "metadata": {
             "_generator": {
               "name": "bicep",
-              "version": "0.45.15.27210",
-              "templateHash": "1100845248183620788"
+              "version": "0.46.1.21595",
+              "templateHash": "1065299927895639023"
             }
           },
           "parameters": {
@@ -443,14 +443,6 @@
                           "value": "Admin"
                         },
                         {
-                          "name": "StaffAuth__Users__2__Email",
-                          "value": "cindy@3rdsetsmiles.com"
-                        },
-                        {
-                          "name": "StaffAuth__Users__2__Role",
-                          "value": "Admin"
-                        },
-                        {
                           "name": "CloudHealthOffice__Enabled",
                           "value": "true"
                         },
@@ -672,10 +664,6 @@
                     {
                       "name": "servicebus-listen",
                       "value": "[parameters('serviceBusListenConnection')]"
-                    },
-                    {
-                      "name": "jwt-key",
-                      "value": "[parameters('jwtKey')]"
                     }
                   ]
                 },
@@ -704,18 +692,6 @@
                         {
                           "name": "ServiceBus__ConnectionString",
                           "secretRef": "servicebus-listen"
-                        },
-                        {
-                          "name": "Jwt__Key",
-                          "secretRef": "jwt-key"
-                        },
-                        {
-                          "name": "Jwt__Issuer",
-                          "value": "[parameters('jwtIssuer')]"
-                        },
-                        {
-                          "name": "Jwt__Audience",
-                          "value": "[parameters('jwtAudience')]"
                         }
                       ]
                     }
