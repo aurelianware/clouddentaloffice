@@ -319,5 +319,10 @@ public sealed class ZocdocSchedulingAdapterTests
             string externalProviderId, DateOnly localDate, IReadOnlyList<ZocdocTimeslotRequest> timeslots,
             CancellationToken cancellationToken = default)
         { CallCount++; return Task.CompletedTask; }
+        public Task<ZocdocAppointmentDto> GetAppointmentAsync(string tenantId,
+            SchedulingIntegrationConfiguration configuration, string appointmentId,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task ConfirmAppointmentAsync(string tenantId, SchedulingIntegrationConfiguration configuration,
+            string appointmentId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
     }
 }

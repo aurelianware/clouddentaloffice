@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.HttpOverrides;
 using System.Net;
 using System.Text.Json.Serialization;
+using System.Text.Json;
 using System.ComponentModel.DataAnnotations;
 using CloudDentalOffice.Contracts.Events;
 using CloudDentalOffice.Contracts.Scheduling;
@@ -17,6 +18,7 @@ using CloudDentalOffice.Messaging;
 // only the minimum contact and preference data required for appointment intake.
 
 var builder = WebApplication.CreateBuilder(args);
+builder.Services.AddSingleton(TimeProvider.System);
 
 builder.Services.AddOptions<PublicBookingOptions>()
     .Bind(builder.Configuration.GetSection(PublicBookingOptions.SectionName))
@@ -54,6 +56,16 @@ builder.Services.AddRateLimiter(options =>
             QueueLimit = 0
         });
     });
+    options.AddPolicy("zocdoc-webhooks", httpContext =>
+    {
+        var clientKey = httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+        return RateLimitPartition.GetFixedWindowLimiter(clientKey, _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = 120,
+            Window = TimeSpan.FromMinutes(1),
+            QueueLimit = 0
+        });
+    });
 });
 
 var app = builder.Build();
@@ -61,6 +73,50 @@ if (app.Environment.IsDevelopment()) { app.UseSwagger(); app.UseSwaggerUI(); }
 app.UseForwardedHeaders();
 app.UseRateLimiter();
 app.MapHealthChecks("/health");
+
+app.MapPost("/api/integrations/zocdoc/{integrationId}/webhooks", async (
+    string integrationId, HttpContext http, IConfiguration configuration,
+    IEventPublisher publisher, ServiceBusOptions serviceBus, TimeProvider timeProvider) =>
+{
+    var integration = configuration.GetSection("ZocdocWebhooks:Integrations").GetChildren()
+        .Select(x => x.Get<ZocdocWebhookIntegrationOptions>())
+        .FirstOrDefault(x => x is not null && string.Equals(x.IntegrationId, integrationId, StringComparison.Ordinal));
+    if (integration is not { Enabled: true } || string.IsNullOrWhiteSpace(integration.TenantId) ||
+        string.IsNullOrWhiteSpace(integration.WebhookSecret)) return Results.NotFound();
+    if (!serviceBus.IsConfigured) return Results.StatusCode(StatusCodes.Status503ServiceUnavailable);
+
+    byte[] body;
+    try
+    {
+        using var buffer = new MemoryStream();
+        await http.Request.Body.CopyToAsync(buffer, http.RequestAborted);
+        if (buffer.Length is 0 or > 1_048_576) return Results.BadRequest();
+        body = buffer.ToArray();
+    }
+    catch { return Results.BadRequest(); }
+
+    if (!ZocdocWebhookSignatureVerifier.Verify(body,
+        http.Request.Headers["webhook-timestamp"].ToString(),
+        http.Request.Headers["webhook-signature"].ToString(),
+        integration.WebhookSecret, timeProvider.GetUtcNow()))
+        return Results.Unauthorized();
+
+    ZocdocWebhookEnvelope? webhook;
+    try { webhook = JsonSerializer.Deserialize<ZocdocWebhookEnvelope>(body); }
+    catch (JsonException) { return Results.BadRequest(); }
+    var appointment = webhook?.Data?.AppointmentData;
+    if (webhook?.EventType != "appointment_updated" || webhook.Data?.DataType != "appointment_data" ||
+        appointment is null || string.IsNullOrWhiteSpace(appointment.AppointmentId) ||
+        appointment.AppointmentUpdateType is not ("created" or "updated" or "cancelled") ||
+        appointment.UpdatedAt == default)
+        return Results.BadRequest();
+
+    var externalEventId = $"{appointment.AppointmentId}:{appointment.UpdatedAt:O}:{appointment.AppointmentUpdateType}";
+    await publisher.PublishAsync(new ZocdocAppointmentWebhookEvent(
+        integration.TenantId, externalEventId, appointment.AppointmentId, appointment.AppointmentUpdateType),
+        http.RequestAborted);
+    return Results.Accepted();
+}).RequireRateLimiting("zocdoc-webhooks").WithTags("ZocdocWebhooks");
 
 app.MapPost("/api/public/booking-requests", async (
     PublicBookingRequest request,
@@ -225,6 +281,62 @@ public static class Idempotency
         if (key.Length is < 8 or > 128) throw new ArgumentException("Idempotency-Key must be 8 to 128 characters.", nameof(key));
         var hash = SHA256.HashData(Encoding.UTF8.GetBytes($"{tenantId}\n{key}"));
         return new Guid(hash.AsSpan(0, 16));
+    }
+}
+
+public sealed class ZocdocWebhookIntegrationOptions
+{
+    public string IntegrationId { get; set; } = string.Empty;
+    public string TenantId { get; set; } = string.Empty;
+    public string WebhookSecret { get; set; } = string.Empty;
+    public bool Enabled { get; set; }
+}
+
+public sealed record ZocdocWebhookEnvelope(
+    [property: JsonPropertyName("data")] ZocdocWebhookData? Data,
+    [property: JsonPropertyName("event_type")] string? EventType,
+    [property: JsonPropertyName("webhook_timestamp")] DateTimeOffset WebhookTimestamp);
+public sealed record ZocdocWebhookData(
+    [property: JsonPropertyName("appointment_data")] ZocdocWebhookAppointment? AppointmentData,
+    [property: JsonPropertyName("data_type")] string? DataType);
+public sealed record ZocdocWebhookAppointment(
+    [property: JsonPropertyName("appointment_id")] string AppointmentId,
+    [property: JsonPropertyName("appointment_updated_timestamp")] DateTimeOffset UpdatedAt,
+    [property: JsonPropertyName("appointment_update_type")] string AppointmentUpdateType);
+
+public static class ZocdocWebhookSignatureVerifier
+{
+    public static bool Verify(ReadOnlySpan<byte> rawBody, string timestampHeader, string signatureHeader,
+        string base64Secret, DateTimeOffset now)
+    {
+        if (!long.TryParse(timestampHeader, out var timestamp)) return false;
+        DateTimeOffset signedAt;
+        try { signedAt = DateTimeOffset.FromUnixTimeSeconds(timestamp); }
+        catch (ArgumentOutOfRangeException) { return false; }
+        if ((now - signedAt).Duration() > TimeSpan.FromMinutes(5)) return false;
+        byte[] key;
+        try { key = Convert.FromBase64String(base64Secret); }
+        catch (FormatException) { return false; }
+        if (key.Length == 0) return false;
+
+        var prefix = Encoding.UTF8.GetBytes(timestampHeader + ".");
+        var signedPayload = new byte[prefix.Length + rawBody.Length];
+        prefix.CopyTo(signedPayload, 0);
+        rawBody.CopyTo(signedPayload.AsSpan(prefix.Length));
+        var expected = HMACSHA256.HashData(key, signedPayload);
+        foreach (var versioned in signatureHeader.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            var separator = versioned.IndexOf(':');
+            if (separator <= 0 || !versioned[..separator].Equals("v1", StringComparison.Ordinal)) continue;
+            try
+            {
+                var supplied = Convert.FromBase64String(versioned[(separator + 1)..]);
+                if (supplied.Length == expected.Length && CryptographicOperations.FixedTimeEquals(supplied, expected))
+                    return true;
+            }
+            catch (FormatException) { }
+        }
+        return false;
     }
 }
 

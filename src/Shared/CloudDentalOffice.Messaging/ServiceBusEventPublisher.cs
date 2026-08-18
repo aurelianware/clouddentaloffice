@@ -15,6 +15,7 @@ public sealed class ServiceBusEventPublisher : IEventPublisher, IAsyncDisposable
     private readonly ServiceBusClient _client;
     private readonly ServiceBusSender _bookingSender;
     private readonly ServiceBusSender _availabilitySender;
+    private readonly ServiceBusSender _zocdocWebhookSender;
     private readonly ILogger<ServiceBusEventPublisher> _logger;
 
     public ServiceBusEventPublisher(ServiceBusOptions options, ILogger<ServiceBusEventPublisher> logger)
@@ -24,6 +25,7 @@ public sealed class ServiceBusEventPublisher : IEventPublisher, IAsyncDisposable
         _client = new ServiceBusClient(options.ConnectionString!);
         _bookingSender = _client.CreateSender(options.BookingTopic);
         _availabilitySender = _client.CreateSender(options.SchedulingAvailabilityTopic);
+        _zocdocWebhookSender = _client.CreateSender(options.ZocdocWebhookTopic);
         _logger = logger;
     }
 
@@ -39,7 +41,12 @@ public sealed class ServiceBusEventPublisher : IEventPublisher, IAsyncDisposable
             CorrelationId = @event.CorrelationId
         };
 
-        var sender = @event is SchedulingAvailabilityChangedEvent ? _availabilitySender : _bookingSender;
+        var sender = @event switch
+        {
+            SchedulingAvailabilityChangedEvent => _availabilitySender,
+            ZocdocAppointmentWebhookEvent => _zocdocWebhookSender,
+            _ => _bookingSender
+        };
         await sender.SendMessageAsync(message, cancellationToken);
         _logger.LogInformation("Published {EventType} {EventId} to Service Bus.", typeName, @event.EventId);
     }
@@ -48,6 +55,7 @@ public sealed class ServiceBusEventPublisher : IEventPublisher, IAsyncDisposable
     {
         await _bookingSender.DisposeAsync();
         await _availabilitySender.DisposeAsync();
+        await _zocdocWebhookSender.DisposeAsync();
         await _client.DisposeAsync();
     }
 }

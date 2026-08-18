@@ -78,6 +78,19 @@ public record UpdatePatientRequest
     public string? Status { get; init; }
 }
 
+public sealed record MatchOrCreateExternalPatientRequest
+{
+    public string? DeveloperPatientId { get; init; }
+    public required string FirstName { get; init; }
+    public required string LastName { get; init; }
+    public required DateOnly DateOfBirth { get; init; }
+    public string? Gender { get; init; }
+    public string? Email { get; init; }
+    public string? Phone { get; init; }
+}
+
+public sealed record MatchOrCreateExternalPatientResult(int PatientId, bool Created);
+
 // ── Patient Insurance ──
 
 public record PatientInsuranceDto

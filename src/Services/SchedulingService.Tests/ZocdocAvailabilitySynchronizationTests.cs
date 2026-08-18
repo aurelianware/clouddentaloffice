@@ -249,6 +249,11 @@ public sealed class ZocdocAvailabilitySynchronizationTests : IAsyncLifetime
         public Task<IReadOnlyList<ZocdocVisitReasonDto>> GetVisitReasonsAsync(string tenantId,
             SchedulingIntegrationConfiguration configuration, CancellationToken cancellationToken = default) =>
             Task.FromResult<IReadOnlyList<ZocdocVisitReasonDto>>([]);
+        public Task<ZocdocAppointmentDto> GetAppointmentAsync(string tenantId,
+            SchedulingIntegrationConfiguration configuration, string appointmentId,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task ConfirmAppointmentAsync(string tenantId, SchedulingIntegrationConfiguration configuration,
+            string appointmentId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
     }
     private sealed record Call(string TenantId, string ProviderId, DateOnly Date,
         IReadOnlyList<ZocdocTimeslotRequest> Timeslots);

@@ -20,6 +20,11 @@ internal interface IZocdocApiClient
     Task ReplaceTimeslotsAsync(string tenantId, SchedulingIntegrationConfiguration configuration,
         string externalProviderId, DateOnly localDate, IReadOnlyList<ZocdocTimeslotRequest> timeslots,
         CancellationToken cancellationToken = default);
+    Task<ZocdocAppointmentDto> GetAppointmentAsync(string tenantId,
+        SchedulingIntegrationConfiguration configuration, string appointmentId,
+        CancellationToken cancellationToken = default);
+    Task ConfirmAppointmentAsync(string tenantId, SchedulingIntegrationConfiguration configuration,
+        string appointmentId, CancellationToken cancellationToken = default);
 }
 
 internal sealed class ZocdocApiClient(
@@ -44,6 +49,40 @@ internal sealed class ZocdocApiClient(
         string tenantId, SchedulingIntegrationConfiguration configuration,
         CancellationToken cancellationToken = default) => GetAllPagesAsync<ZocdocVisitReasonDto>(
             tenantId, configuration, "GetVisitReasons", "v1/visit_reasons?page_size=10000", cancellationToken);
+
+    public async Task<ZocdocAppointmentDto> GetAppointmentAsync(string tenantId,
+        SchedulingIntegrationConfiguration configuration, string appointmentId,
+        CancellationToken cancellationToken = default)
+    {
+        SchedulingIntegrationConfigurationStore.ValidateTenant(tenantId);
+        if (string.IsNullOrWhiteSpace(appointmentId)) throw new ArgumentException("Appointment ID is required.");
+        var endpoints = ZocdocEndpoints.For(ZocdocEndpoints.Parse(configuration.Environment));
+        var token = await tokenProvider.GetAccessTokenAsync(tenantId, configuration, cancellationToken);
+        using var request = new HttpRequestMessage(HttpMethod.Get,
+            new Uri(endpoints.ApiBaseUri, $"v1/appointments/{Uri.EscapeDataString(appointmentId)}"));
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        using var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+        var correlationId = CorrelationId(response);
+        if (!response.IsSuccessStatusCode) throw FromApiResponse(response, correlationId);
+        return await response.Content.ReadFromJsonAsync<ZocdocAppointmentDto>(JsonOptions, cancellationToken)
+            ?? throw new ZocdocIntegrationException(ZocdocFailureKind.TemporaryRemoteFailure,
+                "Zocdoc returned an empty appointment response.", response.StatusCode,
+                externalCorrelationId: correlationId);
+    }
+
+    public async Task ConfirmAppointmentAsync(string tenantId, SchedulingIntegrationConfiguration configuration,
+        string appointmentId, CancellationToken cancellationToken = default)
+    {
+        SchedulingIntegrationConfigurationStore.ValidateTenant(tenantId);
+        var endpoints = ZocdocEndpoints.For(ZocdocEndpoints.Parse(configuration.Environment));
+        var token = await tokenProvider.GetAccessTokenAsync(tenantId, configuration, cancellationToken);
+        using var request = new HttpRequestMessage(HttpMethod.Post,
+            new Uri(endpoints.ApiBaseUri, "v1/appointments/confirm"))
+        { Content = JsonContent.Create(new { appointment_id = appointmentId }) };
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        using var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+        if (!response.IsSuccessStatusCode) throw FromApiResponse(response, CorrelationId(response));
+    }
 
     public async Task ReplaceTimeslotsAsync(string tenantId, SchedulingIntegrationConfiguration configuration,
         string externalProviderId, DateOnly localDate, IReadOnlyList<ZocdocTimeslotRequest> timeslots,

@@ -88,6 +88,29 @@ internal sealed record ZocdocTimeslotRequest
     [JsonPropertyName("patient_type")] public string? PatientType { get; init; }
 }
 
+internal sealed record ZocdocAppointmentDto
+{
+    [JsonPropertyName("appointment_id")] public string AppointmentId { get; init; } = string.Empty;
+    [JsonPropertyName("status")] public string Status { get; init; } = string.Empty;
+    [JsonPropertyName("start_time")] public DateTimeOffset StartTime { get; init; }
+    [JsonPropertyName("provider_location_id")] public string ProviderLocationId { get; init; } = string.Empty;
+    [JsonPropertyName("visit_reason_id")] public string VisitReasonId { get; init; } = string.Empty;
+    [JsonPropertyName("patient_type")] public string? PatientType { get; init; }
+    [JsonPropertyName("patient")] public ZocdocPatientDto? Patient { get; init; }
+}
+
+internal sealed record ZocdocPatientDto
+{
+    [JsonPropertyName("patient_id")] public string? PatientId { get; init; }
+    [JsonPropertyName("developer_patient_id")] public string? DeveloperPatientId { get; init; }
+    [JsonPropertyName("first_name")] public string FirstName { get; init; } = string.Empty;
+    [JsonPropertyName("last_name")] public string LastName { get; init; } = string.Empty;
+    [JsonPropertyName("date_of_birth")] public DateOnly DateOfBirth { get; init; }
+    [JsonPropertyName("sex_at_birth")] public string? SexAtBirth { get; init; }
+    [JsonPropertyName("phone_number")] public string? PhoneNumber { get; init; }
+    [JsonPropertyName("email_address")] public string? EmailAddress { get; init; }
+}
+
 internal static class ZocdocMapper
 {
     public static IReadOnlyList<ExternalSchedulingEntity> ToCanonical(
