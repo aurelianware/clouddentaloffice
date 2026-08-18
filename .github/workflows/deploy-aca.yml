@@ -37,7 +37,7 @@ on:
   workflow_dispatch:
 
 env:
-  IMAGE_TAG: ${{ github.sha }}
+  IMAGE_TAG: ${{ github.event.workflow_run.head_sha || github.sha }}
   RESOURCE_GROUP: ${{ secrets.AZURE_RESOURCE_GROUP }}
 
 permissions:
@@ -55,7 +55,9 @@ jobs:
     needs: [validate-manual]
     if: >-
       ${{ always() &&
-          ((github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') ||
+          ((github.event_name == 'workflow_run' &&
+            github.event.workflow_run.event == 'push' &&
+            github.event.workflow_run.conclusion == 'success') ||
            (github.event_name == 'workflow_dispatch' && needs.validate-manual.result == 'success')) }}
     runs-on: ubuntu-latest
 
