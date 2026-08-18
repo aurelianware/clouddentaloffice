@@ -179,6 +179,20 @@ public sealed class SchedulingAvailabilityServiceTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task ProviderAndLocationMappingsUseTypedIdentifierComparison()
+    {
+        var providerMapping = await _db.ExternalSchedulingResourceMappings.SingleAsync(x =>
+            x.ResourceType == SchedulingResourceType.Provider);
+        var locationMapping = await _db.ExternalSchedulingResourceMappings.SingleAsync(x =>
+            x.ResourceType == SchedulingResourceType.Location);
+        providerMapping.InternalId = "012";
+        locationMapping.InternalId = $"{{{_location.ToString().ToUpperInvariant()}}}";
+        await _db.SaveChangesAsync();
+
+        Assert.NotEmpty(await Service().GetAvailabilityAsync(Query()));
+    }
+
+    [Fact]
     public async Task DaylightSavingGapNeverProducesNonexistentLocalSlots()
     {
         var configuration = await _db.SchedulingIntegrationConfigurations.SingleAsync();

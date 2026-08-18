@@ -48,8 +48,12 @@ public sealed class SchedulingAvailabilityService(
         var mappings = await db.ExternalSchedulingResourceMappings.AsNoTracking()
             .Where(x => x.TenantId == query.TenantId && x.Channel == query.Channel && x.IsActive)
             .ToListAsync(cancellationToken);
-        var exposedProviders = MappingIds(mappings, SchedulingResourceType.Provider);
-        var exposedLocations = MappingIds(mappings, SchedulingResourceType.Location);
+        var exposedProviders = mappings.Where(x => x.ResourceType == SchedulingResourceType.Provider)
+            .Select(x => int.TryParse(x.InternalId, out var id) ? id : (int?)null)
+            .Where(x => x.HasValue).Select(x => x!.Value).ToHashSet();
+        var exposedLocations = mappings.Where(x => x.ResourceType == SchedulingResourceType.Location)
+            .Select(x => Guid.TryParse(x.InternalId, out var id) ? id : (Guid?)null)
+            .Where(x => x.HasValue).Select(x => x!.Value).ToHashSet();
         var exposedTypes = MappingIds(mappings, SchedulingResourceType.VisitReason);
 
         var appointmentTypesQuery = db.SchedulingAppointmentTypes.AsNoTracking()
@@ -67,7 +71,7 @@ public sealed class SchedulingAvailabilityService(
         if (query.ProviderId.HasValue) schedulesQuery = schedulesQuery.Where(x => x.ProviderId == query.ProviderId.Value);
         if (query.LocationId.HasValue) schedulesQuery = schedulesQuery.Where(x => x.LocationId == query.LocationId.Value);
         var schedules = (await schedulesQuery.ToListAsync(cancellationToken))
-            .Where(x => exposedProviders.Contains(x.ProviderId.ToString()) && exposedLocations.Contains(x.LocationId.ToString()))
+            .Where(x => exposedProviders.Contains(x.ProviderId) && exposedLocations.Contains(x.LocationId))
             .ToList();
         if (schedules.Count == 0)
             return NoAvailability(query, "NoExposedWorkingSchedules");
@@ -81,6 +85,12 @@ public sealed class SchedulingAvailabilityService(
         var blocks = await db.SchedulingBlockedTimes.AsNoTracking().Where(x =>
             x.TenantId == query.TenantId && x.IsActive && x.StartUtc < toUtc && x.EndUtc > fromUtc)
             .ToListAsync(cancellationToken);
+        var appointmentsByProvider = appointments.GroupBy(x => x.ProviderId).ToDictionary(
+            group => group.Key,
+            group => group.Select(x => new BusyInterval(x.StartTime, x.EndTime)).OrderBy(x => x.StartUtc).ToList());
+        var blocksByScope = blocks.GroupBy(x => (x.ProviderId, x.LocationId)).ToDictionary(
+            group => group.Key,
+            group => group.Select(x => new BusyInterval(x.StartUtc, x.EndUtc)).OrderBy(x => x.StartUtc).ToList());
 
         var localFromDate = DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(effectiveFrom, timeZone).DateTime);
         var localToDate = DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(effectiveTo, timeZone).DateTime);
@@ -105,15 +115,14 @@ public sealed class SchedulingAvailabilityService(
                     {
                         var end = start + duration;
                         if (start < effectiveFrom || end > effectiveTo) continue;
-                        if (appointments.Any(x => x.ProviderId == schedule.ProviderId &&
-                            x.StartTime < end.UtcDateTime && x.EndTime > start.UtcDateTime))
+                        if (appointmentsByProvider.TryGetValue(schedule.ProviderId, out var providerAppointments) &&
+                            HasOverlap(providerAppointments, start.UtcDateTime, end.UtcDateTime))
                         {
                             collisionCount++;
                             continue;
                         }
-                        if (blocks.Any(x => (!x.ProviderId.HasValue || x.ProviderId == schedule.ProviderId) &&
-                            (!x.LocationId.HasValue || x.LocationId == schedule.LocationId) &&
-                            x.StartUtc < end.UtcDateTime && x.EndUtc > start.UtcDateTime))
+                        if (HasBlockedOverlap(blocksByScope, schedule.ProviderId, schedule.LocationId,
+                            start.UtcDateTime, end.UtcDateTime))
                         {
                             blockedCount++;
                             continue;
@@ -157,6 +166,29 @@ public sealed class SchedulingAvailabilityService(
         IEnumerable<ExternalSchedulingResourceMapping> mappings, SchedulingResourceType type) =>
         mappings.Where(x => x.ResourceType == type).Select(x => x.InternalId).ToHashSet(StringComparer.Ordinal);
 
+    private static bool HasBlockedOverlap(
+        IReadOnlyDictionary<(int? ProviderId, Guid? LocationId), List<BusyInterval>> blocksByScope,
+        int providerId, Guid locationId, DateTime startUtc, DateTime endUtc)
+    {
+        foreach (var key in new (int?, Guid?)[]
+        {
+            (providerId, locationId), (providerId, null), (null, locationId), (null, null)
+        })
+            if (blocksByScope.TryGetValue(key, out var intervals) && HasOverlap(intervals, startUtc, endUtc))
+                return true;
+        return false;
+    }
+
+    private static bool HasOverlap(IEnumerable<BusyInterval> intervals, DateTime startUtc, DateTime endUtc)
+    {
+        foreach (var interval in intervals)
+        {
+            if (interval.StartUtc >= endUtc) return false;
+            if (interval.EndUtc > startUtc) return true;
+        }
+        return false;
+    }
+
     private static bool TryUtc(DateOnly date, TimeOnly time, TimeZoneInfo timeZone, out DateTimeOffset utc)
     {
         var local = DateTime.SpecifyKind(date.ToDateTime(time), DateTimeKind.Unspecified);
@@ -183,4 +215,6 @@ public sealed class SchedulingAvailabilityService(
         if (query.ProviderId <= 0) throw new ArgumentException("ProviderId must be positive.", nameof(query));
         if (query.LocationId == Guid.Empty) throw new ArgumentException("LocationId must not be empty.", nameof(query));
     }
+
+    private sealed record BusyInterval(DateTime StartUtc, DateTime EndUtc);
 }

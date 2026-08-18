@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using System.Security.Claims;
 using System.Text;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
@@ -90,12 +91,15 @@ app.MapGet("/api/appointments/{id:guid}", async (Guid id, SchedulingDbContext db
     return apt is not null ? Results.Ok(apt) : Results.NotFound();
 }).WithTags("Appointments");
 
-app.MapPost("/api/appointments", async (CreateAppointmentRequest request, SchedulingDbContext db) =>
+app.MapPost("/api/appointments", async (
+    CreateAppointmentRequest request, ClaimsPrincipal user, SchedulingDbContext db) =>
 {
+    var tenantId = SchedulingIntegrationAdminApi.TenantId(user);
+    if (string.IsNullOrWhiteSpace(tenantId)) return Results.Unauthorized();
     var apt = new Appointment
     {
         Id = Guid.NewGuid(),
-        TenantId = request.TenantId,
+        TenantId = tenantId,
         PatientId = request.PatientId,
         ProviderId = request.ProviderId,
         StartTime = SchedulingTime.NormalizeUtc(request.StartTime),
@@ -111,7 +115,7 @@ app.MapPost("/api/appointments", async (CreateAppointmentRequest request, Schedu
     db.Appointments.Add(apt);
     await db.SaveChangesAsync();
     return Results.Created($"/api/appointments/{apt.Id}", apt);
-}).WithTags("Appointments");
+}).RequireAuthorization().WithTags("Appointments");
 
 app.MapGet("/api/booking-requests", async (SchedulingDbContext db, IConfiguration config, HttpContext http, string tenantId, string? status) =>
 {

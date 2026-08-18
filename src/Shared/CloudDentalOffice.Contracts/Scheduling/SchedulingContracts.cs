@@ -18,7 +18,6 @@ public record AppointmentDto
 
 public record CreateAppointmentRequest
 {
-    public string TenantId { get; init; } = "default";
     public int PatientId { get; init; }
     public int ProviderId { get; init; }
     public DateTime StartTime { get; init; }
