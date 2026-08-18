@@ -85,6 +85,41 @@ public sealed class ZocdocSchedulingAdapterTests
     }
 
     [Fact]
+    public async Task TokenThrottlingCarriesRetryAfter()
+    {
+        var handler = new RecordingHandler(_ =>
+        {
+            var response = Json(HttpStatusCode.TooManyRequests, "{}");
+            response.Headers.RetryAfter = new System.Net.Http.Headers.RetryConditionHeaderValue(
+                TimeSpan.FromSeconds(12));
+            return response;
+        });
+        var provider = TokenProvider(handler);
+
+        var exception = await Assert.ThrowsAsync<ZocdocIntegrationException>(() =>
+            provider.GetAccessTokenAsync("practice-a", Configuration()));
+
+        Assert.Equal(ZocdocFailureKind.Throttling, exception.Kind);
+        Assert.Equal(TimeSpan.FromSeconds(12), exception.RetryAfter);
+    }
+
+    [Fact]
+    public async Task ExpiredTokensAreEvictedFromCache()
+    {
+        var clock = new MutableClock();
+        var sequence = 0;
+        var handler = new RecordingHandler(_ => Json(HttpStatusCode.OK,
+            $$"""{"access_token":"token-{{++sequence}}","expires_in":3600,"token_type":"Bearer"}"""));
+        var provider = TokenProvider(handler, clock);
+
+        await provider.GetAccessTokenAsync("practice-a", Configuration());
+        clock.UtcNow = clock.UtcNow.AddHours(2);
+        await provider.GetAccessTokenAsync("practice-b", Configuration());
+
+        Assert.Equal(1, provider.CachedTokenCount);
+    }
+
+    [Fact]
     public async Task ApiThrottlingIsClassifiedAndCarriesRetryAfter()
     {
         var handler = new RecordingHandler(_ =>
@@ -126,7 +161,7 @@ public sealed class ZocdocSchedulingAdapterTests
                 {
                     ProviderLocationId = "pr_123|lo_456", ProviderId = "pr_123",
                     FirstName = "Alex", LastName = "Rivera", Address1 = "1 Main St",
-                    City = "Mesa", State = "AZ", Zip = "85201"
+                    Address2 = "Suite 200", City = "Mesa", State = "AZ", Zip = "85201"
                 }
             ],
             VisitReasons = [new ZocdocVisitReasonDto { VisitReasonId = "pc_exam", Name = "Dental exam" }]
@@ -138,6 +173,8 @@ public sealed class ZocdocSchedulingAdapterTests
 
         Assert.Contains(entities, x => x.EntityType == SchedulingResourceType.Provider && x.ExternalId == "pr_123");
         Assert.Contains(entities, x => x.EntityType == SchedulingResourceType.Location && x.ExternalId == "lo_456");
+        Assert.Contains(entities, x => x.EntityType == SchedulingResourceType.Location &&
+            x.DisplayName.Contains("Suite 200"));
         Assert.Contains(entities, x => x.EntityType == SchedulingResourceType.VisitReason && x.ExternalId == "pc_exam");
     }
 
@@ -180,10 +217,11 @@ public sealed class ZocdocSchedulingAdapterTests
         Assert.IsType<ZocdocSchedulingAdapter>(resolved);
     }
 
-    private static ZocdocAccessTokenProvider TokenProvider(RecordingHandler handler) => new(
+    private static ZocdocAccessTokenProvider TokenProvider(
+        RecordingHandler handler, ISchedulingClock? clock = null) => new(
         new FixedHttpClientFactory(new HttpClient(handler)),
         new FixedCredentialProvider(),
-        new FixedClock(),
+        clock ?? new FixedClock(),
         NullLogger<ZocdocAccessTokenProvider>.Instance);
 
     private static ZocdocApiClient ApiClient(RecordingHandler handler) => new(
@@ -232,6 +270,10 @@ public sealed class ZocdocSchedulingAdapterTests
     private sealed class FixedClock : ISchedulingClock
     {
         public DateTimeOffset UtcNow => new(2026, 8, 18, 12, 0, 0, TimeSpan.Zero);
+    }
+    private sealed class MutableClock : ISchedulingClock
+    {
+        public DateTimeOffset UtcNow { get; set; } = new(2026, 8, 18, 12, 0, 0, TimeSpan.Zero);
     }
     private sealed class FakeConfigurationStore(SchedulingIntegrationConfiguration configuration)
         : ISchedulingIntegrationConfigurationStore

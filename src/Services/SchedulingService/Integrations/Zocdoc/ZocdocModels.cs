@@ -32,7 +32,8 @@ public sealed class ZocdocIntegrationException : Exception
         ExternalCorrelationId = externalCorrelationId;
     }
 
-    internal static ZocdocIntegrationException FromTokenResponse(HttpStatusCode statusCode) => new(
+    internal static ZocdocIntegrationException FromTokenResponse(
+        HttpStatusCode statusCode, TimeSpan? retryAfter = null) => new(
         statusCode == HttpStatusCode.TooManyRequests ? ZocdocFailureKind.Throttling
             : (int)statusCode >= 500 ? ZocdocFailureKind.TemporaryRemoteFailure
             : ZocdocFailureKind.Authentication,
@@ -41,7 +42,8 @@ public sealed class ZocdocIntegrationException : Exception
             : (int)statusCode >= 500
                 ? "Zocdoc OAuth service is temporarily unavailable."
                 : "Zocdoc rejected the configured client credentials.",
-        statusCode);
+        statusCode,
+        statusCode == HttpStatusCode.TooManyRequests ? retryAfter : null);
 }
 
 // Transport DTOs intentionally remain internal to the Zocdoc boundary.
@@ -91,7 +93,7 @@ internal static class ZocdocMapper
             if (!string.IsNullOrWhiteSpace(locationId))
             {
                 var locationName = string.Join(", ", new[]
-                    { entity.Address1, entity.City, entity.State, entity.Zip }
+                    { entity.Address1, entity.Address2, entity.City, entity.State, entity.Zip }
                     .Where(x => !string.IsNullOrWhiteSpace(x)));
                 result.Add(new(SchedulingResourceType.Location, locationId,
                     string.IsNullOrWhiteSpace(locationName) ? locationId : locationName));

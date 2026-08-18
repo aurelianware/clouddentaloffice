@@ -80,6 +80,7 @@ public sealed class ZocdocAccessTokenProvider(
     public async Task<string> GetAccessTokenAsync(string tenantId, SchedulingIntegrationConfiguration configuration,
         CancellationToken cancellationToken = default)
     {
+        RemoveExpiredTokens();
         var environment = ZocdocEndpoints.Parse(configuration.Environment);
         var credentials = await credentialProvider.GetAsync(tenantId, configuration, cancellationToken);
         var key = new TokenCacheKey(tenantId, environment, credentials.ClientId);
@@ -99,7 +100,8 @@ public sealed class ZocdocAccessTokenProvider(
             using var response = await httpClientFactory.CreateClient("ZocdocAuth")
                 .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
             if (!response.IsSuccessStatusCode)
-                throw ZocdocIntegrationException.FromTokenResponse(response.StatusCode);
+                throw ZocdocIntegrationException.FromTokenResponse(
+                    response.StatusCode, response.Headers.RetryAfter?.Delta);
             var payload = await response.Content.ReadFromJsonAsync<ZocdocTokenResponse>(cancellationToken)
                 ?? throw new ZocdocIntegrationException(ZocdocFailureKind.Authentication,
                     "Zocdoc returned an empty OAuth token response.");
@@ -126,6 +128,16 @@ public sealed class ZocdocAccessTokenProvider(
         token = string.Empty;
         return false;
     }
+
+    private void RemoveExpiredTokens()
+    {
+        var refreshThreshold = clock.UtcNow.AddMinutes(1);
+        foreach (var entry in _tokens)
+            if (entry.Value.ExpiresAt <= refreshThreshold)
+                _tokens.TryRemove(entry.Key, out _);
+    }
+
+    internal int CachedTokenCount => _tokens.Count;
 
     private sealed record TokenCacheKey(string TenantId, ZocdocEnvironment Environment, string ClientId);
     private sealed record TokenEntry(string AccessToken, DateTimeOffset ExpiresAt);
