@@ -72,7 +72,8 @@ public sealed class SchedulingIntegrationAdminClient(HttpClient http) : ISchedul
         GetAsync<SchedulingIntegrationOverview>("api/scheduling-integrations/zocdoc/overview", cancellationToken);
     public async Task SaveConfigurationAsync(SchedulingIntegrationConfigurationInput input, CancellationToken cancellationToken = default)
     {
-        using var response = await http.PutAsJsonAsync("api/scheduling-integrations/zocdoc/configuration", input, cancellationToken);
+        // Uses the channel route while preserving the same concrete URL shape accepted before it was generalized.
+        using var response = await http.PutAsJsonAsync("api/scheduling-integrations/Zocdoc/configuration", input, cancellationToken);
         await SendAsync(response, cancellationToken);
     }
     public async Task TestConnectionAsync(CancellationToken cancellationToken = default)

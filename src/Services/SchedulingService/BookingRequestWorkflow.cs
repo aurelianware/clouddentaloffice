@@ -60,6 +60,9 @@ public sealed class BookingRequestWorkflow(SchedulingDbContext db)
             AttributionMetadataJson = SerializeMetadata(evt.AttributionMetadata),
             Source = TrimTo(evt.Source, 100) ?? "PublicWebsite",
             SourceReference = TrimTo(evt.SourceReference, 200),
+            RequestedProviderId = evt.RequestedProviderId,
+            RequestedLocationId = evt.RequestedLocationId,
+            RequestedAppointmentTypeId = TrimTo(evt.RequestedAppointmentTypeId, 128),
             SubmittedAtUtc = SchedulingTime.NormalizeUtc(evt.SubmittedAtUtc ?? evt.OccurredAt)
         });
         try { await db.SaveChangesAsync(cancellationToken); return true; }

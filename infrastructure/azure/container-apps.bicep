@@ -36,6 +36,10 @@ param serviceBusListenConnection string
 param publicBookingApiKey string
 @secure()
 param patientServiceApiKey string = ''
+@secure()
+param publicSchedulingServiceApiKey string
+@secure()
+param publicAvailabilitySlotKey string
 param zocdocWebhookIntegrationId string = ''
 @secure()
 param zocdocWebhookSecret string = ''
@@ -269,6 +273,8 @@ resource schedulingService 'Microsoft.App/containerApps@2023-05-01' = {
         { name: 'servicebus-listen', value: serviceBusListenConnection }
         { name: 'jwt-key', value: jwtKey }
         { name: 'patient-service-api-key', value: patientServiceApiKey }
+        { name: 'public-intake-api-key', value: publicSchedulingServiceApiKey }
+        { name: 'public-slot-key', value: publicAvailabilitySlotKey }
       ]
     }
     template: {
@@ -283,6 +289,9 @@ resource schedulingService 'Microsoft.App/containerApps@2023-05-01' = {
             { name: 'ConnectionStrings__SchedulingDb', secretRef: 'conn-scheduling' }
             { name: 'ServiceBus__ConnectionString', secretRef: 'servicebus-listen' }
             { name: 'Services__PatientService', value: 'http://patient-service' }
+            { name: 'InternalApi__PublicIntakeClients__0__TenantId', value: initialTenantId }
+            { name: 'InternalApi__PublicIntakeClients__0__ApiKey', secretRef: 'public-intake-api-key' }
+            { name: 'PublicAvailability__SlotTokenKey', secretRef: 'public-slot-key' }
             { name: 'Services__PatientServiceClients__0__TenantId', value: initialTenantId }
             { name: 'Services__PatientServiceClients__0__ApiKey', secretRef: 'patient-service-api-key' }
             { name: 'Jwt__Key', secretRef: 'jwt-key' }
@@ -374,6 +383,7 @@ resource intakeService 'Microsoft.App/containerApps@2023-05-01' = {
         { name: 'servicebus-send', value: serviceBusSendConnection }
         { name: 'booking-key', value: publicBookingApiKey }
         { name: 'zocdoc-webhook-secret', value: zocdocWebhookSecret }
+        { name: 'scheduling-service-api-key', value: publicSchedulingServiceApiKey }
       ]
     }
     template: {
@@ -386,9 +396,13 @@ resource intakeService 'Microsoft.App/containerApps@2023-05-01' = {
             { name: 'ASPNETCORE_ENVIRONMENT', value: 'Production' }
             { name: 'ServiceBus__ConnectionString', secretRef: 'servicebus-send' }
             { name: 'PublicBooking__Enabled', value: 'true' }
+            { name: 'PublicBooking__RequireAvailabilitySelection', value: 'true' }
             { name: 'PublicBooking__Clients__0__TenantId', value: initialTenantId }
             { name: 'PublicBooking__Clients__0__ApiKey', secretRef: 'booking-key' }
             { name: 'PublicBooking__Source', value: '3rdsetsmiles.com' }
+            { name: 'Services__SchedulingService', value: 'http://scheduling-service' }
+            { name: 'Services__SchedulingServiceClients__0__TenantId', value: initialTenantId }
+            { name: 'Services__SchedulingServiceClients__0__ApiKey', secretRef: 'scheduling-service-api-key' }
             { name: 'ZocdocWebhooks__Integrations__0__IntegrationId', value: zocdocWebhookIntegrationId }
             { name: 'ZocdocWebhooks__Integrations__0__TenantId', value: initialTenantId }
             { name: 'ZocdocWebhooks__Integrations__0__WebhookSecret', secretRef: 'zocdoc-webhook-secret' }

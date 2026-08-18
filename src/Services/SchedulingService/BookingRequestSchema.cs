@@ -26,6 +26,7 @@ public static class BookingRequestSchema
             ("Campaign", "TEXT NULL", "varchar(200) NULL", "nvarchar(200) NULL"),
             ("AttributionId", "TEXT NULL", "varchar(200) NULL", "nvarchar(200) NULL"),
             ("AttributionMetadataJson", "TEXT NULL", "varchar(2000) NULL", "nvarchar(2000) NULL"),
+            ("RequestedAppointmentTypeId", "TEXT NULL", "varchar(128) NULL", "nvarchar(128) NULL"),
             ("SubmittedAtUtc", "TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP", "timestamp with time zone NOT NULL DEFAULT CURRENT_TIMESTAMP", "datetime2 NOT NULL DEFAULT SYSUTCDATETIME()")
         };
 
@@ -70,7 +71,7 @@ public static class BookingRequestSchema
           "PreferredContact" TEXT NULL, "InsuranceIntent" TEXT NULL, "InsuranceCarrier" TEXT NULL,
           "Campaign" TEXT NULL, "AttributionId" TEXT NULL, "AttributionMetadataJson" TEXT NULL,
           "SourceReference" TEXT NULL, "Status" INTEGER NOT NULL, "MatchedPatientId" INTEGER NULL,
-          "RequestedProviderId" INTEGER NULL, "RequestedLocationId" TEXT NULL,
+          "RequestedProviderId" INTEGER NULL, "RequestedLocationId" TEXT NULL, "RequestedAppointmentTypeId" TEXT NULL,
           "ApprovedAppointmentId" TEXT NULL, "CreatedAt" TEXT NOT NULL, "SubmittedAtUtc" TEXT NOT NULL, "UpdatedAt" TEXT NOT NULL,
           "ReviewedAt" TEXT NULL, "ApprovedAt" TEXT NULL, "RejectedAt" TEXT NULL,
           "ReviewedBy" TEXT NULL, "ApprovedBy" TEXT NULL, "RejectionReason" TEXT NULL, "StaffNotes" TEXT NULL);
@@ -88,7 +89,7 @@ public static class BookingRequestSchema
           "PreferredContact" varchar(20) NULL, "InsuranceIntent" varchar(20) NULL, "InsuranceCarrier" varchar(120) NULL,
           "Campaign" varchar(200) NULL, "AttributionId" varchar(200) NULL, "AttributionMetadataJson" varchar(2000) NULL,
           "SourceReference" varchar(200) NULL, "Status" integer NOT NULL, "MatchedPatientId" integer NULL,
-          "RequestedProviderId" integer NULL, "RequestedLocationId" uuid NULL, "ApprovedAppointmentId" uuid NULL,
+          "RequestedProviderId" integer NULL, "RequestedLocationId" uuid NULL, "RequestedAppointmentTypeId" varchar(128) NULL, "ApprovedAppointmentId" uuid NULL,
           "CreatedAt" timestamp with time zone NOT NULL, "SubmittedAtUtc" timestamp with time zone NOT NULL, "UpdatedAt" timestamp with time zone NOT NULL,
           "ReviewedAt" timestamp with time zone NULL, "ApprovedAt" timestamp with time zone NULL,
           "RejectedAt" timestamp with time zone NULL, "ReviewedBy" varchar(200) NULL,
@@ -108,7 +109,7 @@ public static class BookingRequestSchema
             [PreferredContact] nvarchar(20) NULL, [InsuranceIntent] nvarchar(20) NULL, [InsuranceCarrier] nvarchar(120) NULL,
             [Campaign] nvarchar(200) NULL, [AttributionId] nvarchar(200) NULL, [AttributionMetadataJson] nvarchar(2000) NULL,
             [SourceReference] nvarchar(200) NULL, [Status] int NOT NULL, [MatchedPatientId] int NULL,
-            [RequestedProviderId] int NULL, [RequestedLocationId] uniqueidentifier NULL,
+            [RequestedProviderId] int NULL, [RequestedLocationId] uniqueidentifier NULL, [RequestedAppointmentTypeId] nvarchar(128) NULL,
             [ApprovedAppointmentId] uniqueidentifier NULL, [CreatedAt] datetime2 NOT NULL, [SubmittedAtUtc] datetime2 NOT NULL, [UpdatedAt] datetime2 NOT NULL,
             [ReviewedAt] datetime2 NULL, [ApprovedAt] datetime2 NULL, [RejectedAt] datetime2 NULL,
             [ReviewedBy] nvarchar(200) NULL, [ApprovedBy] nvarchar(200) NULL,

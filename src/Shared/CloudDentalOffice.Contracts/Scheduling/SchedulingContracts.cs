@@ -56,7 +56,35 @@ public record PublicBookingRequest
     public string? Source { get; init; }
     public string? Campaign { get; init; }
     public Dictionary<string, string>? Attribution { get; init; }
+    /// <summary>Opaque, short-lived selection issued by the public availability API.</summary>
+    public string? AvailabilityToken { get; init; }
 }
+
+/// <summary>Data-minimized website-facing availability. Codes are channel aliases, not CDO identifiers.</summary>
+public sealed record PublicSchedulingAvailabilitySlot
+{
+    public required string AvailabilityToken { get; init; }
+    public required string AppointmentTypeCode { get; init; }
+    public required string AppointmentTypeName { get; init; }
+    public string? ProviderCode { get; init; }
+    public string? ProviderName { get; init; }
+    public required string LocationCode { get; init; }
+    public required string LocationName { get; init; }
+    public required DateTimeOffset Start { get; init; }
+    public required DateTimeOffset End { get; init; }
+}
+
+public sealed record PublicSchedulingAvailabilityRequest(
+    PatientRelationship PatientRelationship,
+    DateTimeOffset From,
+    DateTimeOffset To,
+    string? AppointmentTypeCode = null,
+    string? ProviderCode = null,
+    string? LocationCode = null);
+
+public sealed record ValidatedPublicSchedulingSelection(
+    int ProviderId, Guid LocationId, string AppointmentTypeId,
+    DateTimeOffset Start, DateTimeOffset End);
 
 public enum PatientRelationship
 {
@@ -186,6 +214,7 @@ public record BookingRequestDto
     public int? MatchedPatientId { get; init; }
     public int? RequestedProviderId { get; init; }
     public Guid? RequestedLocationId { get; init; }
+    public string? RequestedAppointmentTypeId { get; init; }
     public Guid? ApprovedAppointmentId { get; init; }
     public DateTime CreatedAt { get; init; }
     public DateTime SubmittedAtUtc { get; init; }

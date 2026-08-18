@@ -225,6 +225,8 @@ jobs:
               serviceBusSendConnection='${{ steps.servicebus.outputs.send_connection }}' \
               serviceBusListenConnection='${{ steps.servicebus.outputs.listen_connection }}' \
               publicBookingApiKey='${{ secrets.PUBLIC_BOOKING_API_KEY }}' \
+              publicSchedulingServiceApiKey='${{ secrets.PUBLIC_SCHEDULING_SERVICE_API_KEY }}' \
+              publicAvailabilitySlotKey='${{ secrets.PUBLIC_AVAILABILITY_SLOT_KEY }}' \
               googleOAuthClientId='${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}' \
               googleOAuthClientSecret='${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}' \
               cloudHealthOfficeApiKey='${{ secrets.CHO_ESTIMATE_API_KEY }}'

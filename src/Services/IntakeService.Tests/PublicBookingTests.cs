@@ -106,6 +106,27 @@ public sealed class PublicBookingTests
     }
 
     [Fact]
+    public void AvailabilityTokenIsBoundedAndDoesNotPermitPublicIdentifiers()
+    {
+        var request = new PublicBookingRequest
+        {
+            Name = "Sam", Phone = "4805550100", PreferredStart = DateTime.UtcNow.AddDays(1),
+            PatientRelationship = PatientRelationship.New, AvailabilityToken = new string('x', 4097)
+        };
+        Assert.Contains("availabilityToken", PublicBookingValidator.Validate(request, DateTime.UtcNow));
+        Assert.DoesNotContain(typeof(PublicBookingRequest).GetProperties(), property =>
+            property.Name is "ProviderId" or "LocationId" or "AppointmentTypeId" or "TenantId" or "PatientId");
+    }
+
+    [Fact]
+    public void PublicAvailabilityAndBookingShareABoundedNoQueueRatePolicy()
+    {
+        var policy = PublicBookingRateLimits.Create();
+        Assert.Equal(5, policy.PermitLimit); Assert.Equal(TimeSpan.FromMinutes(1), policy.Window);
+        Assert.Equal(0, policy.QueueLimit);
+    }
+
+    [Fact]
     public void AttributionKeepsOnlyAllowlistedBoundedMetadata()
     {
         var sanitized = PublicBookingSanitizer.SanitizeAttribution(new Dictionary<string, string>
@@ -128,7 +149,8 @@ public sealed class PublicBookingTests
     public void LegacyMinimalPayloadStillDeserializesAndValidates()
     {
         var request = System.Text.Json.JsonSerializer.Deserialize<PublicBookingRequest>(
-            $$"""{"name":"Sam","phone":"4805550100","preferredStart":"{{DateTime.UtcNow.AddDays(1):O}}","patientRelationship":1}""");
+            $$"""{"name":"Sam","phone":"4805550100","preferredStart":"{{DateTime.UtcNow.AddDays(1):O}}","patientRelationship":1}""",
+            new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web));
 
         Assert.NotNull(request);
         Assert.Empty(PublicBookingValidator.Validate(request!, DateTime.UtcNow));

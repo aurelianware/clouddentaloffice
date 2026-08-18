@@ -54,6 +54,18 @@ public sealed class BookingRequestWorkflowTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task ValidatedWebsiteSelectionCreatesOnlyAReviewRequestAndPreservesRouting()
+    {
+        var location = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
+        var evt = NewEvent(PatientRelationship.New) with
+        { RequestedProviderId = 12, RequestedLocationId = location, RequestedAppointmentTypeId = "new-exam", ContractVersion = 3 };
+        Assert.True(await new BookingRequestWorkflow(_db).PersistEventAsync(evt));
+        var request = await _db.BookingRequests.SingleAsync();
+        Assert.Equal(12, request.RequestedProviderId); Assert.Equal(location, request.RequestedLocationId);
+        Assert.Equal("new-exam", request.RequestedAppointmentTypeId); Assert.Empty(_db.Appointments);
+    }
+
+    [Fact]
     public async Task RepeatedIdempotencyKeyCreatesOneRequestAndDifferentRequestIdsCreateSeparateRequests()
     {
         var workflow = new BookingRequestWorkflow(_db);
