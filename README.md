@@ -165,11 +165,12 @@ The topic decouples the website from the scheduler:
 | `ServiceBus:ConnectionString` | Service Bus namespace connection string. Empty → website booking returns `503`; verified Zocdoc webhooks remain in the durable inbox for retry. |
 | `ServiceBus:BookingTopic` | Topic to publish to (default `booking-requests`). |
 
-**SchedulingService** (`PublicBooking` + `ServiceBus` sections):
+**SchedulingService** (`Jwt`, `InternalApi` + `ServiceBus` sections):
 
 | Key | Purpose |
 |-----|---------|
-| `PublicBooking:RequireApiKeyForReads` | When `true`, `GET /api/appointments*` also require the API key (default `false`). |
+| `Jwt:Key` / `Issuer` / `Audience` | Validates short-lived Portal staff/admin bearer tokens. Missing keys fail closed. |
+| `InternalApi:PublicIntakeClients:{index}:ApiKey` / `TenantId` | Tenant-bound IntakeService credential for public availability operations. |
 | `ServiceBus:ConnectionString` | Same namespace as IntakeService. Empty → the consumer stays idle. |
 | `ServiceBus:BookingTopic` / `ServiceBus:BookingSubscription` | Defaults `booking-requests` / `scheduling`. |
 
@@ -192,19 +193,18 @@ Fresh local/Kubernetes databases require no manual step.
 
 Expose **only IntakeService** to the internet (TLS + the API key at the edge).
 Keep `api-gateway` and every PHI-bearing service — including `SchedulingService`
-and its anonymous `GET /api/appointments*` reads — on the **private** network.
-IntakeService has no database and cannot read clinical or patient records.
+and its authenticated appointment APIs — on the **private** network.
+IntakeService has only its isolated durable inbox database and cannot read
+clinical, patient, or scheduling records.
 Visitor-submitted contact and visit information must nevertheless be handled as
 sensitive healthcare information.
 
 3rd Set Smiles is the first reference integration, but no practice name or
 internal patient/provider/location identifier is coupled to this workflow.
 
-If (against this guidance) `SchedulingService` is ever reachable from the
-internet, set `PublicBooking:RequireApiKeyForReads=true` as defense-in-depth so
-its reads require the API key (the Portal must then present the key on its
-scheduling calls). CORS is **not** required — the website calls IntakeService
-server-to-server.
+SchedulingService appointment and booking-request APIs always require a signed
+tenant-bearing staff token; there is no insecure read toggle. CORS is **not**
+required—the website calls IntakeService server-to-server.
 
 ---
 

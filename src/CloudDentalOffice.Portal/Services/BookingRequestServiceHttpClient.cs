@@ -1,6 +1,5 @@
 using System.Net.Http.Json;
 using CloudDentalOffice.Contracts.Scheduling;
-using CloudDentalOffice.Portal.Services.Tenancy;
 
 namespace CloudDentalOffice.Portal.Services;
 
@@ -13,23 +12,21 @@ public interface IBookingRequestService
     Task<BookingRequestDto> ApproveAsync(Guid id, ApproveBookingRequest approval);
 }
 
-public sealed class BookingRequestServiceHttpClient(HttpClient http, ITenantProvider tenantProvider) : IBookingRequestService
+public sealed class BookingRequestServiceHttpClient(HttpClient http) : IBookingRequestService
 {
-    private string TenantId => string.IsNullOrWhiteSpace(tenantProvider.TenantId) ? "default" : tenantProvider.TenantId;
-
     public async Task<List<BookingRequestDto>> GetAsync(string? status = null)
     {
-        var url = $"/api/booking-requests?tenantId={Uri.EscapeDataString(TenantId)}";
-        if (!string.IsNullOrWhiteSpace(status)) url += $"&status={Uri.EscapeDataString(status)}";
+        var url = "/api/booking-requests";
+        if (!string.IsNullOrWhiteSpace(status)) url += $"?status={Uri.EscapeDataString(status)}";
         return await http.GetFromJsonAsync<List<BookingRequestDto>>(url) ?? [];
     }
 
     public async Task<BookingRequestDto?> GetAsync(Guid id) =>
-        await http.GetFromJsonAsync<BookingRequestDto>($"/api/booking-requests/{id}?tenantId={Uri.EscapeDataString(TenantId)}");
+        await http.GetFromJsonAsync<BookingRequestDto>($"/api/booking-requests/{id}");
 
     public async Task<BookingRequestDto> MatchPatientAsync(Guid id, int patientId, string? reviewedBy = null, string? notes = null)
     {
-        var response = await http.PostAsJsonAsync($"/api/booking-requests/{id}/match-patient?tenantId={Uri.EscapeDataString(TenantId)}",
+        var response = await http.PostAsJsonAsync($"/api/booking-requests/{id}/match-patient",
             new MatchBookingPatientRequest(patientId, reviewedBy, notes));
         await EnsureSuccess(response);
         return (await response.Content.ReadFromJsonAsync<BookingRequestDto>())!;
@@ -37,7 +34,7 @@ public sealed class BookingRequestServiceHttpClient(HttpClient http, ITenantProv
 
     public async Task<BookingRequestDto> ChangeStatusAsync(Guid id, BookingRequestStatus status, string? reason = null, string? notes = null)
     {
-        var response = await http.PostAsJsonAsync($"/api/booking-requests/{id}/status?tenantId={Uri.EscapeDataString(TenantId)}",
+        var response = await http.PostAsJsonAsync($"/api/booking-requests/{id}/status",
             new ChangeBookingRequestStatusRequest(status, null, reason, notes));
         await EnsureSuccess(response);
         return (await response.Content.ReadFromJsonAsync<BookingRequestDto>())!;
@@ -45,7 +42,7 @@ public sealed class BookingRequestServiceHttpClient(HttpClient http, ITenantProv
 
     public async Task<BookingRequestDto> ApproveAsync(Guid id, ApproveBookingRequest approval)
     {
-        var response = await http.PostAsJsonAsync($"/api/booking-requests/{id}/approve?tenantId={Uri.EscapeDataString(TenantId)}", approval);
+        var response = await http.PostAsJsonAsync($"/api/booking-requests/{id}/approve", approval);
         await EnsureSuccess(response);
         return (await GetAsync(id))!;
     }

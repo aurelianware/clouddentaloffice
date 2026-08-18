@@ -174,6 +174,38 @@ public sealed class SchedulingIntegrationAdminClient(HttpClient http) : ISchedul
 internal enum AvailabilityStatus { Pending, Succeeded, Failed, SkippedMapping, Disabled }
 internal enum AppointmentStatus { Synced, Pending, Failed, Conflict }
 
+public sealed class SchedulingTenantAuthorizationHandler(
+    AuthenticationStateProvider authenticationStateProvider, IConfiguration configuration) : DelegatingHandler
+{
+    protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+    {
+        var user = (await authenticationStateProvider.GetAuthenticationStateAsync()).User;
+        if (user.Identity?.IsAuthenticated != true)
+            throw new UnauthorizedAccessException("Staff authentication is required.");
+        AddTenantToken(request, user, configuration);
+        return await base.SendAsync(request, cancellationToken);
+    }
+
+    internal static void AddTenantToken(HttpRequestMessage request, ClaimsPrincipal user, IConfiguration configuration)
+    {
+        var tenantId = user.FindFirst("TenantId")?.Value ?? user.FindFirst("tenant_id")?.Value
+            ?? user.FindFirst("tenantId")?.Value;
+        if (string.IsNullOrWhiteSpace(tenantId)) throw new UnauthorizedAccessException("Tenant context is required.");
+        var key = configuration["Jwt:Key"];
+        if (string.IsNullOrWhiteSpace(key) || key.Length < 32)
+            throw new InvalidOperationException("Scheduling authentication is not configured.");
+        var claims = new List<Claim> { new("tenant_id", tenantId) };
+        claims.AddRange(user.FindAll(ClaimTypes.Role).Select(role => new Claim(ClaimTypes.Role, role.Value)));
+        var token = new JwtSecurityToken(
+            issuer: configuration["Jwt:Issuer"] ?? "CloudDentalOffice",
+            audience: configuration["Jwt:Audience"] ?? "CloudDentalOffice",
+            claims: claims,
+            expires: DateTime.UtcNow.AddMinutes(2),
+            signingCredentials: new(new SymmetricSecurityKey(Encoding.UTF8.GetBytes(key)), SecurityAlgorithms.HmacSha256));
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", new JwtSecurityTokenHandler().WriteToken(token));
+    }
+}
+
 public sealed class SchedulingAdminAuthorizationHandler(
     AuthenticationStateProvider authenticationStateProvider, IConfiguration configuration) : DelegatingHandler
 {
@@ -182,19 +214,7 @@ public sealed class SchedulingAdminAuthorizationHandler(
         var user = (await authenticationStateProvider.GetAuthenticationStateAsync()).User;
         if (user.Identity?.IsAuthenticated != true || !user.IsInRole("Admin"))
             throw new UnauthorizedAccessException("Administrator access is required.");
-        var tenantId = user.FindFirst("TenantId")?.Value ?? user.FindFirst("tenant_id")?.Value
-            ?? user.FindFirst("tenantId")?.Value;
-        if (string.IsNullOrWhiteSpace(tenantId)) throw new UnauthorizedAccessException("Tenant context is required.");
-        var key = configuration["Jwt:Key"];
-        if (string.IsNullOrWhiteSpace(key) || key.Length < 32)
-            throw new InvalidOperationException("Scheduling admin authentication is not configured.");
-        var token = new JwtSecurityToken(
-            issuer: configuration["Jwt:Issuer"] ?? "CloudDentalOffice",
-            audience: configuration["Jwt:Audience"] ?? "CloudDentalOffice",
-            claims: [new("tenant_id", tenantId), new(ClaimTypes.Role, "Admin")],
-            expires: DateTime.UtcNow.AddMinutes(2),
-            signingCredentials: new(new SymmetricSecurityKey(Encoding.UTF8.GetBytes(key)), SecurityAlgorithms.HmacSha256));
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", new JwtSecurityTokenHandler().WriteToken(token));
+        SchedulingTenantAuthorizationHandler.AddTenantToken(request, user, configuration);
         return await base.SendAsync(request, cancellationToken);
     }
 }

@@ -30,7 +30,8 @@ turn the public POST into anonymous appointment creation.
 
 - Tenant: `third-set-smiles`; practice: 3rd Set Smiles; domain: `3rdsetsmiles.com`; timezone: `America/Phoenix` (the website sends an offset-bearing UTC instant).
 - API keys map to a tenant server-side. Use a unique 32-byte random key per site/environment; rotate by temporarily adding a second `Clients` entry, updating Cloudflare, then removing the old entry.
-- IntakeService has no database connection and exposes only POST intake plus `/health`. Swagger is development-only.
+- IntakeService has only an isolated durable-inbox database connection and no
+  access to patient, clinical, or scheduling databases. Swagger is development-only.
 - Scheduling/API gateway ingress stays internal. Never route `/api/booking-requests` or `/api/appointments` from a public ingress.
 - Accepted data is limited to name, phone, optional email, new/existing relationship, preferred and optional alternate instants, preferred contact, optional 15–240 minute duration, reason (500), scheduling message (2,000), insurance intent/carrier, source/campaign, and allowlisted attribution metadata. Times must include an offset and the preferred time must be 5 minutes–1 year ahead. Member/subscriber IDs, card images, and clinical data are not accepted.
 - The website creates one `requestId` per loaded form and sends it as `Idempotency-Key` (8–128 characters). The tenant/key pair deterministically sets the event ID; Service Bus duplicate detection and the `(TenantId, EventId)` unique index make a replay an accepted success with one persisted request. Without the header, legacy callers remain supported and each accepted retry is a new request.

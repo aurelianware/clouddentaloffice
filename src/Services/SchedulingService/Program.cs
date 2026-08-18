@@ -54,7 +54,17 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJw
     };
 });
 builder.Services.AddAuthorization(options =>
-    options.AddPolicy("SchedulingIntegrationAdmin", policy => policy.RequireRole("Admin")));
+{
+    options.AddPolicy("SchedulingTenant", policy => policy
+        .RequireAuthenticatedUser()
+        .RequireAssertion(context => !string.IsNullOrWhiteSpace(
+            SchedulingIntegrationAdminApi.TenantId(context.User))));
+    options.AddPolicy("SchedulingIntegrationAdmin", policy => policy
+        .RequireAuthenticatedUser()
+        .RequireRole("Admin")
+        .RequireAssertion(context => !string.IsNullOrWhiteSpace(
+            SchedulingIntegrationAdminApi.TenantId(context.User))));
+});
 
 // Consume public booking-request events from Service Bus and turn them into
 // (unconfirmed) appointments. Runs only when ServiceBus is configured; the
@@ -95,27 +105,23 @@ app.MapPost("/api/internal/public-scheduling/validate", async (
     return selection is null ? Results.Conflict(new { message = "That time is no longer available." }) : Results.Ok(selection);
 }).WithTags("InternalPublicScheduling");
 
-// These read endpoints return full appointment records, including the free-text
-// Notes that public booking intakes use to carry patient contact details. They
-// are anonymous by default (trusted internal callers such as the Portal reach
-// them through a private gateway). If the same gateway is ever exposed to the
-// internet, set PublicBooking:RequireApiKeyForReads=true so reads require the
-// API key too — otherwise contact details would be publicly readable.
-app.MapGet("/api/appointments", async (SchedulingDbContext db, IConfiguration config, HttpContext http, DateTime? from, DateTime? to) =>
+// Staff appointment APIs contain PHI and always require a signed bearer token.
+// Tenant context comes from the validated token, never request input or network location.
+app.MapGet("/api/appointments", async (SchedulingDbContext db, ClaimsPrincipal user, DateTime? from, DateTime? to) =>
 {
-    if (!PublicBookingAuth.ReadsAllowed(config, http)) return Results.Unauthorized();
-    var query = db.Appointments.AsQueryable();
+    var tenantId = SchedulingIntegrationAdminApi.TenantId(user)!;
+    var query = db.Appointments.Where(a => a.TenantId == tenantId);
     if (from.HasValue) query = query.Where(a => a.StartTime >= from.Value);
     if (to.HasValue) query = query.Where(a => a.StartTime <= to.Value);
     return Results.Ok(await query.OrderBy(a => a.StartTime).Take(100).ToListAsync());
-}).WithTags("Appointments");
+}).RequireAuthorization("SchedulingTenant").WithTags("Appointments");
 
-app.MapGet("/api/appointments/{id:guid}", async (Guid id, SchedulingDbContext db, IConfiguration config, HttpContext http) =>
+app.MapGet("/api/appointments/{id:guid}", async (Guid id, SchedulingDbContext db, ClaimsPrincipal user) =>
 {
-    if (!PublicBookingAuth.ReadsAllowed(config, http)) return Results.Unauthorized();
-    var apt = await db.Appointments.FindAsync(id);
+    var tenantId = SchedulingIntegrationAdminApi.TenantId(user)!;
+    var apt = await db.Appointments.AsNoTracking().FirstOrDefaultAsync(a => a.Id == id && a.TenantId == tenantId);
     return apt is not null ? Results.Ok(apt) : Results.NotFound();
-}).WithTags("Appointments");
+}).RequireAuthorization("SchedulingTenant").WithTags("Appointments");
 
 app.MapPost("/api/appointments", async (
     CreateAppointmentRequest request, ClaimsPrincipal user, SchedulingDbContext db,
@@ -153,7 +159,7 @@ app.MapPost("/api/appointments", async (
             tenantId, apt.ProviderId);
     }
     return Results.Created($"/api/appointments/{apt.Id}", apt);
-}).RequireAuthorization().WithTags("Appointments");
+}).RequireAuthorization("SchedulingTenant").WithTags("Appointments");
 
 app.MapPut("/api/appointments/{id:guid}/lifecycle", async (
     Guid id, SchedulingService.Integrations.Zocdoc.AppointmentLifecycleCommand command,
@@ -165,11 +171,11 @@ app.MapPut("/api/appointments/{id:guid}/lifecycle", async (
     try { return Results.Ok(await service.ApplyLocalAsync(tenantId, id, command, cancellationToken)); }
     catch (KeyNotFoundException) { return Results.NotFound(); }
     catch (ArgumentException ex) { return Results.ValidationProblem(new Dictionary<string, string[]> { ["lifecycle"] = [ex.Message] }); }
-}).RequireAuthorization().WithTags("Appointments");
+}).RequireAuthorization("SchedulingTenant").WithTags("Appointments");
 
-app.MapGet("/api/booking-requests", async (SchedulingDbContext db, IConfiguration config, HttpContext http, string tenantId, string? status) =>
+app.MapGet("/api/booking-requests", async (SchedulingDbContext db, ClaimsPrincipal user, string? status) =>
 {
-    if (!PublicBookingAuth.ReadsAllowed(config, http)) return Results.Unauthorized();
+    var tenantId = SchedulingIntegrationAdminApi.TenantId(user)!;
     var query = db.BookingRequests.Where(r => r.TenantId == tenantId);
     if (!string.IsNullOrWhiteSpace(status) && Enum.TryParse<BookingRequestStatus>(status, true, out var parsed))
         query = query.Where(r => r.Status == parsed);
@@ -180,36 +186,39 @@ app.MapGet("/api/booking-requests", async (SchedulingDbContext db, IConfiguratio
                                  r.Status != BookingRequestStatus.Rejected &&
                                  r.Status != BookingRequestStatus.Cancelled);
     return Results.Ok(await query.OrderBy(r => r.CreatedAt).Select(r => r.ToDto()).ToListAsync());
-}).WithTags("BookingRequests");
+}).RequireAuthorization("SchedulingTenant").WithTags("BookingRequests");
 
-app.MapGet("/api/booking-requests/{id:guid}", async (Guid id, string tenantId, SchedulingDbContext db, IConfiguration config, HttpContext http) =>
+app.MapGet("/api/booking-requests/{id:guid}", async (Guid id, SchedulingDbContext db, ClaimsPrincipal user) =>
 {
-    if (!PublicBookingAuth.ReadsAllowed(config, http)) return Results.Unauthorized();
+    var tenantId = SchedulingIntegrationAdminApi.TenantId(user)!;
     var request = await db.BookingRequests.FirstOrDefaultAsync(r => r.Id == id && r.TenantId == tenantId);
     return request is null ? Results.NotFound() : Results.Ok(request.ToDto());
-}).WithTags("BookingRequests");
+}).RequireAuthorization("SchedulingTenant").WithTags("BookingRequests");
 
 app.MapPost("/api/booking-requests/{id:guid}/match-patient", async (
-    Guid id, string tenantId, MatchBookingPatientRequest match, SchedulingDbContext db) =>
+    Guid id, MatchBookingPatientRequest match, SchedulingDbContext db, ClaimsPrincipal user) =>
 {
+    var tenantId = SchedulingIntegrationAdminApi.TenantId(user)!;
     try { return Results.Ok((await new BookingRequestWorkflow(db).MatchPatientAsync(id, tenantId, match)).ToDto()); }
     catch (KeyNotFoundException) { return Results.NotFound(); }
     catch (ArgumentException ex) { return Results.ValidationProblem(new Dictionary<string, string[]> { ["patientId"] = [ex.Message] }); }
     catch (InvalidOperationException ex) { return Results.Conflict(new { message = ex.Message }); }
-}).WithTags("BookingRequests");
+}).RequireAuthorization("SchedulingTenant").WithTags("BookingRequests");
 
 app.MapPost("/api/booking-requests/{id:guid}/status", async (
-    Guid id, string tenantId, ChangeBookingRequestStatusRequest change, SchedulingDbContext db) =>
+    Guid id, ChangeBookingRequestStatusRequest change, SchedulingDbContext db, ClaimsPrincipal user) =>
 {
+    var tenantId = SchedulingIntegrationAdminApi.TenantId(user)!;
     try { return Results.Ok((await new BookingRequestWorkflow(db).ChangeStatusAsync(id, tenantId, change)).ToDto()); }
     catch (KeyNotFoundException) { return Results.NotFound(); }
     catch (ArgumentException ex) { return Results.ValidationProblem(new Dictionary<string, string[]> { ["status"] = [ex.Message] }); }
     catch (InvalidOperationException ex) { return Results.Conflict(new { message = ex.Message }); }
-}).WithTags("BookingRequests");
+}).RequireAuthorization("SchedulingTenant").WithTags("BookingRequests");
 
 app.MapPost("/api/booking-requests/{id:guid}/approve", async (
-    Guid id, string tenantId, ApproveBookingRequest approval, SchedulingDbContext db) =>
+    Guid id, ApproveBookingRequest approval, SchedulingDbContext db, ClaimsPrincipal user) =>
 {
+    var tenantId = SchedulingIntegrationAdminApi.TenantId(user)!;
     try
     {
         var result = await new BookingRequestWorkflow(db).ApproveAsync(id, tenantId, approval);
@@ -218,7 +227,7 @@ app.MapPost("/api/booking-requests/{id:guid}/approve", async (
     catch (KeyNotFoundException) { return Results.NotFound(); }
     catch (ArgumentException ex) { return Results.ValidationProblem(new Dictionary<string, string[]> { ["request"] = [ex.Message] }); }
     catch (InvalidOperationException ex) { return Results.Conflict(new { message = ex.Message }); }
-}).WithTags("BookingRequests");
+}).RequireAuthorization("SchedulingTenant").WithTags("BookingRequests");
 
 using (var scope = app.Services.CreateScope())
 {
@@ -230,6 +239,8 @@ using (var scope = app.Services.CreateScope())
 }
 
 app.Run();
+
+public partial class Program { }
 
 public class Appointment
 {
@@ -262,52 +273,4 @@ public class SchedulingDbContext(DbContextOptions<SchedulingDbContext> options) 
     public DbSet<ExternalAppointmentReference> ExternalAppointmentReferences => Set<ExternalAppointmentReference>();
     public DbSet<SchedulingIntegrationEvent> SchedulingIntegrationEvents => Set<SchedulingIntegrationEvent>();
     public DbSet<SchedulingAvailabilitySyncState> SchedulingAvailabilitySyncStates => Set<SchedulingAvailabilitySyncState>();
-}
-
-internal static class PublicBookingAuth
-{
-    /// <summary>
-    /// Validates the request's API key against the configured value using a
-    /// constant-time comparison. Accepts either an "Authorization: Bearer &lt;key&gt;"
-    /// header or an "X-Api-Key: &lt;key&gt;" header.
-    /// </summary>
-    public static bool IsAuthorized(HttpContext http, string expectedKey)
-    {
-        string? provided = null;
-
-        var auth = http.Request.Headers.Authorization.ToString();
-        if (auth.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
-            provided = auth["Bearer ".Length..].Trim();
-
-        if (string.IsNullOrEmpty(provided))
-        {
-            var apiKeyHeader = http.Request.Headers["X-Api-Key"].ToString();
-            if (!string.IsNullOrEmpty(apiKeyHeader))
-                provided = apiKeyHeader.Trim();
-        }
-
-        if (string.IsNullOrEmpty(provided))
-            return false;
-
-        var providedBytes = Encoding.UTF8.GetBytes(provided);
-        var expectedBytes = Encoding.UTF8.GetBytes(expectedKey);
-        return providedBytes.Length == expectedBytes.Length
-            && CryptographicOperations.FixedTimeEquals(providedBytes, expectedBytes);
-    }
-
-    /// <summary>
-    /// Whether an appointment read should be allowed. Reads are open by default
-    /// (trusted internal callers via a private gateway). When
-    /// PublicBooking:RequireApiKeyForReads is true — e.g. the gateway is exposed
-    /// publicly — reads require the same API key as the booking endpoint.
-    /// </summary>
-    public static bool ReadsAllowed(IConfiguration config, HttpContext http)
-    {
-        var section = config.GetSection("PublicBooking");
-        if (!section.GetValue("RequireApiKeyForReads", false))
-            return true;
-
-        var apiKey = section.GetValue<string>("ApiKey");
-        return !string.IsNullOrWhiteSpace(apiKey) && IsAuthorized(http, apiKey);
-    }
 }
