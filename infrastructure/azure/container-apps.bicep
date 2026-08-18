@@ -34,6 +34,8 @@ param serviceBusSendConnection string
 param serviceBusListenConnection string
 @secure()
 param publicBookingApiKey string
+@secure()
+param patientServiceApiKey string = ''
 param zocdocWebhookIntegrationId string = ''
 @secure()
 param zocdocWebhookSecret string = ''
@@ -224,6 +226,7 @@ resource patientService 'Microsoft.App/containerApps@2023-05-01' = {
       }
       secrets: [
         { name: 'conn-patient', value: connPatient }
+        { name: 'internal-api-key', value: patientServiceApiKey }
       ]
     }
     template: {
@@ -236,6 +239,8 @@ resource patientService 'Microsoft.App/containerApps@2023-05-01' = {
             { name: 'ASPNETCORE_ENVIRONMENT', value: 'Production' }
             { name: 'DatabaseProvider', value: 'PostgreSQL' }
             { name: 'ConnectionStrings__PatientDb', secretRef: 'conn-patient' }
+            { name: 'InternalApi__Clients__0__TenantId', value: initialTenantId }
+            { name: 'InternalApi__Clients__0__ApiKey', secretRef: 'internal-api-key' }
           ]
         }
       ]
@@ -263,6 +268,7 @@ resource schedulingService 'Microsoft.App/containerApps@2023-05-01' = {
         { name: 'conn-scheduling', value: connScheduling }
         { name: 'servicebus-listen', value: serviceBusListenConnection }
         { name: 'jwt-key', value: jwtKey }
+        { name: 'patient-service-api-key', value: patientServiceApiKey }
       ]
     }
     template: {
@@ -277,6 +283,8 @@ resource schedulingService 'Microsoft.App/containerApps@2023-05-01' = {
             { name: 'ConnectionStrings__SchedulingDb', secretRef: 'conn-scheduling' }
             { name: 'ServiceBus__ConnectionString', secretRef: 'servicebus-listen' }
             { name: 'Services__PatientService', value: 'http://patient-service' }
+            { name: 'Services__PatientServiceClients__0__TenantId', value: initialTenantId }
+            { name: 'Services__PatientServiceClients__0__ApiKey', secretRef: 'patient-service-api-key' }
             { name: 'Jwt__Key', secretRef: 'jwt-key' }
             { name: 'Jwt__Issuer', value: jwtIssuer }
             { name: 'Jwt__Audience', value: jwtAudience }

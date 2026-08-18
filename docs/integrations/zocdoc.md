@@ -108,6 +108,25 @@ ZocdocWebhooks__Integrations__0__WebhookSecret=<base64 Zocdoc shared key>
 ZocdocWebhooks__Integrations__0__Enabled=true
 ```
 
+SchedulingService resolves patients through PatientService's private internal
+endpoint using a separate tenant-scoped service credential. Configure the same
+32+ character secret on both services:
+
+```text
+# PatientService
+InternalApi__Clients__0__TenantId=<CDO tenant ID>
+InternalApi__Clients__0__ApiKey=<service credential>
+
+# SchedulingService
+Services__PatientServiceClients__0__TenantId=<CDO tenant ID>
+Services__PatientServiceClients__0__ApiKey=<same service credential>
+```
+
+The caller sends the credential in `X-CDO-Service-Key`. PatientService uses a
+constant-time comparison and authorizes it only for the tenant in the matching
+configuration entry. The Azure deployment exposes this as the secure
+`patientServiceApiKey` parameter; never reuse the public-booking or webhook key.
+
 The ingress follows Zocdoc's documented verification algorithm: it enforces the
 five-minute timestamp tolerance, decodes the shared key from base64, and checks
 the `webhook-signature` `v1` value against HMAC-SHA256 of the exact UTF-8 bytes

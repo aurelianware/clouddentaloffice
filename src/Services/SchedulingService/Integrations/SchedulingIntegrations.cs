@@ -212,6 +212,8 @@ public static class SchedulingBookingRules
 
 public sealed class SchedulingIntegrationIdempotencyStore(SchedulingDbContext db) : ISchedulingIntegrationIdempotencyStore
 {
+    internal static readonly TimeSpan ProcessingLeaseTimeout = TimeSpan.FromMinutes(10);
+
     public async Task<SchedulingIntegrationEventLease> TryBeginAsync(string tenantId, SchedulingChannel channel,
         string externalEventId, CancellationToken cancellationToken = default)
     {
@@ -219,7 +221,9 @@ public sealed class SchedulingIntegrationIdempotencyStore(SchedulingDbContext db
         var existing = await FindAsync(tenantId, channel, externalEventId, cancellationToken);
         if (existing is not null)
         {
-            if (existing.Status == SchedulingIntegrationEventStatus.Failed)
+            if (existing.Status == SchedulingIntegrationEventStatus.Failed ||
+                existing.Status == SchedulingIntegrationEventStatus.Processing &&
+                existing.UpdatedAt <= DateTime.UtcNow.Subtract(ProcessingLeaseTimeout))
             {
                 existing.Status = SchedulingIntegrationEventStatus.Processing;
                 existing.FailureReason = null;

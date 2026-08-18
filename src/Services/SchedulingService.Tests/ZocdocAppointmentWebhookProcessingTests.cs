@@ -98,6 +98,29 @@ public sealed class ZocdocAppointmentWebhookProcessingTests : IAsyncLifetime
         Assert.DoesNotContain("1990", output);
     }
 
+    [Fact]
+    public async Task CancellationDoesNotDependOnFetchingRemoteAppointment()
+    {
+        var appointment = new Appointment
+        {
+            Id = Guid.NewGuid(), TenantId = "practice-a", PatientId = 42, ProviderId = 12,
+            LocationId = _location, AppointmentTypeId = "exam", StartTime = DateTime.UtcNow.AddDays(1),
+            EndTime = DateTime.UtcNow.AddDays(1).AddMinutes(30), Status = AppointmentStatus.Scheduled
+        };
+        _db.Appointments.Add(appointment);
+        _db.ExternalAppointmentReferences.Add(new()
+        {
+            TenantId = "practice-a", Channel = SchedulingChannel.Zocdoc,
+            AppointmentId = appointment.Id, ExternalAppointmentId = "za-1"
+        });
+        await _db.SaveChangesAsync();
+
+        await Service().ProcessAsync(new("practice-a", "cancel-event", "za-1", "cancelled"));
+
+        Assert.Equal(AppointmentStatus.Cancelled, appointment.Status);
+        Assert.Equal(0, _api.GetCalls);
+    }
+
     private ZocdocAppointmentWebhookProcessor Service(
         ILogger<ZocdocAppointmentWebhookProcessor>? logger = null) => new(_db,
         new SchedulingIntegrationConfigurationStore(_db), new SchedulingIntegrationIdempotencyStore(_db),
@@ -110,12 +133,17 @@ public sealed class ZocdocAppointmentWebhookProcessingTests : IAsyncLifetime
 
     private sealed class FakeApi : IZocdocApiClient
     {
+        public int GetCalls { get; private set; }
         public int ConfirmCalls { get; private set; }
         public Task<ZocdocAppointmentDto> GetAppointmentAsync(string tenantId, SchedulingIntegrationConfiguration configuration,
-            string appointmentId, CancellationToken cancellationToken = default) => Task.FromResult(new ZocdocAppointmentDto
+            string appointmentId, CancellationToken cancellationToken = default)
+        {
+            GetCalls++;
+            return Task.FromResult(new ZocdocAppointmentDto
             { AppointmentId = appointmentId, Status = "pending_booking", StartTime = new(2026, 9, 7, 9, 0, 0, TimeSpan.Zero),
                 ProviderLocationId = "zp|zl", VisitReasonId = "zv", PatientType = "new",
                 Patient = new() { FirstName = "Private", LastName = "Patient", DateOfBirth = new(1990, 1, 1), EmailAddress = "private@example.test" } });
+        }
         public Task ConfirmAppointmentAsync(string tenantId, SchedulingIntegrationConfiguration configuration,
             string appointmentId, CancellationToken cancellationToken = default) { ConfirmCalls++; return Task.CompletedTask; }
         public Task ValidateConnectionAsync(string tenantId, SchedulingIntegrationConfiguration configuration, CancellationToken cancellationToken = default) => throw new NotSupportedException();

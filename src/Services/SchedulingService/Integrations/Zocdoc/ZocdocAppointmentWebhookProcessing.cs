@@ -12,19 +12,27 @@ internal interface IExternalPatientResolver
         CancellationToken cancellationToken);
 }
 
-internal sealed class ExternalPatientResolver(HttpClient client) : IExternalPatientResolver
+internal sealed class ExternalPatientResolver(HttpClient client, IConfiguration configuration) : IExternalPatientResolver
 {
     public async Task<MatchOrCreateExternalPatientResult> ResolveAsync(string tenantId, ZocdocPatientDto patient,
         CancellationToken cancellationToken)
     {
-        var response = await client.PostAsJsonAsync(
-            $"api/internal/patients/match-or-create?tenantId={Uri.EscapeDataString(tenantId)}",
-            new MatchOrCreateExternalPatientRequest
+        var apiKey = configuration.GetSection("Services:PatientServiceClients").GetChildren()
+            .FirstOrDefault(x => string.Equals(x["TenantId"], tenantId, StringComparison.Ordinal))?["ApiKey"];
+        if (string.IsNullOrWhiteSpace(apiKey))
+            throw new InvalidOperationException("PatientService authorization is not configured for this tenant.");
+        using var request = new HttpRequestMessage(HttpMethod.Post,
+            $"api/internal/patients/match-or-create?tenantId={Uri.EscapeDataString(tenantId)}")
+        {
+            Content = JsonContent.Create(new MatchOrCreateExternalPatientRequest
             {
                 DeveloperPatientId = patient.DeveloperPatientId, FirstName = patient.FirstName,
                 LastName = patient.LastName, DateOfBirth = patient.DateOfBirth,
                 Gender = patient.SexAtBirth, Email = patient.EmailAddress, Phone = patient.PhoneNumber
-            }, cancellationToken);
+            })
+        };
+        request.Headers.Add("X-CDO-Service-Key", apiKey);
+        using var response = await client.SendAsync(request, cancellationToken);
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadFromJsonAsync<MatchOrCreateExternalPatientResult>(cancellationToken)
             ?? throw new InvalidOperationException("Patient service returned an empty result.");
@@ -54,8 +62,6 @@ internal sealed class ZocdocAppointmentWebhookProcessor(
 
         try
         {
-            var remote = await api.GetAppointmentAsync(webhook.TenantId, configuration,
-                webhook.AppointmentId, cancellationToken);
             var existingReference = await db.ExternalAppointmentReferences.SingleOrDefaultAsync(x =>
                 x.TenantId == webhook.TenantId && x.Channel == SchedulingChannel.Zocdoc &&
                 x.ExternalAppointmentId == webhook.AppointmentId, cancellationToken);
@@ -70,6 +76,9 @@ internal sealed class ZocdocAppointmentWebhookProcessor(
                     webhook.ExternalEventId, existing.Id, cancellationToken);
                 return;
             }
+
+            var remote = await api.GetAppointmentAsync(webhook.TenantId, configuration,
+                webhook.AppointmentId, cancellationToken);
 
             var (externalProviderId, externalLocationId) = SplitProviderLocation(remote.ProviderLocationId);
             var provider = await MappingAsync(webhook.TenantId, SchedulingResourceType.Provider,

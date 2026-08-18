@@ -192,6 +192,25 @@ public sealed class SchedulingIntegrationTests : IAsyncLifetime
         Assert.Equal(3, await _db.SchedulingIntegrationEvents.CountAsync());
     }
 
+    [Fact]
+    public async Task StaleProcessingLeaseIsReacquiredButFreshLeaseIsNot()
+    {
+        var store = new SchedulingIntegrationIdempotencyStore(_db);
+        var first = await store.TryBeginAsync("practice-a", SchedulingChannel.Zocdoc, "crash-event");
+        var fresh = await store.TryBeginAsync("practice-a", SchedulingChannel.Zocdoc, "crash-event");
+        var record = await _db.SchedulingIntegrationEvents.SingleAsync();
+        record.UpdatedAt = DateTime.UtcNow.Subtract(SchedulingIntegrationIdempotencyStore.ProcessingLeaseTimeout)
+            .AddSeconds(-1);
+        await _db.SaveChangesAsync();
+
+        var recovered = await store.TryBeginAsync("practice-a", SchedulingChannel.Zocdoc, "crash-event");
+
+        Assert.True(first.Acquired);
+        Assert.False(fresh.Acquired);
+        Assert.True(recovered.Acquired);
+        Assert.Equal(first.Id, recovered.Id);
+    }
+
     private SchedulingChannelAdapterResolver Resolver(params ISchedulingChannelAdapter[] adapters) =>
         new(adapters, new SchedulingIntegrationConfigurationStore(_db));
 

@@ -2,6 +2,8 @@ using Microsoft.EntityFrameworkCore;
 using CloudDentalOffice.Contracts.Patients;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
+using System.Security.Cryptography;
+using System.Text;
 
 // ── Helpers ──
 
@@ -112,8 +114,10 @@ app.MapPost("/api/patients", async (CreatePatientRequest request, PatientDbConte
 .WithTags("Patients");
 
 app.MapPost("/api/internal/patients/match-or-create", async (
-    MatchOrCreateExternalPatientRequest request, PatientDbContext db, string tenantId) =>
+    MatchOrCreateExternalPatientRequest request, PatientDbContext db, IConfiguration configuration,
+    HttpContext http, string tenantId) =>
 {
+    if (!InternalPatientApiAuth.IsAuthorized(http, configuration, tenantId)) return Results.Unauthorized();
     if (string.IsNullOrWhiteSpace(tenantId) || string.IsNullOrWhiteSpace(request.FirstName) ||
         string.IsNullOrWhiteSpace(request.LastName) || request.DateOfBirth == default)
         return Results.BadRequest();
@@ -553,6 +557,24 @@ public class InsurancePlanEntity
         EdiSubmissionType = EdiSubmissionType,
         IsActive = IsActive,
     };
+}
+
+public static class InternalPatientApiAuth
+{
+    public static bool IsAuthorized(HttpContext http, IConfiguration configuration, string tenantId)
+    {
+        if (string.IsNullOrWhiteSpace(tenantId)) return false;
+        var provided = http.Request.Headers["X-CDO-Service-Key"].ToString();
+        if (string.IsNullOrWhiteSpace(provided)) return false;
+        var client = configuration.GetSection("InternalApi:Clients").GetChildren()
+            .FirstOrDefault(x => string.Equals(x["TenantId"], tenantId, StringComparison.Ordinal));
+        var expected = client?["ApiKey"];
+        if (string.IsNullOrWhiteSpace(expected) || expected.Length < 32) return false;
+        var providedBytes = Encoding.UTF8.GetBytes(provided);
+        var expectedBytes = Encoding.UTF8.GetBytes(expected);
+        return providedBytes.Length == expectedBytes.Length &&
+            CryptographicOperations.FixedTimeEquals(providedBytes, expectedBytes);
+    }
 }
 
 // ── DbContext ──
