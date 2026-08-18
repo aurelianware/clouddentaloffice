@@ -52,6 +52,18 @@ public sealed class SchedulingIntegrationTests : IAsyncLifetime
     }
 
     [Fact]
+    public void ResolverReportsDuplicateAdapterChannelClearly()
+    {
+        var exception = Assert.Throws<DuplicateSchedulingChannelAdapterException>(() => Resolver(
+            new FakeAdapter(SchedulingChannel.Google),
+            new FakeAdapter(SchedulingChannel.Google)));
+
+        Assert.Equal(SchedulingChannel.Google, exception.Channel);
+        Assert.Equal(2, exception.RegistrationCount);
+        Assert.Contains("Google", exception.Message);
+    }
+
+    [Fact]
     public async Task ResolverDoesNotBorrowConfigurationFromAnotherTenant()
     {
         _db.SchedulingIntegrationConfigurations.Add(Configuration("practice-b", SchedulingChannel.Google, true));
@@ -91,6 +103,19 @@ public sealed class SchedulingIntegrationTests : IAsyncLifetime
     public void BookingBoundaryAcceptsInternallyResolvedPatient()
     {
         SchedulingBookingRules.ValidateForAppointmentCreation(BookingCommand(PatientRelationship.Unknown));
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void BookingBoundaryRejectsMissingCanonicalIdentifiers(bool missingExternalAppointment)
+    {
+        var valid = BookingCommand(PatientRelationship.Unknown);
+        var command = missingExternalAppointment
+            ? valid with { ExternalAppointmentId = " " }
+            : valid with { AppointmentTypeId = " " };
+
+        Assert.Throws<ArgumentException>(() => SchedulingBookingRules.ValidateForAppointmentCreation(command));
     }
 
     [Fact]

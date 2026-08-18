@@ -57,6 +57,14 @@ public sealed class SchedulingIntegrationDisabledException(SchedulingChannel cha
 public sealed class UnsupportedSchedulingChannelException(SchedulingChannel channel)
     : InvalidOperationException($"No scheduling adapter is registered for channel '{channel}'.");
 
+public sealed class DuplicateSchedulingChannelAdapterException(SchedulingChannel channel, int registrationCount)
+    : InvalidOperationException(
+        $"Scheduling channel '{channel}' has {registrationCount} registered adapters; exactly one is allowed.")
+{
+    public SchedulingChannel Channel { get; } = channel;
+    public int RegistrationCount { get; } = registrationCount;
+}
+
 public sealed class SchedulingIntegrationConfigurationStore(SchedulingDbContext db) : ISchedulingIntegrationConfigurationStore
 {
     public Task<SchedulingIntegrationConfiguration?> GetAsync(string tenantId, SchedulingChannel channel,
@@ -78,7 +86,17 @@ public sealed class SchedulingChannelAdapterResolver(
     ISchedulingIntegrationConfigurationStore configurations) : ISchedulingChannelAdapterResolver
 {
     private readonly IReadOnlyDictionary<SchedulingChannel, ISchedulingChannelAdapter> _adapters =
-        adapters.GroupBy(x => x.Channel).ToDictionary(x => x.Key, x => x.Single());
+        BuildAdapterMap(adapters);
+
+    private static IReadOnlyDictionary<SchedulingChannel, ISchedulingChannelAdapter> BuildAdapterMap(
+        IEnumerable<ISchedulingChannelAdapter> adapters)
+    {
+        var groups = adapters.GroupBy(x => x.Channel).ToList();
+        var duplicate = groups.FirstOrDefault(x => x.Count() != 1);
+        if (duplicate is not null)
+            throw new DuplicateSchedulingChannelAdapterException(duplicate.Key, duplicate.Count());
+        return groups.ToDictionary(x => x.Key, x => x.Single());
+    }
 
     public async Task<ISchedulingChannelAdapter> ResolveAsync(string tenantId, SchedulingChannel channel,
         CancellationToken cancellationToken = default)
@@ -168,6 +186,10 @@ public static class SchedulingBookingRules
         if (command.LocationId == Guid.Empty) throw new ArgumentException("LocationId is required.", nameof(command));
         if (string.IsNullOrWhiteSpace(command.ExternalEventId))
             throw new ArgumentException("ExternalEventId is required.", nameof(command));
+        if (string.IsNullOrWhiteSpace(command.ExternalAppointmentId))
+            throw new ArgumentException("ExternalAppointmentId is required.", nameof(command));
+        if (string.IsNullOrWhiteSpace(command.AppointmentTypeId))
+            throw new ArgumentException("AppointmentTypeId is required.", nameof(command));
         if (command.StartUtc.Kind != DateTimeKind.Utc || command.EndUtc.Kind != DateTimeKind.Utc || command.EndUtc <= command.StartUtc)
             throw new ArgumentException("A valid UTC scheduling interval is required.", nameof(command));
     }
@@ -211,7 +233,6 @@ public sealed class SchedulingIntegrationIdempotencyStore(SchedulingDbContext db
         record.Status = SchedulingIntegrationEventStatus.Completed;
         record.AppointmentId = appointmentId;
         record.UpdatedAt = DateTime.UtcNow;
-        db.SchedulingIntegrationEvents.Update(record);
         await db.SaveChangesAsync(cancellationToken);
     }
 
