@@ -40,8 +40,15 @@ public sealed class PublicWebsiteSchedulingTests : IAsyncLifetime
     public async Task OpaqueSelectionCannotCrossTenantsAndIsRevalidated()
     {
         var offered = Assert.Single(await Service().GetAsync("practice-a", Request(PatientRelationship.New)));
+        var encoded = offered.AvailabilityToken.Replace('-', '+').Replace('_', '/');
+        encoded += new string('=', (4 - encoded.Length % 4) % 4);
+        Assert.DoesNotContain("practice-a", System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(encoded)));
         Assert.Null(await Service().ValidateAsync("practice-b", offered.AvailabilityToken, PatientRelationship.New));
         Assert.NotNull(await Service().ValidateAsync("practice-a", offered.AvailabilityToken, PatientRelationship.New));
+        var tamperIndex = offered.AvailabilityToken.Length / 2;
+        var tampered = offered.AvailabilityToken[..tamperIndex] +
+            (offered.AvailabilityToken[tamperIndex] == 'A' ? 'B' : 'A') + offered.AvailabilityToken[(tamperIndex + 1)..];
+        Assert.Null(await Service().ValidateAsync("practice-a", tampered, PatientRelationship.New));
         _availability.Slots = [];
         Assert.Null(await Service().ValidateAsync("practice-a", offered.AvailabilityToken, PatientRelationship.New));
         Assert.Empty(_db.Appointments);

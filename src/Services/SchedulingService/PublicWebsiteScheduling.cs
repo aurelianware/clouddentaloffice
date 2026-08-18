@@ -39,13 +39,14 @@ public sealed class PublicWebsiteSchedulingService(
         }, cancellationToken);
         var types = await db.SchedulingAppointmentTypes.AsNoTracking()
             .Where(x => x.TenantId == tenantId).ToDictionaryAsync(x => x.AppointmentTypeId, cancellationToken);
+        var mappingsByInternalId = mappings.ToDictionary(x => (x.ResourceType, x.InternalId));
 
         return slots.Select(slot =>
         {
-            var provider = Find(mappings, SchedulingResourceType.Provider, slot.ProviderId.ToString());
-            var location = Find(mappings, SchedulingResourceType.Location, slot.LocationId.ToString());
-            var visit = Find(mappings, SchedulingResourceType.VisitReason, slot.AppointmentTypeId);
-            if (provider is null || location is null || visit is null || !types.TryGetValue(slot.AppointmentTypeId, out var type)) return null;
+            if (!mappingsByInternalId.TryGetValue((SchedulingResourceType.Provider, slot.ProviderId.ToString()), out var provider) ||
+                !mappingsByInternalId.TryGetValue((SchedulingResourceType.Location, slot.LocationId.ToString()), out var location) ||
+                !mappingsByInternalId.TryGetValue((SchedulingResourceType.VisitReason, slot.AppointmentTypeId), out var visit) ||
+                !types.TryGetValue(slot.AppointmentTypeId, out var type)) return null;
             var payload = new SlotPayload(tenantId, slot.ProviderId, slot.LocationId, slot.AppointmentTypeId,
                 slot.StartUtc, slot.EndUtc, request.PatientRelationship, DateTimeOffset.UtcNow.AddHours(24));
             return new PublicSchedulingAvailabilitySlot
@@ -80,8 +81,6 @@ public sealed class PublicWebsiteSchedulingService(
     private Task<List<ExternalSchedulingResourceMapping>> Mappings(string tenantId, CancellationToken cancellationToken) =>
         db.ExternalSchedulingResourceMappings.AsNoTracking().Where(x => x.TenantId == tenantId &&
             x.Channel == SchedulingChannel.PublicWebsite && x.IsActive).ToListAsync(cancellationToken);
-    private static ExternalSchedulingResourceMapping? Find(IEnumerable<ExternalSchedulingResourceMapping> mappings,
-        SchedulingResourceType type, string internalId) => mappings.SingleOrDefault(x => x.ResourceType == type && x.InternalId == internalId);
     private static string? InternalString(IEnumerable<ExternalSchedulingResourceMapping> mappings,
         SchedulingResourceType type, string? code) => code is null ? null : mappings.SingleOrDefault(x => x.ResourceType == type && x.ExternalId == code)?.InternalId;
     private static int? InternalInt(IEnumerable<ExternalSchedulingResourceMapping> mappings, SchedulingResourceType type, string? code) =>
@@ -91,25 +90,41 @@ public sealed class PublicWebsiteSchedulingService(
 
     private string Protect(SlotPayload payload)
     {
-        var data = Base64Url(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(payload, Json)));
-        var signature = Base64Url(HMACSHA256.HashData(Key(), Encoding.UTF8.GetBytes(data)));
-        return $"{data}.{signature}";
+        var plaintext = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(payload, Json));
+        var nonce = RandomNumberGenerator.GetBytes(12);
+        var ciphertext = new byte[plaintext.Length];
+        var tag = new byte[16];
+        using var aes = new AesGcm(Key(), tag.Length);
+        aes.Encrypt(nonce, plaintext, ciphertext, tag);
+        var protectedValue = new byte[1 + nonce.Length + tag.Length + ciphertext.Length];
+        protectedValue[0] = 1;
+        nonce.CopyTo(protectedValue, 1);
+        tag.CopyTo(protectedValue, 1 + nonce.Length);
+        ciphertext.CopyTo(protectedValue, 1 + nonce.Length + tag.Length);
+        return Base64Url(protectedValue);
     }
     private SlotPayload? Unprotect(string token)
     {
-        var parts = token.Split('.'); if (parts.Length != 2) return null;
-        var expected = HMACSHA256.HashData(Key(), Encoding.UTF8.GetBytes(parts[0]));
-        byte[] supplied; try { supplied = FromBase64Url(parts[1]); } catch (FormatException) { return null; }
-        if (supplied.Length != expected.Length || !CryptographicOperations.FixedTimeEquals(supplied, expected)) return null;
-        try { return JsonSerializer.Deserialize<SlotPayload>(FromBase64Url(parts[0]), Json); }
-        catch (Exception ex) when (ex is JsonException or FormatException) { return null; }
+        try
+        {
+            var protectedValue = FromBase64Url(token);
+            if (protectedValue.Length < 30 || protectedValue[0] != 1) return null;
+            var nonce = protectedValue.AsSpan(1, 12);
+            var tag = protectedValue.AsSpan(13, 16);
+            var ciphertext = protectedValue.AsSpan(29);
+            var plaintext = new byte[ciphertext.Length];
+            using var aes = new AesGcm(Key(), tag.Length);
+            aes.Decrypt(nonce, ciphertext, tag, plaintext);
+            return JsonSerializer.Deserialize<SlotPayload>(plaintext, Json);
+        }
+        catch (Exception ex) when (ex is JsonException or FormatException or CryptographicException) { return null; }
     }
     private byte[] Key()
     {
         var value = configuration["PublicAvailability:SlotTokenKey"];
         if (string.IsNullOrWhiteSpace(value) || value.Length < 32)
-            throw new InvalidOperationException("Public availability slot signing is not configured.");
-        return Encoding.UTF8.GetBytes(value);
+            throw new InvalidOperationException("Public availability slot encryption is not configured.");
+        return SHA256.HashData(Encoding.UTF8.GetBytes(value));
     }
     private static string Base64Url(byte[] value) => Convert.ToBase64String(value).TrimEnd('=').Replace('+', '-').Replace('/', '_');
     private static byte[] FromBase64Url(string value)

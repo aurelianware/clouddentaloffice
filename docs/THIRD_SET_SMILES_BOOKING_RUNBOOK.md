@@ -107,7 +107,7 @@ Minimum runtime settings:
 
 The deployment workflow requires two independent 32+ character GitHub secrets:
 `PUBLIC_SCHEDULING_SERVICE_API_KEY` for the Intake→Scheduling tenant boundary
-and `PUBLIC_AVAILABILITY_SLOT_KEY` for HMAC signing. Do not reuse the website's
+and `PUBLIC_AVAILABILITY_SLOT_KEY` for authenticated encryption. Do not reuse the website's
 `PUBLIC_BOOKING_API_KEY` for either purpose.
 
 An administrator can enable the channel using
