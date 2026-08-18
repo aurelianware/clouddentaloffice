@@ -6,11 +6,16 @@ namespace Zocdoc.IntegrationTests;
 
 internal sealed class ZocdocSandboxClient : IDisposable
 {
-    private readonly HttpClient _http = new() { BaseAddress = new("https://api-developer-sandbox.zocdoc.com/") };
+    private static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(30);
+    private readonly HttpClient _http = new()
+    {
+        BaseAddress = new("https://api-developer-sandbox.zocdoc.com/"),
+        Timeout = RequestTimeout
+    };
 
     public async Task AuthenticateAsync(CancellationToken cancellationToken = default)
     {
-        using var auth = new HttpClient();
+        using var auth = new HttpClient { Timeout = RequestTimeout };
         using var response = await auth.PostAsJsonAsync("https://auth-api-developer-sandbox.zocdoc.com/oauth/token", new
         {
             grant_type = "client_credentials",

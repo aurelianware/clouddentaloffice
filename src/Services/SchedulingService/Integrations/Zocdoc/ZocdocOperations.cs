@@ -64,6 +64,8 @@ internal sealed class ZocdocOperationsService(
             webhookConfigured ? "A webhook signing key is present in secret-backed configuration."
                 : "No webhook signing key was found for this credential reference."));
 
+        var invalidMappings = await mappings.ListInvalidAsync(
+            tenantId, SchedulingChannel.Zocdoc, cancellationToken);
         foreach (var (type, name) in new[]
         {
             (SchedulingResourceType.Provider, "Provider mappings complete"),
@@ -72,8 +74,7 @@ internal sealed class ZocdocOperationsService(
         })
         {
             var unmapped = await mappings.ListUnmappedAsync(tenantId, SchedulingChannel.Zocdoc, type, cancellationToken);
-            var invalid = (await mappings.ListInvalidAsync(tenantId, SchedulingChannel.Zocdoc, cancellationToken))
-                .Count(x => x.EntityType == type);
+            var invalid = invalidMappings.Count(x => x.EntityType == type);
             var complete = unmapped.Count == 0 && invalid == 0;
             checks.Add(new(name, complete, complete ? "Complete."
                 : $"{unmapped.Count} unmapped and {invalid} invalid active mapping(s)."));

@@ -116,10 +116,18 @@ app.MapPost("/api/integrations/zocdoc/{integrationId}/webhooks", async (
     {
         using var buffer = new MemoryStream();
         await http.Request.Body.CopyToAsync(buffer, http.RequestAborted);
-        if (buffer.Length is 0 or > 1_048_576) return Results.BadRequest();
+        if (buffer.Length is 0 or > 1_048_576)
+        {
+            metrics.ValidationFailures.Add(1);
+            return Results.BadRequest();
+        }
         body = buffer.ToArray();
     }
-    catch { return Results.BadRequest(); }
+    catch
+    {
+        metrics.ValidationFailures.Add(1);
+        return Results.BadRequest();
+    }
 
     if (!ZocdocWebhookSignatureVerifier.Verify(body,
         http.Request.Headers["webhook-timestamp"].ToString(),
