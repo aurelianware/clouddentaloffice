@@ -17,4 +17,7 @@
     <ProjectReference Include="..\..\Shared\CloudDentalOffice.Contracts\CloudDentalOffice.Contracts.csproj" />
     <ProjectReference Include="..\..\Shared\CloudDentalOffice.Messaging\CloudDentalOffice.Messaging.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="SchedulingService.Tests" />
+  </ItemGroup>
 </Project>
