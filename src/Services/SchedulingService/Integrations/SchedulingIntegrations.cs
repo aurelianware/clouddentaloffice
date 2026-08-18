@@ -1,9 +1,22 @@
 using CloudDentalOffice.Contracts.Scheduling;
 using Microsoft.EntityFrameworkCore;
+using SchedulingService.Integrations.Zocdoc;
 
 public interface ISchedulingChannelAdapter
 {
     SchedulingChannel Channel { get; }
+}
+
+public sealed record ExternalSchedulingEntity(
+    SchedulingResourceType EntityType,
+    string ExternalId,
+    string DisplayName);
+
+public interface ISchedulingExternalEntitySource : ISchedulingChannelAdapter
+{
+    Task ValidateConnectionAsync(string tenantId, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<ExternalSchedulingEntity>> GetExternalEntitiesAsync(
+        string tenantId, CancellationToken cancellationToken = default);
 }
 
 public interface ISchedulingChannelAdapterResolver
@@ -249,14 +262,28 @@ public sealed class SchedulingIntegrationIdempotencyStore(SchedulingDbContext db
 
 public static class SchedulingIntegrationServiceCollectionExtensions
 {
-    public static IServiceCollection AddSchedulingIntegrations(this IServiceCollection services) => services
-        .AddScoped<ISchedulingIntegrationConfigurationStore, SchedulingIntegrationConfigurationStore>()
-        .AddScoped<ISchedulingChannelAdapterResolver, SchedulingChannelAdapterResolver>()
-        .AddScoped<ISchedulingEntityCatalog, SchedulingEntityCatalog>()
-        .AddScoped<ISchedulingEntityMappingService, SchedulingEntityMappingService>()
-        .AddSingleton<ISchedulingClock, SchedulingClock>()
-        .AddScoped<ISchedulingAvailabilityService, SchedulingAvailabilityService>()
-        .AddScoped<IExternalSchedulingResourceMappingStore, ExternalSchedulingResourceMappingStore>()
-        .AddScoped<IExternalAppointmentReferenceStore, ExternalAppointmentReferenceStore>()
-        .AddScoped<ISchedulingIntegrationIdempotencyStore, SchedulingIntegrationIdempotencyStore>();
+    public static IServiceCollection AddSchedulingIntegrations(this IServiceCollection services)
+    {
+        services.AddScoped<ISchedulingIntegrationConfigurationStore, SchedulingIntegrationConfigurationStore>()
+            .AddScoped<ISchedulingChannelAdapterResolver, SchedulingChannelAdapterResolver>()
+            .AddScoped<ISchedulingEntityCatalog, SchedulingEntityCatalog>()
+            .AddScoped<ISchedulingEntityMappingService, SchedulingEntityMappingService>()
+            .AddSingleton<ISchedulingClock, SchedulingClock>()
+            .AddScoped<ISchedulingAvailabilityService, SchedulingAvailabilityService>()
+            .AddScoped<IExternalSchedulingResourceMappingStore, ExternalSchedulingResourceMappingStore>()
+            .AddScoped<IExternalAppointmentReferenceStore, ExternalAppointmentReferenceStore>()
+            .AddScoped<ISchedulingIntegrationIdempotencyStore, SchedulingIntegrationIdempotencyStore>()
+            .AddSingleton<IZocdocCredentialProvider, ConfigurationZocdocCredentialProvider>()
+            .AddSingleton<IZocdocAccessTokenProvider, ZocdocAccessTokenProvider>()
+            .AddScoped<ZocdocSchedulingAdapter>()
+            .AddScoped<ISchedulingChannelAdapter>(provider => provider.GetRequiredService<ZocdocSchedulingAdapter>())
+            .AddScoped<ISchedulingExternalEntitySource>(provider => provider.GetRequiredService<ZocdocSchedulingAdapter>());
+
+        services.AddHttpClient("ZocdocAuth").AddStandardResilienceHandler();
+        services.AddHttpClient<IZocdocApiClient, ZocdocApiClient>(client =>
+        {
+            client.Timeout = TimeSpan.FromSeconds(30);
+        }).AddStandardResilienceHandler();
+        return services;
+    }
 }
