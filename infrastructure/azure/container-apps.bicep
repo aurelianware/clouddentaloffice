@@ -259,6 +259,7 @@ resource schedulingService 'Microsoft.App/containerApps@2023-05-01' = {
       secrets: [
         { name: 'conn-scheduling', value: connScheduling }
         { name: 'servicebus-listen', value: serviceBusListenConnection }
+        { name: 'jwt-key', value: jwtKey }
       ]
     }
     template: {
@@ -272,6 +273,9 @@ resource schedulingService 'Microsoft.App/containerApps@2023-05-01' = {
             { name: 'DatabaseProvider', value: 'PostgreSQL' }
             { name: 'ConnectionStrings__SchedulingDb', secretRef: 'conn-scheduling' }
             { name: 'ServiceBus__ConnectionString', secretRef: 'servicebus-listen' }
+            { name: 'Jwt__Key', secretRef: 'jwt-key' }
+            { name: 'Jwt__Issuer', value: jwtIssuer }
+            { name: 'Jwt__Audience', value: jwtAudience }
           ]
         }
       ]

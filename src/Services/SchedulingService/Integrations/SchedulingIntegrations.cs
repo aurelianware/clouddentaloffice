@@ -252,6 +252,8 @@ public static class SchedulingIntegrationServiceCollectionExtensions
     public static IServiceCollection AddSchedulingIntegrations(this IServiceCollection services) => services
         .AddScoped<ISchedulingIntegrationConfigurationStore, SchedulingIntegrationConfigurationStore>()
         .AddScoped<ISchedulingChannelAdapterResolver, SchedulingChannelAdapterResolver>()
+        .AddScoped<ISchedulingEntityCatalog, SchedulingEntityCatalog>()
+        .AddScoped<ISchedulingEntityMappingService, SchedulingEntityMappingService>()
         .AddScoped<IExternalSchedulingResourceMappingStore, ExternalSchedulingResourceMappingStore>()
         .AddScoped<IExternalAppointmentReferenceStore, ExternalAppointmentReferenceStore>()
         .AddScoped<ISchedulingIntegrationIdempotencyStore, SchedulingIntegrationIdempotencyStore>();

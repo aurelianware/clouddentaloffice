@@ -28,8 +28,34 @@ public sealed class ExternalSchedulingResourceMapping
     public SchedulingResourceType ResourceType { get; set; }
     [MaxLength(128)] public string InternalId { get; set; } = string.Empty;
     [MaxLength(256)] public string ExternalId { get; set; } = string.Empty;
+    [MaxLength(300)] public string? ExternalDisplayName { get; set; }
+    public bool IsActive { get; set; } = true;
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+}
+
+[Index(nameof(TenantId), nameof(AppointmentTypeId), IsUnique = true)]
+public sealed class SchedulingAppointmentTypeDefinition
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    [MaxLength(64)] public string TenantId { get; set; } = string.Empty;
+    [MaxLength(128)] public string AppointmentTypeId { get; set; } = string.Empty;
+    [MaxLength(200)] public string DisplayName { get; set; } = string.Empty;
+    public int DurationMinutes { get; set; }
+    public int? ProviderId { get; set; }
+    public Guid? LocationId { get; set; }
+    public bool NewPatientAllowed { get; set; }
+    public bool ExistingPatientAllowed { get; set; }
+    public bool IsActive { get; set; } = true;
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+
+    public bool Allows(CloudDentalOffice.Contracts.Scheduling.PatientRelationship relationship) => relationship switch
+    {
+        CloudDentalOffice.Contracts.Scheduling.PatientRelationship.New => NewPatientAllowed,
+        CloudDentalOffice.Contracts.Scheduling.PatientRelationship.Existing => ExistingPatientAllowed,
+        _ => false
+    };
 }
 
 [Index(nameof(TenantId), nameof(Channel), nameof(ExternalAppointmentId), IsUnique = true)]

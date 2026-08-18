@@ -92,8 +92,8 @@ public sealed record SchedulingAppointmentType
     public required string AppointmentTypeId { get; init; }
     public required string DisplayName { get; init; }
     public required int DurationMinutes { get; init; }
-    public required int ProviderId { get; init; }
-    public required Guid LocationId { get; init; }
+    public int? ProviderId { get; init; }
+    public Guid? LocationId { get; init; }
     public bool NewPatientAllowed { get; init; }
     public bool ExistingPatientAllowed { get; init; }
     public bool IsActive { get; init; } = true;

@@ -1,6 +1,8 @@
 using System.Security.Cryptography;
 using System.Text;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.IdentityModel.Tokens;
 using CloudDentalOffice.Contracts.Scheduling;
 using CloudDentalOffice.Messaging;
 
@@ -27,6 +29,29 @@ builder.Services.AddSwaggerGen(c => c.SwaggerDoc("v1", new() { Title = "Scheduli
 builder.Services.AddHealthChecks();
 builder.Services.AddSchedulingIntegrations();
 
+// When configured, administrative scheduling-integration routes accept the
+// same bearer tokens as the portal. If Jwt:Key is absent, a per-process random
+// key deliberately keeps every admin request unauthorized (fail closed).
+var configuredJwtKey = builder.Configuration["Jwt:Key"];
+var signingKey = string.IsNullOrWhiteSpace(configuredJwtKey)
+    ? RandomNumberGenerator.GetBytes(32)
+    : Encoding.UTF8.GetBytes(configuredJwtKey);
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJwtBearer(options =>
+{
+    options.TokenValidationParameters = new TokenValidationParameters
+    {
+        ValidateIssuerSigningKey = true,
+        IssuerSigningKey = new SymmetricSecurityKey(signingKey),
+        ValidateIssuer = !string.IsNullOrWhiteSpace(builder.Configuration["Jwt:Issuer"]),
+        ValidIssuer = builder.Configuration["Jwt:Issuer"],
+        ValidateAudience = !string.IsNullOrWhiteSpace(builder.Configuration["Jwt:Audience"]),
+        ValidAudience = builder.Configuration["Jwt:Audience"],
+        ValidateLifetime = true,
+        ClockSkew = TimeSpan.FromMinutes(2)
+    };
+});
+builder.Services.AddAuthorization();
+
 // Consume public booking-request events from Service Bus and turn them into
 // (unconfirmed) appointments. Runs only when ServiceBus is configured; the
 // consumer self-guards otherwise. Public booking traffic never reaches this
@@ -38,7 +63,10 @@ builder.Services.AddHostedService<BookingRequestConsumer>();
 
 var app = builder.Build();
 if (app.Environment.IsDevelopment()) { app.UseSwagger(); app.UseSwaggerUI(); }
+app.UseAuthentication();
+app.UseAuthorization();
 app.MapHealthChecks("/health");
+app.MapSchedulingIntegrationAdminApi();
 
 // These read endpoints return full appointment records, including the free-text
 // Notes that public booking intakes use to carry patient contact details. They
@@ -167,6 +195,7 @@ public class SchedulingDbContext(DbContextOptions<SchedulingDbContext> options) 
     public DbSet<BookingRequest> BookingRequests => Set<BookingRequest>();
     public DbSet<SchedulingIntegrationConfiguration> SchedulingIntegrationConfigurations => Set<SchedulingIntegrationConfiguration>();
     public DbSet<ExternalSchedulingResourceMapping> ExternalSchedulingResourceMappings => Set<ExternalSchedulingResourceMapping>();
+    public DbSet<SchedulingAppointmentTypeDefinition> SchedulingAppointmentTypes => Set<SchedulingAppointmentTypeDefinition>();
     public DbSet<ExternalAppointmentReference> ExternalAppointmentReferences => Set<ExternalAppointmentReference>();
     public DbSet<SchedulingIntegrationEvent> SchedulingIntegrationEvents => Set<SchedulingIntegrationEvent>();
 }

@@ -34,18 +34,51 @@ CloudDentalOffice appointment, patient, provider, and location domains
 
 ## Persistence
 
-SchedulingService owns four integration tables:
+SchedulingService owns five integration tables:
 
 - `SchedulingIntegrationConfigurations` enables a channel per tenant and stores
   an environment plus a reference to credentials. Secrets are not stored in
   this table.
 - `ExternalSchedulingResourceMappings` maps external provider, location, and
-  visit-reason IDs to canonical internal IDs.
+  visit-reason IDs to canonical internal IDs. Each mapping is tenant- and
+  channel-scoped, has active/inactive lifecycle state, and may retain the
+  external display name shown during setup.
+- `SchedulingAppointmentTypes` stores duration, optional provider/location
+  applicability, new/existing-patient eligibility, and active state for the
+  canonical visit type.
 - `ExternalAppointmentReferences` associates appointments with external channel
   identifiers without adding vendor fields to Appointment.
 - `SchedulingIntegrationEvents` enforces idempotency with a unique
   `(TenantId, Channel, ExternalEventId)` key. Retries return the existing lease
   and cannot create another appointment.
+
+## Entity mappings
+
+`ISchedulingEntityMappingService` is the channel-neutral application boundary
+for forward and reverse lookup, upsert, deactivation, unmapped entities, and
+invalid/stale mappings. Provider IDs are positive integers, location IDs are
+GUIDs, and appointment-type IDs are bounded canonical strings. The service
+validates the internal entity in the same tenant before writing and prevents an
+active external identifier from selecting more than one internal entity.
+
+Example:
+
+```text
+CDO appointment type: New Patient Comprehensive Exam
+Duration: 90 min
+New patient: yes
+Existing patient: no
+
+External mapping:
+Channel: Zocdoc
+Visit reason: zocdoc-visit-reason-101
+```
+
+Authenticated administration endpoints under
+`/api/scheduling-integrations/{channel}/mappings` support listing, forward and
+reverse lookup, create/update, deactivation, and unmapped/stale reports. Tenant
+scope is taken from the authenticated token's tenant claim; callers cannot
+choose a tenant in the URL or request body. These routes are never anonymous.
 
 ## Existing public website flow
 
