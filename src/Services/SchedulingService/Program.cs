@@ -95,6 +95,20 @@ app.MapPost("/api/internal/public-scheduling/availability", async (
     catch (ArgumentException ex) { return Results.ValidationProblem(new Dictionary<string, string[]> { ["request"] = [ex.Message] }); }
 }).WithTags("InternalPublicScheduling");
 
+// Versioned public availability projection. IntakeService forwards this to the
+// internet edge at /api/public/v1/availability. Same canonical engine, same
+// data-minimized codes; additionally carries the practice time zone and
+// zone-offset timestamps.
+app.MapPost("/api/internal/public-scheduling/availability/v1", async (
+    PublicSchedulingAvailabilityRequest request, HttpContext http, IConfiguration configuration,
+    IPublicWebsiteSchedulingService service, CancellationToken cancellationToken) =>
+{
+    var tenantId = SchedulingInternalAuth.ResolveTenant(http, configuration);
+    if (tenantId is null) return Results.Unauthorized();
+    try { return Results.Ok(await service.GetPublishedAsync(tenantId, request, cancellationToken)); }
+    catch (ArgumentException ex) { return Results.ValidationProblem(new Dictionary<string, string[]> { ["request"] = [ex.Message] }); }
+}).WithTags("InternalPublicScheduling");
+
 app.MapPost("/api/internal/public-scheduling/validate", async (
     ValidatePublicSlotRequest request, HttpContext http, IConfiguration configuration,
     IPublicWebsiteSchedulingService service, CancellationToken cancellationToken) =>

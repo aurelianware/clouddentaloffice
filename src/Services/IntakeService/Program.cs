@@ -144,6 +144,61 @@ app.MapGet("/api/public/availability", async (
     }
 }).RequireRateLimiting("public-booking").WithTags("PublicBooking");
 
+// Versioned, vendor-neutral public availability contract. This is the boundary
+// external scheduling partners (the practice website today, a future Zocdoc or
+// Google adapter tomorrow) integrate against. It returns only bookable free time
+// and the practice time zone — never PHI or the underlying calendar. CDO's
+// SchedulingService remains the single source of truth for the calculation.
+app.MapGet("/api/public/v1/availability", async (
+    DateTimeOffset from, DateTimeOffset to,
+    string? appointmentTypeId, string? providerId, string? locationId, PatientRelationship? patientRelationship,
+    IConfiguration config, IPublicSchedulingClient scheduling, HttpContext http) =>
+{
+    var section = config.GetSection("PublicBooking");
+    if (!section.GetValue("Enabled", false)) return Results.NotFound();
+    var tenantId = IntakeAuth.ResolveTenant(http, section);
+    if (tenantId is null) return Results.Unauthorized();
+    var relationship = patientRelationship ?? PatientRelationship.New;
+    if (relationship == PatientRelationship.Unknown || to <= from || to - from > TimeSpan.FromDays(31))
+        return Results.ValidationProblem(new Dictionary<string, string[]> { ["request"] = ["Choose New or Existing and a valid date range of 31 days or less."] });
+    try
+    {
+        return Results.Ok(await scheduling.GetPublishedAvailabilityAsync(tenantId,
+            new(relationship, from, to, appointmentTypeId, providerId, locationId), http.RequestAborted));
+    }
+    catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or InvalidOperationException)
+    {
+        return Results.Problem(title: "Availability is temporarily unavailable.", statusCode: StatusCodes.Status503ServiceUnavailable);
+    }
+}).RequireRateLimiting("public-booking").WithTags("PublicAvailability");
+
+// Optional iCalendar representation of the same bookable availability. Exposes
+// only free/bookable periods; contains no patient data and no internal calendar
+// events. Intended for read-only marketplace/calendar consumers.
+app.MapGet("/api/public/v1/availability.ics", async (
+    DateTimeOffset from, DateTimeOffset to,
+    string? appointmentTypeId, string? providerId, string? locationId, PatientRelationship? patientRelationship,
+    IConfiguration config, IPublicSchedulingClient scheduling, HttpContext http) =>
+{
+    var section = config.GetSection("PublicBooking");
+    if (!section.GetValue("Enabled", false)) return Results.NotFound();
+    var tenantId = IntakeAuth.ResolveTenant(http, section);
+    if (tenantId is null) return Results.Unauthorized();
+    var relationship = patientRelationship ?? PatientRelationship.New;
+    if (relationship == PatientRelationship.Unknown || to <= from || to - from > TimeSpan.FromDays(31))
+        return Results.ValidationProblem(new Dictionary<string, string[]> { ["request"] = ["Choose New or Existing and a valid date range of 31 days or less."] });
+    try
+    {
+        var view = await scheduling.GetPublishedAvailabilityAsync(tenantId,
+            new(relationship, from, to, appointmentTypeId, providerId, locationId), http.RequestAborted);
+        return Results.Text(AvailabilityIcsWriter.Write(view, DateTime.UtcNow), "text/calendar");
+    }
+    catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or InvalidOperationException)
+    {
+        return Results.Problem(title: "Availability is temporarily unavailable.", statusCode: StatusCodes.Status503ServiceUnavailable);
+    }
+}).RequireRateLimiting("public-booking").WithTags("PublicAvailability");
+
 app.MapPost("/api/integrations/zocdoc/{integrationId}/webhooks", async (
     string integrationId, HttpContext http, IConfiguration configuration,
     IIntegrationInbox inbox, TimeProvider timeProvider,
@@ -420,6 +475,52 @@ public static class PublicBookingSanitizer
         var utc = value.Value.ToUniversalTime();
         return utc > utcNow.AddMinutes(5) || utc < utcNow.AddDays(-7) ? utcNow : utc;
     }
+}
+
+/// <summary>
+/// Renders a vendor-neutral availability view as an RFC 5545 iCalendar document.
+/// Every event is a FREE/bookable period. No patient data, appointment details,
+/// or internal calendar events are ever emitted — a busy period simply has no
+/// corresponding VEVENT because the slot was excluded upstream.
+/// </summary>
+public static class AvailabilityIcsWriter
+{
+    public static string Write(PublicAvailabilityView view, DateTime nowUtc)
+    {
+        var builder = new StringBuilder();
+        builder.Append("BEGIN:VCALENDAR\r\n");
+        builder.Append("VERSION:2.0\r\n");
+        builder.Append("PRODID:-//CloudDentalOffice//Public Availability//EN\r\n");
+        builder.Append("CALSCALE:GREGORIAN\r\n");
+        builder.Append("METHOD:PUBLISH\r\n");
+        var stamp = Stamp(nowUtc);
+        foreach (var slot in view.Slots)
+        {
+            builder.Append("BEGIN:VEVENT\r\n");
+            builder.Append("UID:").Append(Uid(slot.AvailabilityToken)).Append("@clouddentaloffice\r\n");
+            builder.Append("DTSTAMP:").Append(stamp).Append("\r\n");
+            builder.Append("DTSTART:").Append(Stamp(slot.Start.UtcDateTime)).Append("\r\n");
+            builder.Append("DTEND:").Append(Stamp(slot.End.UtcDateTime)).Append("\r\n");
+            builder.Append("SUMMARY:").Append(Escape($"Available — {slot.AppointmentTypeName}")).Append("\r\n");
+            builder.Append("LOCATION:").Append(Escape(slot.LocationName)).Append("\r\n");
+            builder.Append("STATUS:CONFIRMED\r\n");
+            builder.Append("TRANSP:TRANSPARENT\r\n");
+            builder.Append("END:VEVENT\r\n");
+        }
+        builder.Append("END:VCALENDAR\r\n");
+        return builder.ToString();
+    }
+
+    private static string Stamp(DateTime utc) => utc.ToUniversalTime().ToString("yyyyMMdd'T'HHmmss'Z'");
+
+    // Stable, opaque per-slot identity derived from the encrypted availability
+    // token; carries no patient or schedule identifiers.
+    private static string Uid(string token) =>
+        Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(token))).ToLowerInvariant()[..32];
+
+    private static string Escape(string value) => value
+        .Replace("\\", "\\\\").Replace(";", "\\;").Replace(",", "\\,")
+        .Replace("\r\n", "\\n").Replace("\n", "\\n");
 }
 
 public static class Idempotency

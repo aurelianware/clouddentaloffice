@@ -6,6 +6,8 @@ public interface IPublicSchedulingClient
 {
     Task<IReadOnlyList<PublicSchedulingAvailabilitySlot>> GetAvailabilityAsync(string tenantId,
         PublicSchedulingAvailabilityRequest request, CancellationToken cancellationToken = default);
+    Task<PublicAvailabilityView> GetPublishedAvailabilityAsync(string tenantId,
+        PublicSchedulingAvailabilityRequest request, CancellationToken cancellationToken = default);
     Task<ValidatedPublicSchedulingSelection?> ValidateAsync(string tenantId, string token,
         PatientRelationship relationship, CancellationToken cancellationToken = default);
 }
@@ -18,6 +20,15 @@ public sealed class PublicSchedulingClient(HttpClient http, IConfiguration confi
         using var response = await Send(tenantId, "availability", request, cancellationToken);
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadFromJsonAsync<List<PublicSchedulingAvailabilitySlot>>(cancellationToken) ?? [];
+    }
+
+    public async Task<PublicAvailabilityView> GetPublishedAvailabilityAsync(string tenantId,
+        PublicSchedulingAvailabilityRequest request, CancellationToken cancellationToken = default)
+    {
+        using var response = await Send(tenantId, "availability/v1", request, cancellationToken);
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<PublicAvailabilityView>(cancellationToken)
+            ?? new PublicAvailabilityView { TimeZone = "UTC", From = request.From, To = request.To, Slots = [] };
     }
 
     public async Task<ValidatedPublicSchedulingSelection?> ValidateAsync(string tenantId, string token,

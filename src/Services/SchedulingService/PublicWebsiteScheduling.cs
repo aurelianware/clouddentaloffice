@@ -8,6 +8,12 @@ public interface IPublicWebsiteSchedulingService
 {
     Task<IReadOnlyList<PublicSchedulingAvailabilitySlot>> GetAsync(string tenantId,
         PublicSchedulingAvailabilityRequest request, CancellationToken cancellationToken = default);
+    /// <summary>
+    /// Projects canonical availability into the versioned public envelope: the
+    /// practice time zone plus slots whose timestamps are offset to that zone.
+    /// </summary>
+    Task<PublicAvailabilityView> GetPublishedAsync(string tenantId,
+        PublicSchedulingAvailabilityRequest request, CancellationToken cancellationToken = default);
     Task<ValidatedPublicSchedulingSelection?> ValidateAsync(string tenantId, string token,
         PatientRelationship relationship, CancellationToken cancellationToken = default);
 }
@@ -58,6 +64,41 @@ public sealed class PublicWebsiteSchedulingService(
                 Start = slot.StartUtc, End = slot.EndUtc
             };
         }).Where(x => x is not null).Cast<PublicSchedulingAvailabilitySlot>().ToList();
+    }
+
+    public async Task<PublicAvailabilityView> GetPublishedAsync(string tenantId,
+        PublicSchedulingAvailabilityRequest request, CancellationToken cancellationToken = default)
+    {
+        var slots = await GetAsync(tenantId, request, cancellationToken);
+        var timeZoneId = await db.SchedulingIntegrationConfigurations.AsNoTracking()
+            .Where(x => x.TenantId == tenantId && x.Channel == SchedulingChannel.PublicWebsite)
+            .Select(x => x.TimeZoneId).SingleOrDefaultAsync(cancellationToken);
+        timeZoneId = string.IsNullOrWhiteSpace(timeZoneId) ? "UTC" : timeZoneId;
+        var timeZone = ResolveTimeZone(timeZoneId);
+        // Present each bookable slot in the practice's local offset (the token
+        // still encodes the canonical UTC instant, so booking revalidation is
+        // unaffected by the display offset).
+        var localized = timeZone is null ? slots : slots.Select(slot => slot with
+        {
+            Start = TimeZoneInfo.ConvertTime(slot.Start, timeZone),
+            End = TimeZoneInfo.ConvertTime(slot.End, timeZone)
+        }).ToList();
+        return new PublicAvailabilityView
+        {
+            ProviderCode = request.ProviderCode,
+            LocationCode = request.LocationCode,
+            AppointmentTypeCode = request.AppointmentTypeCode,
+            TimeZone = timeZoneId,
+            From = request.From,
+            To = request.To,
+            Slots = localized
+        };
+    }
+
+    private static TimeZoneInfo? ResolveTimeZone(string timeZoneId)
+    {
+        try { return TimeZoneInfo.FindSystemTimeZoneById(timeZoneId); }
+        catch (Exception ex) when (ex is TimeZoneNotFoundException or InvalidTimeZoneException) { return null; }
     }
 
     public async Task<ValidatedPublicSchedulingSelection?> ValidateAsync(string tenantId, string token,

@@ -127,6 +127,41 @@ Request body (`PublicBookingRequest`):
 `preferredStart` must carry a timezone (UTC `Z` or an explicit offset); a value
 with no timezone is rejected.
 
+#### Public availability API (vendor-neutral)
+
+The same internet-facing IntakeService publishes **bookable availability** to
+external scheduling partners through a versioned, vendor-neutral contract.
+CloudDentalOffice is the single system of record; partners read availability,
+they never see the underlying calendar or any PHI.
+
+```
+GET /api/public/v1/availability        # JSON: practice time zone + bookable slots
+GET /api/public/v1/availability.ics     # iCalendar feed of the same free time
+```
+
+- Same enable switch, API key, and per-IP rate limit as booking (disabled →
+  `404`, missing/wrong key → `401`).
+- Query by public **codes** (`providerId`, `locationId`, `appointmentTypeId` —
+  slugs, not database IDs) plus `from`/`to`; `patientRelationship` defaults to
+  `New`. The date range is capped at the edge and clamped by the practice's
+  booking horizon.
+- The response echoes the requested codes, states the practice `timeZone`
+  (e.g. `America/Phoenix`), and returns zone-offset `start`/`end` plus
+  `durationMinutes`. Each slot carries an opaque, encrypted `availabilityToken`.
+- **Only free/bookable time is exposed.** A booked or blocked period simply
+  yields no slot. See
+  [Public availability API](docs/architecture/public-availability-api.md).
+
+Every calculation flows through the one canonical
+`ISchedulingAvailabilityService` in SchedulingService; there is no parallel
+availability engine. A future Zocdoc or Google adapter plugs in as a channel
+adapter over the same engine.
+
+**Booking revalidates the slot.** Submitting a booking with a slot's
+`availabilityToken` re-runs the engine server-side; if the slot was consumed in
+the meantime the API returns `409 Conflict` and the caller reloads availability.
+Previously loaded availability is never treated as authoritative.
+
 **SchedulingService** runs a `BookingRequestConsumer` (a `BackgroundService`) that
 subscribes to the topic and creates a durable `BookingRequest`:
 

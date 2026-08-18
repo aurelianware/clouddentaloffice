@@ -72,6 +72,28 @@ public sealed record PublicSchedulingAvailabilitySlot
     public required string LocationName { get; init; }
     public required DateTimeOffset Start { get; init; }
     public required DateTimeOffset End { get; init; }
+
+    /// <summary>Whole-appointment duration. Derived so partners never receive a slot shorter than the visit.</summary>
+    public int DurationMinutes => (int)Math.Round((End - Start).TotalMinutes);
+}
+
+/// <summary>
+/// Versioned, vendor-neutral availability envelope published to external
+/// scheduling partners (the practice website, a future Zocdoc adapter, etc.).
+/// Echoes the requested public codes, states the practice time zone, and carries
+/// only bookable free/busy time — never PHI or the underlying calendar.
+/// </summary>
+public sealed record PublicAvailabilityView
+{
+    public string? ProviderCode { get; init; }
+    public string? LocationCode { get; init; }
+    public string? AppointmentTypeCode { get; init; }
+
+    /// <summary>IANA time zone identifier of the practice/location (e.g. "America/Phoenix").</summary>
+    public required string TimeZone { get; init; }
+    public required DateTimeOffset From { get; init; }
+    public required DateTimeOffset To { get; init; }
+    public required IReadOnlyList<PublicSchedulingAvailabilitySlot> Slots { get; init; }
 }
 
 public sealed record PublicSchedulingAvailabilityRequest(
