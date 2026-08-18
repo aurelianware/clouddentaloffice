@@ -95,15 +95,17 @@ app.MapPost("/api/appointments", async (CreateAppointmentRequest request, Schedu
     var apt = new Appointment
     {
         Id = Guid.NewGuid(),
+        TenantId = request.TenantId,
         PatientId = request.PatientId,
         ProviderId = request.ProviderId,
-        StartTime = request.StartTime,
-        EndTime = request.EndTime,
+        StartTime = SchedulingTime.NormalizeUtc(request.StartTime),
+        EndTime = SchedulingTime.NormalizeUtc(request.EndTime),
         Status = AppointmentStatus.Scheduled,
         ProcedureCodes = request.ProcedureCodes,
         Notes = request.Notes,
         Operatory = request.Operatory,
         LocationId = request.LocationId,
+        AppointmentTypeId = request.AppointmentTypeId,
         CreatedAt = DateTime.UtcNow
     };
     db.Appointments.Add(apt);
@@ -170,6 +172,7 @@ using (var scope = app.Services.CreateScope())
     await db.Database.EnsureCreatedAsync();
     await BookingRequestSchema.EnsureAsync(db);
     await SchedulingIntegrationSchema.EnsureAsync(db);
+    await SchedulingAvailabilitySchema.EnsureAsync(db);
 }
 
 app.Run();
@@ -177,6 +180,7 @@ app.Run();
 public class Appointment
 {
     public Guid Id { get; set; }
+    public string TenantId { get; set; } = "default";
     public int PatientId { get; set; }
     public int ProviderId { get; set; }
     public DateTime StartTime { get; set; }
@@ -186,6 +190,7 @@ public class Appointment
     public string? Notes { get; set; }
     public string? Operatory { get; set; }
     public Guid? LocationId { get; set; }
+    public string? AppointmentTypeId { get; set; }
     public DateTime CreatedAt { get; set; }
 }
 
@@ -196,6 +201,8 @@ public class SchedulingDbContext(DbContextOptions<SchedulingDbContext> options) 
     public DbSet<SchedulingIntegrationConfiguration> SchedulingIntegrationConfigurations => Set<SchedulingIntegrationConfiguration>();
     public DbSet<ExternalSchedulingResourceMapping> ExternalSchedulingResourceMappings => Set<ExternalSchedulingResourceMapping>();
     public DbSet<SchedulingAppointmentTypeDefinition> SchedulingAppointmentTypes => Set<SchedulingAppointmentTypeDefinition>();
+    public DbSet<SchedulingProviderWorkingHours> SchedulingProviderWorkingHours => Set<SchedulingProviderWorkingHours>();
+    public DbSet<SchedulingBlockedTime> SchedulingBlockedTimes => Set<SchedulingBlockedTime>();
     public DbSet<ExternalAppointmentReference> ExternalAppointmentReferences => Set<ExternalAppointmentReference>();
     public DbSet<SchedulingIntegrationEvent> SchedulingIntegrationEvents => Set<SchedulingIntegrationEvent>();
 }

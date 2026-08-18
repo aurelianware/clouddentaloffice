@@ -82,7 +82,7 @@ public sealed class SchedulingIntegrationTests : IAsyncLifetime
         var slot = new SchedulingAvailabilitySlot
         {
             TenantId = "practice-a", ProviderId = 12, LocationId = Guid.NewGuid(), AppointmentTypeId = "exam",
-            StartUtc = DateTime.UtcNow, EndUtc = DateTime.UtcNow.AddMinutes(30), PatientRelationship = relationship
+            StartUtc = DateTimeOffset.UtcNow, EndUtc = DateTimeOffset.UtcNow.AddMinutes(30), PatientRelationship = relationship
         };
 
         Assert.Equal(relationship, slot.PatientRelationship);

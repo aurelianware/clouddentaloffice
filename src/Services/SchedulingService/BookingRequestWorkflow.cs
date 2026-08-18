@@ -51,8 +51,8 @@ public sealed class BookingRequestWorkflow(SchedulingDbContext db)
         {
             EventId = evt.EventId, TenantId = evt.TenantId, Name = evt.Name.Trim(), Phone = evt.Phone.Trim(),
             Email = evt.Email?.Trim(), WebsiteRequestId = TrimTo(evt.WebsiteRequestId, 128), PatientRelationship = evt.PatientRelationship,
-            PreferredStartUtc = NormalizeUtc(evt.PreferredStartUtc),
-            AlternateStartUtc = NormalizeUtc(evt.AlternateStartUtc),
+            PreferredStartUtc = SchedulingTime.NormalizeUtc(evt.PreferredStartUtc),
+            AlternateStartUtc = SchedulingTime.NormalizeUtc(evt.AlternateStartUtc),
             PreferredDurationMinutes = evt.DurationMinutes, Reason = evt.Reason, Message = evt.Message,
             PreferredContact = TrimTo(evt.PreferredContact, 20), InsuranceIntent = TrimTo(evt.InsuranceIntent, 20),
             InsuranceCarrier = TrimTo(evt.InsuranceCarrier, 120), Campaign = TrimTo(evt.Campaign, 200),
@@ -60,7 +60,7 @@ public sealed class BookingRequestWorkflow(SchedulingDbContext db)
             AttributionMetadataJson = SerializeMetadata(evt.AttributionMetadata),
             Source = TrimTo(evt.Source, 100) ?? "PublicWebsite",
             SourceReference = TrimTo(evt.SourceReference, 200),
-            SubmittedAtUtc = NormalizeUtc(evt.SubmittedAtUtc ?? evt.OccurredAt)
+            SubmittedAtUtc = SchedulingTime.NormalizeUtc(evt.SubmittedAtUtc ?? evt.OccurredAt)
         });
         try { await db.SaveChangesAsync(cancellationToken); return true; }
         catch (DbUpdateException)
@@ -77,15 +77,6 @@ public sealed class BookingRequestWorkflow(SchedulingDbContext db)
         var trimmed = value.Trim();
         return trimmed[..Math.Min(trimmed.Length, maxLength)];
     }
-
-    private static DateTime NormalizeUtc(DateTime value) => value.Kind switch
-    {
-        DateTimeKind.Utc => value,
-        DateTimeKind.Local => value.ToUniversalTime(),
-        _ => DateTime.SpecifyKind(value, DateTimeKind.Utc)
-    };
-
-    private static DateTime? NormalizeUtc(DateTime? value) => value.HasValue ? NormalizeUtc(value.Value) : null;
 
     private static string? SerializeMetadata(IReadOnlyDictionary<string, string>? metadata)
     {
@@ -121,9 +112,10 @@ public sealed class BookingRequestWorkflow(SchedulingDbContext db)
         if (approval.ProviderId <= 0) throw new ArgumentException("A provider is required.");
         if (approval.DurationMinutes <= 0 || approval.StartTimeUtc == default) throw new ArgumentException("Valid scheduling details are required.");
 
-        var start = approval.StartTimeUtc.Kind == DateTimeKind.Utc ? approval.StartTimeUtc : approval.StartTimeUtc.ToUniversalTime();
+        var start = SchedulingTime.NormalizeUtc(approval.StartTimeUtc);
         var end = start.AddMinutes(approval.DurationMinutes);
         if (await db.Appointments.AnyAsync(a => a.ProviderId == approval.ProviderId && a.Status != AppointmentStatus.Cancelled &&
+            a.Status != AppointmentStatus.Requested && a.TenantId == tenantId &&
             a.StartTime < end && a.EndTime > start, cancellationToken))
             throw new InvalidOperationException("The provider already has an appointment during this time.");
 
@@ -131,6 +123,7 @@ public sealed class BookingRequestWorkflow(SchedulingDbContext db)
         var appointment = new Appointment
         {
             Id = Guid.NewGuid(), PatientId = approval.PatientId, ProviderId = approval.ProviderId,
+            TenantId = tenantId,
             StartTime = start, EndTime = end, Status = AppointmentStatus.Scheduled,
             Notes = approval.Notes, Operatory = approval.Operatory, LocationId = approval.LocationId, CreatedAt = DateTime.UtcNow
         };

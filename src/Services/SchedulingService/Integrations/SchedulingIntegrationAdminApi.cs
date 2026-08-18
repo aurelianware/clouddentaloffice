@@ -5,6 +5,24 @@ public static class SchedulingIntegrationAdminApi
 {
     public static IEndpointRouteBuilder MapSchedulingIntegrationAdminApi(this IEndpointRouteBuilder endpoints)
     {
+        endpoints.MapGet("/api/scheduling-integrations/{channel}/availability", async (
+            SchedulingChannel channel, DateTimeOffset from, DateTimeOffset to, int? providerId,
+            Guid? locationId, string? appointmentTypeId, PatientRelationship patientRelationship,
+            ClaimsPrincipal user, ISchedulingAvailabilityService service, CancellationToken cancellationToken) =>
+            await ExecuteAsync(user, tenantId => service.GetAvailabilityAsync(new SchedulingAvailabilityQuery
+            {
+                TenantId = tenantId,
+                Channel = channel,
+                ProviderId = providerId,
+                LocationId = locationId,
+                AppointmentTypeId = appointmentTypeId,
+                PatientRelationship = patientRelationship,
+                FromUtc = from,
+                ToUtc = to
+            }, cancellationToken)))
+            .RequireAuthorization()
+            .WithTags("SchedulingIntegrationAvailability");
+
         var group = endpoints.MapGroup("/api/scheduling-integrations/{channel}/mappings")
             .RequireAuthorization()
             .WithTags("SchedulingIntegrationMappings");
@@ -88,7 +106,7 @@ public static class SchedulingIntegrationAdminApi
         try { return (await action(tenantId), null); }
         catch (ArgumentException ex)
         {
-            return (default, Results.ValidationProblem(new Dictionary<string, string[]> { ["mapping"] = [ex.Message] }));
+            return (default, Results.ValidationProblem(new Dictionary<string, string[]> { ["request"] = [ex.Message] }));
         }
         catch (KeyNotFoundException) { return (default, Results.NotFound()); }
         catch (UnsupportedSchedulingChannelException ex) { return (default, Results.BadRequest(new { message = ex.Message })); }

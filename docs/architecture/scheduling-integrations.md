@@ -34,7 +34,7 @@ CloudDentalOffice appointment, patient, provider, and location domains
 
 ## Persistence
 
-SchedulingService owns five integration tables:
+SchedulingService owns the integration and availability tables:
 
 - `SchedulingIntegrationConfigurations` enables a channel per tenant and stores
   an environment plus a reference to credentials. Secrets are not stored in
@@ -46,6 +46,10 @@ SchedulingService owns five integration tables:
 - `SchedulingAppointmentTypes` stores duration, optional provider/location
   applicability, new/existing-patient eligibility, and active state for the
   canonical visit type.
+- `SchedulingProviderWorkingHours` stores provider/location working intervals
+  as practice-local wall-clock times and a day of week.
+- `SchedulingBlockedTimes` stores tenant-scoped UTC intervals that can apply to
+  a provider, a location, or the whole practice.
 - `ExternalAppointmentReferences` associates appointments with external channel
   identifiers without adding vendor fields to Appointment.
 - `SchedulingIntegrationEvents` enforces idempotency with a unique
@@ -79,6 +83,41 @@ Authenticated administration endpoints under
 reverse lookup, create/update, deactivation, and unmapped/stale reports. Tenant
 scope is taken from the authenticated token's tenant claim; callers cannot
 choose a tenant in the URL or request body. These routes are never anonymous.
+
+## Canonical external availability
+
+`ISchedulingAvailabilityService` is the single CDO-owned calculation boundary
+used by every external channel. It does not expose arbitrary calendar gaps and
+does not call a marketplace API. The calculation:
+
+1. requires an enabled tenant/channel configuration and applies its minimum
+   lead time, maximum horizon, and IANA practice timezone;
+2. selects active appointment types eligible for the requested
+   `PatientRelationship`;
+3. requires active channel mappings for the appointment type, provider, and
+   location;
+4. expands provider/location working hours into UTC using the practice
+   timezone, including daylight-saving transitions;
+5. fits the appointment-type duration at 15-minute candidate increments; and
+6. removes overlaps with non-cancelled appointments and active blocked time.
+
+Only approved booking requests create an Appointment and therefore block
+availability. An unapproved `BookingRequest` is an intake/review record, not a
+calendar hold. Legacy `AppointmentStatus.Requested` rows are likewise excluded
+from collision blocking so current booking-request semantics remain unchanged.
+
+The authenticated troubleshooting endpoint is:
+
+```text
+GET /api/scheduling-integrations/{channel}/availability
+    ?from=<ISO-8601 offset>&to=<ISO-8601 offset>
+    &providerId=<optional>&locationId=<optional>
+    &appointmentTypeId=<optional>&patientRelationship=New|Existing
+```
+
+Slots remain channel-neutral and contain only tenant, provider, location,
+appointment type, UTC start/end, and patient relationship. Structured summary
+logs contain rule and collision counts but no patient-identifying fields.
 
 ## Existing public website flow
 
