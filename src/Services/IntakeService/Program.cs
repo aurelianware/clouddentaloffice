@@ -82,6 +82,16 @@ builder.Services.AddRateLimiter(options =>
             QueueLimit = 0
         });
     });
+    options.AddPolicy("integration-inbox-admin", httpContext =>
+    {
+        var clientKey = httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+        return RateLimitPartition.GetFixedWindowLimiter(clientKey, _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = 30,
+            Window = TimeSpan.FromMinutes(1),
+            QueueLimit = 0
+        });
+    });
 });
 
 var app = builder.Build();
@@ -192,7 +202,7 @@ app.MapGet("/api/internal/integration-inbox/status", async (
     var tenantId = IntegrationInboxAdminAuth.ResolveTenant(http, configuration);
     return tenantId is null ? Results.Unauthorized() : Results.Ok(
         await inbox.GetStatusAsync(tenantId, cancellationToken));
-}).WithTags("IntegrationInbox");
+}).RequireRateLimiting("integration-inbox-admin").WithTags("IntegrationInbox");
 
 app.MapPost("/api/internal/integration-inbox/{id:guid}/retry", async (
     Guid id, HttpContext http, IConfiguration configuration, IIntegrationInbox inbox,
@@ -202,7 +212,7 @@ app.MapPost("/api/internal/integration-inbox/{id:guid}/retry", async (
     if (tenantId is null) return Results.Unauthorized();
     return await inbox.RequeueAsync(tenantId, id, cancellationToken)
         ? Results.Accepted() : Results.NotFound();
-}).WithTags("IntegrationInbox");
+}).RequireRateLimiting("integration-inbox-admin").WithTags("IntegrationInbox");
 
 app.MapPost("/api/public/booking-requests", async (
     PublicBookingRequest request,

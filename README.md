@@ -162,7 +162,7 @@ The topic decouples the website from the scheduler:
 | `TrustedProxies` | Proxy IPs allowed to supply forwarded client headers. |
 | `ConnectionStrings:IntakeDb` | Isolated durable inbox database (PostgreSQL in production). |
 | `IntegrationInbox:*` | Dispatcher batch, lease, bounded retry, and tenant admin-client settings. |
-| `ServiceBus:ConnectionString` | Service Bus namespace connection string. Empty → events are logged and dropped. |
+| `ServiceBus:ConnectionString` | Service Bus namespace connection string. Empty → website booking returns `503`; verified Zocdoc webhooks remain in the durable inbox for retry. |
 | `ServiceBus:BookingTopic` | Topic to publish to (default `booking-requests`). |
 
 **SchedulingService** (`PublicBooking` + `ServiceBus` sections):

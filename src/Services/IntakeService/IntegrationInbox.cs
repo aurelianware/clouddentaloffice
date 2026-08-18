@@ -166,17 +166,17 @@ public sealed class IntegrationInboxDispatcher(
         if (oldest.HasValue) metrics.OldestPendingAge.Record(Math.Max(0, (now - oldest.Value).TotalSeconds));
 
         var candidates = await db.IntegrationInboxMessages.AsNoTracking()
-            .Where(x => x.AttemptCount < settings.MaxAttempts &&
-                ((x.Status == IntegrationInboxStatus.Received &&
+            .Where(x => (x.Status == IntegrationInboxStatus.Received &&
+                  x.AttemptCount < settings.MaxAttempts &&
                   (!x.NextAttemptAt.HasValue || x.NextAttemptAt <= now)) ||
-                 (x.Status == IntegrationInboxStatus.Publishing && x.LockedUntil <= now)))
+                 (x.Status == IntegrationInboxStatus.Publishing && x.LockedUntil <= now))
             .OrderBy(x => x.ReceivedAt).Select(x => x.Id).Take(settings.BatchSize).ToListAsync(cancellationToken);
         var published = 0;
         foreach (var id in candidates)
         {
             var lockId = Guid.NewGuid();
-            var claimed = await db.IntegrationInboxMessages.Where(x => x.Id == id && x.AttemptCount < settings.MaxAttempts &&
-                    ((x.Status == IntegrationInboxStatus.Received &&
+            var claimed = await db.IntegrationInboxMessages.Where(x => x.Id == id &&
+                    ((x.Status == IntegrationInboxStatus.Received && x.AttemptCount < settings.MaxAttempts &&
                       (!x.NextAttemptAt.HasValue || x.NextAttemptAt <= now)) ||
                      (x.Status == IntegrationInboxStatus.Publishing && x.LockedUntil <= now)))
                 .ExecuteUpdateAsync(setters => setters

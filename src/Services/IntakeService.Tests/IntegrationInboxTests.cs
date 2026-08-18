@@ -131,6 +131,27 @@ public sealed class IntegrationInboxTests : IDisposable
         }
     }
 
+    [Fact]
+    public async Task Expired_lease_on_final_attempt_is_recovered_instead_of_stuck()
+    {
+        await using var db = CreateDb();
+        var row = Row("expired-final-attempt");
+        row.Status = IntegrationInboxStatus.Publishing;
+        row.AttemptCount = 2;
+        row.LockId = Guid.NewGuid();
+        row.LockedUntil = _clock.GetUtcNow().UtcDateTime.AddSeconds(-1);
+        row.Payload = System.Text.Json.JsonSerializer.Serialize(Event("tenant-a", row.ExternalEventId));
+        db.Add(row);
+        await db.SaveChangesAsync();
+        var publisher = new RecordingPublisher();
+
+        Assert.Equal(1, await Dispatcher(db, publisher,
+            new ServiceBusOptions { ConnectionString = "configured" }, maxAttempts: 2).DispatchBatchAsync());
+        Assert.Single(publisher.Events);
+        Assert.Equal(IntegrationInboxStatus.Published,
+            await db.IntegrationInboxMessages.AsNoTracking().Select(x => x.Status).SingleAsync());
+    }
+
     private IntakeDbContext CreateDb() => new(new DbContextOptionsBuilder<IntakeDbContext>()
         .UseSqlite(_connection).Options);
 
