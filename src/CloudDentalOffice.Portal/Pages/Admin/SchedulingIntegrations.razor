@@ -1,0 +1,196 @@
+@page "/settings/integrations/scheduling"
+@attribute [Authorize(Roles = "Admin")]
+@using CloudDentalOffice.Contracts.Scheduling
+@using CloudDentalOffice.Portal.Services
+@inject ISchedulingIntegrationAdminClient Client
+@inject ISnackbar Snackbar
+
+<PageTitle>Scheduling Integrations</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-4 mb-8">
+    <MudText Typo="Typo.h4">Scheduling Integrations</MudText>
+    <MudText Typo="Typo.body1" Color="Color.Secondary" Class="mb-5">
+        Configure external scheduling channels, mappings, availability, and synchronization.
+    </MudText>
+
+    @if (_loading)
+    {
+        <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
+    }
+    else if (_overview is null)
+    {
+        <MudAlert Severity="Severity.Error">The scheduling integration status could not be loaded.</MudAlert>
+    }
+    else
+    {
+        <MudGrid Class="mb-4">
+            <MudItem xs="12" md="6">
+                <MudPaper Class="pa-5" Elevation="2">
+                    <div class="d-flex justify-space-between align-center">
+                        <MudText Typo="Typo.h5">Zocdoc</MudText>
+                        <MudChip T="string" Size="Size.Small" Color="@(_overview.Enabled ? Color.Success : Color.Default)">
+                            @(_overview.Enabled ? "Enabled" : "Disabled")
+                        </MudChip>
+                    </div>
+                    <MudText>Environment: @_overview.Environment</MudText>
+                    <MudText>Connection: @_overview.ConnectionStatus</MudText>
+                    <MudText>Last successful sync: @FormatDate(_overview.LastSuccessfulSynchronization)</MudText>
+                    <MudText>Mappings: @_overview.MappedProviders providers · @_overview.MappedLocations locations · @_overview.MappedVisitReasons visit reasons</MudText>
+                    @if (!string.IsNullOrWhiteSpace(_overview.LastError))
+                    {
+                        <MudAlert Severity="Severity.Warning" Dense="true" Class="mt-3">@_overview.LastError</MudAlert>
+                    }
+                </MudPaper>
+            </MudItem>
+            <MudItem xs="12" md="6">
+                <MudPaper Class="pa-5" Elevation="2">
+                    <div class="d-flex justify-space-between align-center">
+                        <MudText Typo="Typo.h5">Website Booking</MudText>
+                        <MudChip T="string" Size="Size.Small" Color="Color.Info">Managed separately</MudChip>
+                    </div>
+                    <MudText>Public appointment requests are received through the existing website booking workflow.</MudText>
+                    <MudDivider Class="my-3" />
+                    <MudText Typo="Typo.subtitle2">Future channels</MudText>
+                    <MudText Color="Color.Secondary">Google and other channels are not configured or active.</MudText>
+                </MudPaper>
+            </MudItem>
+        </MudGrid>
+
+        <MudTabs Rounded="true" ApplyEffectsToContainer="true" PanelClass="pa-5">
+            <MudTabPanel Text="Setup">
+                <MudGrid>
+                    <MudItem xs="12" md="4"><MudSwitch T="bool" @bind-Value="_config.Enabled" Label="Enable Zocdoc" Color="Color.Primary" /></MudItem>
+                    <MudItem xs="12" md="4">
+                        <MudSelect T="string" @bind-Value="_config.Environment" Label="Environment">
+                            <MudSelectItem Value="@("Sandbox")">Sandbox</MudSelectItem>
+                            <MudSelectItem Value="@("Production")">Production</MudSelectItem>
+                        </MudSelect>
+                    </MudItem>
+                    <MudItem xs="12" md="4"><MudTextField T="string" @bind-Value="_config.TimeZoneId" Label="Practice time zone" /></MudItem>
+                    <MudItem xs="12" md="6">
+                        <MudTextField T="string" @bind-Value="_config.CredentialReference" Label="Credential reference"
+                                      HelperText="Opaque secret-provider reference only. Client ID, client secret, and webhook secret are never returned to this page." />
+                    </MudItem>
+                    <MudItem xs="6" md="3"><MudNumericField T="int" @bind-Value="_config.MinimumBookingLeadMinutes" Label="Minimum lead time (minutes)" Min="0" /></MudItem>
+                    <MudItem xs="6" md="3"><MudNumericField T="int" @bind-Value="_config.MaximumBookingHorizonDays" Label="Booking horizon (days)" Min="1" Max="365" /></MudItem>
+                </MudGrid>
+                <MudAlert Severity="Severity.Info" Dense="true" Class="my-4">Secret values are provisioned through Azure Key Vault or Container App secrets, using the credential reference above.</MudAlert>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveConfiguration" Disabled="_busy">Save configuration</MudButton>
+                <MudButton Variant="Variant.Outlined" Class="ml-2" OnClick="TestConnection" Disabled="_busy">Test connection</MudButton>
+            </MudTabPanel>
+
+            <MudTabPanel Text="Mappings">
+                <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Refresh" OnClick="RefreshExternalEntities" Disabled="_busy" Class="mb-4">Refresh external entities</MudButton>
+                @foreach (var type in MappingTypes)
+                {
+                    <MudText Typo="Typo.h6" Class="mt-3">@MappingTitle(type)</MudText>
+                    <MudTable T="SchedulingInternalEntity" Items="@Unmapped(type)" Dense="true" Hover="true" Class="mb-5">
+                        <HeaderContent><MudTh>CloudDentalOffice entity</MudTh><MudTh>Zocdoc entity</MudTh><MudTh></MudTh></HeaderContent>
+                        <RowTemplate>
+                            <MudTd DataLabel="CDO">@context.DisplayName <MudChip T="string" Size="Size.Small" Color="Color.Warning">Unmapped</MudChip></MudTd>
+                            <MudTd DataLabel="Zocdoc">
+                                <MudSelect T="string" Value="@Selection(context)" ValueChanged="@(value => Select(context, value))" Dense="true" Placeholder="Select external entity">
+                                    @foreach (var external in External(type))
+                                    { <MudSelectItem Value="@external.ExternalId">@external.DisplayName</MudSelectItem> }
+                                </MudSelect>
+                            </MudTd>
+                            <MudTd><MudButton Size="Size.Small" OnClick="@(() => Map(context))" Disabled="@(string.IsNullOrWhiteSpace(Selection(context)) || _busy)">Map</MudButton></MudTd>
+                        </RowTemplate>
+                        <NoRecordsContent><MudText Color="Color.Secondary">No unmapped @MappingTitle(type).ToLowerInvariant().</MudText></NoRecordsContent>
+                    </MudTable>
+                }
+                <MudText Typo="Typo.subtitle1">Active mappings</MudText>
+                <MudTable T="SchedulingMapping" Items="_mappings" Dense="true">
+                    <HeaderContent><MudTh>Type</MudTh><MudTh>CDO ID</MudTh><MudTh>External entity</MudTh></HeaderContent>
+                    <RowTemplate><MudTd>@context.EntityType</MudTd><MudTd>@context.InternalId</MudTd><MudTd>@context.ExternalDisplayName (@context.ExternalId)</MudTd></RowTemplate>
+                </MudTable>
+            </MudTabPanel>
+
+            <MudTabPanel Text="Availability">
+                <MudGrid>
+                    <MudItem xs="12" md="3"><MudDatePicker Label="Date" @bind-Date="_availabilityDate" /></MudItem>
+                    <MudItem xs="12" md="3"><MudSelect T="PatientRelationship" Label="Patient relationship" @bind-Value="_relationship"><MudSelectItem Value="PatientRelationship.New">New</MudSelectItem><MudSelectItem Value="PatientRelationship.Existing">Existing</MudSelectItem><MudSelectItem Value="PatientRelationship.Unknown">Unknown</MudSelectItem></MudSelect></MudItem>
+                    <MudItem xs="12" md="2"><MudTextField T="int?" Label="Provider ID" @bind-Value="_providerId" /></MudItem>
+                    <MudItem xs="12" md="2"><MudTextField T="Guid?" Label="Location ID" @bind-Value="_locationId" /></MudItem>
+                    <MudItem xs="12" md="2"><MudTextField T="string" Label="Appointment type" @bind-Value="_appointmentTypeId" /></MudItem>
+                </MudGrid>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="InspectAvailability" Disabled="_busy" Class="mt-3">Inspect availability</MudButton>
+                <MudButton Variant="Variant.Outlined" OnClick="Reconcile" Disabled="_busy" Class="mt-3 ml-2">Reconcile availability</MudButton>
+                <MudTable T="SchedulingAvailabilitySlot" Items="_slots" Dense="true" Hover="true" Class="mt-4">
+                    <HeaderContent><MudTh>Start</MudTh><MudTh>End</MudTh><MudTh>Provider</MudTh><MudTh>Location</MudTh><MudTh>Appointment type</MudTh><MudTh>Relationship</MudTh></HeaderContent>
+                    <RowTemplate><MudTd>@context.StartUtc.ToLocalTime().ToString("g")</MudTd><MudTd>@context.EndUtc.ToLocalTime().ToString("t")</MudTd><MudTd>@context.ProviderId</MudTd><MudTd>@context.LocationId</MudTd><MudTd>@context.AppointmentTypeId</MudTd><MudTd>@context.PatientRelationship</MudTd></RowTemplate>
+                    <NoRecordsContent><MudText Color="Color.Secondary">No publishable slots match these filters.</MudText></NoRecordsContent>
+                </MudTable>
+            </MudTabPanel>
+
+            <MudTabPanel Text="Operational status">
+                <MudText Color="Color.Secondary" Class="mb-3">Sanitized synchronization diagnostics. Patient information and remote payloads are not displayed.</MudText>
+                <MudTable T="IntegrationDiagnostic" Items="_diagnostics" Dense="true" Hover="true">
+                    <HeaderContent><MudTh>Time</MudTh><MudTh>Status</MudTh><MudTh>Operation</MudTh><MudTh>Diagnostic</MudTh></HeaderContent>
+                    <RowTemplate><MudTd>@FormatDate(context.LastAttemptAt ?? context.UpdatedAt)</MudTd><MudTd>@context.Status</MudTd><MudTd>@context.PendingOperation</MudTd><MudTd>@(context.Diagnostic ?? context.LastSyncError)</MudTd></RowTemplate>
+                </MudTable>
+            </MudTabPanel>
+        </MudTabs>
+    }
+</MudContainer>
+
+@code {
+    private SchedulingIntegrationOverview? _overview;
+    private SchedulingIntegrationConfigurationInput _config = new(false, "Sandbox", null, "UTC", 0, 90);
+    private IReadOnlyList<SchedulingMapping> _mappings = [];
+    private IReadOnlyList<ExternalSchedulingEntity> _external = [];
+    private readonly Dictionary<SchedulingResourceType, IReadOnlyList<SchedulingInternalEntity>> _unmapped = [];
+    private readonly Dictionary<string, string> _selections = [];
+    private IReadOnlyList<SchedulingAvailabilitySlot> _slots = [];
+    private IReadOnlyList<IntegrationDiagnostic> _diagnostics = [];
+    private DateTime? _availabilityDate = DateTime.Today.AddDays(1);
+    private PatientRelationship _relationship = PatientRelationship.Unknown;
+    private int? _providerId; private Guid? _locationId; private string? _appointmentTypeId;
+    private bool _loading = true, _busy;
+    private static readonly SchedulingResourceType[] MappingTypes = [SchedulingResourceType.Provider, SchedulingResourceType.Location, SchedulingResourceType.VisitReason];
+
+    protected override async Task OnInitializedAsync() { await Load(); _loading = false; }
+    private async Task Load()
+    {
+        try
+        {
+            _overview = await Client.GetOverviewAsync();
+            _config = new(_overview.Enabled, _overview.Environment, _overview.CredentialReference, _overview.TimeZoneId, _overview.MinimumBookingLeadMinutes, _overview.MaximumBookingHorizonDays);
+            _mappings = await Client.GetMappingsAsync();
+            foreach (var type in MappingTypes) _unmapped[type] = await Client.GetUnmappedAsync(type);
+            _diagnostics = await Client.GetDiagnosticsAsync();
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+    private async Task Run(Func<Task> action, string success)
+    {
+        _busy = true;
+        try { await action(); Snackbar.Add(success, Severity.Success); }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+        finally { _busy = false; }
+    }
+    private Task SaveConfiguration() => Run(async () => { await Client.SaveConfigurationAsync(_config); await Load(); }, "Configuration saved.");
+    private Task TestConnection() => Run(() => Client.TestConnectionAsync(), "Zocdoc connection succeeded.");
+    private Task RefreshExternalEntities() => Run(async () => _external = await Client.RefreshExternalEntitiesAsync(), "External entities refreshed.");
+    private async Task Map(SchedulingInternalEntity item) => await Run(async () =>
+    {
+        var id = Selection(item)!; var external = _external.Single(x => x.EntityType == item.EntityType && x.ExternalId == id);
+        await Client.SaveMappingAsync(item.EntityType, item.InternalId, external.ExternalId, external.DisplayName); await Load();
+    }, "Mapping saved.");
+    private Task InspectAvailability() => Run(async () =>
+    {
+        var from = new DateTimeOffset((_availabilityDate ?? DateTime.Today).Date, TimeZoneInfo.Local.GetUtcOffset(_availabilityDate ?? DateTime.Today));
+        _slots = await Client.GetAvailabilityAsync(from, from.AddDays(1), _providerId, _locationId, _appointmentTypeId, _relationship);
+    }, "Availability calculated.");
+    private Task Reconcile() => Run(async () =>
+    {
+        var from = new DateTimeOffset((_availabilityDate ?? DateTime.Today).Date, TimeZoneInfo.Local.GetUtcOffset(_availabilityDate ?? DateTime.Today));
+        await Client.ReconcileAsync(from, from.AddDays(1), _providerId); await Load();
+    }, "Availability reconciliation queued.");
+    private IEnumerable<SchedulingInternalEntity> Unmapped(SchedulingResourceType type) => _unmapped.GetValueOrDefault(type) ?? [];
+    private IEnumerable<ExternalSchedulingEntity> External(SchedulingResourceType type) => _external.Where(x => x.EntityType == type);
+    private string? Selection(SchedulingInternalEntity item) => _selections.GetValueOrDefault($"{item.EntityType}:{item.InternalId}");
+    private void Select(SchedulingInternalEntity item, string value) => _selections[$"{item.EntityType}:{item.InternalId}"] = value;
+    private static string MappingTitle(SchedulingResourceType type) => type switch { SchedulingResourceType.Provider => "Providers", SchedulingResourceType.Location => "Locations", _ => "Appointment types / visit reasons" };
+    private static string FormatDate(DateTime? value) => value?.ToLocalTime().ToString("g") ?? "Never";
+}

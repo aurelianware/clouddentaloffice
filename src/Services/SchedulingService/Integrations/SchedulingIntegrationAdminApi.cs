@@ -5,28 +5,123 @@ using SchedulingService.Integrations.Zocdoc;
 
 public static class SchedulingIntegrationAdminApi
 {
+    public sealed record SchedulingIntegrationOverview(
+        SchedulingChannel Channel, bool Enabled, string Environment, string ConnectionStatus,
+        bool CredentialReferenceConfigured, string? CredentialReference, string TimeZoneId,
+        int MinimumBookingLeadMinutes, int MaximumBookingHorizonDays,
+        DateTime? LastSuccessfulSynchronization, string? LastError,
+        int MappedProviders, int MappedLocations, int MappedVisitReasons);
+    public sealed record UpdateSchedulingIntegrationConfiguration(
+        bool Enabled, string Environment, string? CredentialReference, string TimeZoneId,
+        int MinimumBookingLeadMinutes, int MaximumBookingHorizonDays);
+
     public static IEndpointRouteBuilder MapSchedulingIntegrationAdminApi(this IEndpointRouteBuilder endpoints)
     {
+        endpoints.MapGet("/api/scheduling-integrations/zocdoc/overview", async (
+            ClaimsPrincipal user, SchedulingDbContext db, CancellationToken cancellationToken) =>
+            await ExecuteAsync(user, async tenantId =>
+            {
+                var configuration = await db.SchedulingIntegrationConfigurations.AsNoTracking().SingleOrDefaultAsync(x =>
+                    x.TenantId == tenantId && x.Channel == SchedulingChannel.Zocdoc, cancellationToken);
+                var mappings = await db.ExternalSchedulingResourceMappings.AsNoTracking().Where(x =>
+                    x.TenantId == tenantId && x.Channel == SchedulingChannel.Zocdoc && x.IsActive)
+                    .GroupBy(x => x.ResourceType).Select(x => new { Type = x.Key, Count = x.Count() })
+                    .ToDictionaryAsync(x => x.Type, x => x.Count, cancellationToken);
+                var availability = await db.SchedulingAvailabilitySyncStates.AsNoTracking().Where(x =>
+                    x.TenantId == tenantId && x.Channel == SchedulingChannel.Zocdoc)
+                    .OrderByDescending(x => x.LastAttemptAt).FirstOrDefaultAsync(cancellationToken);
+                var lifecycle = await db.ExternalAppointmentReferences.AsNoTracking().Where(x =>
+                    x.TenantId == tenantId && x.Channel == SchedulingChannel.Zocdoc &&
+                    x.SyncStatus != ExternalAppointmentSyncStatus.Synced)
+                    .OrderByDescending(x => x.UpdatedAt).FirstOrDefaultAsync(cancellationToken);
+                var lastSuccess = await db.SchedulingAvailabilitySyncStates.AsNoTracking().Where(x =>
+                    x.TenantId == tenantId && x.Channel == SchedulingChannel.Zocdoc && x.LastSuccessAt.HasValue)
+                    .MaxAsync(x => (DateTime?)x.LastSuccessAt, cancellationToken);
+                var lastError = lifecycle?.LastSyncError ??
+                    (availability?.Status is AvailabilitySyncStatus.Failed or AvailabilitySyncStatus.SkippedMapping
+                        ? availability.Diagnostic : null);
+                return new SchedulingIntegrationOverview(SchedulingChannel.Zocdoc,
+                    configuration?.Enabled == true, configuration?.Environment ?? "Sandbox",
+                    configuration is null ? "Not configured" : configuration.Enabled ? "Configured" : "Disabled",
+                    !string.IsNullOrWhiteSpace(configuration?.CredentialReference), configuration?.CredentialReference,
+                    configuration?.TimeZoneId ?? "UTC", configuration?.MinimumBookingLeadMinutes ?? 0,
+                    configuration?.MaximumBookingHorizonDays ?? 90, lastSuccess, lastError,
+                    mappings.GetValueOrDefault(SchedulingResourceType.Provider),
+                    mappings.GetValueOrDefault(SchedulingResourceType.Location),
+                    mappings.GetValueOrDefault(SchedulingResourceType.VisitReason));
+            })).RequireAuthorization("SchedulingIntegrationAdmin").WithTags("SchedulingIntegrations");
+
+        endpoints.MapPut("/api/scheduling-integrations/zocdoc/configuration", async (
+            UpdateSchedulingIntegrationConfiguration request, ClaimsPrincipal user, SchedulingDbContext db,
+            CancellationToken cancellationToken) => await ExecuteAsync(user, async tenantId =>
+            {
+                if (request.Environment is not ("Sandbox" or "Production"))
+                    throw new ArgumentException("Environment must be Sandbox or Production.");
+                if (request.MinimumBookingLeadMinutes < 0 || request.MaximumBookingHorizonDays is < 1 or > 365)
+                    throw new ArgumentException("Booking limits are invalid.");
+                try { _ = TimeZoneInfo.FindSystemTimeZoneById(request.TimeZoneId); }
+                catch (Exception ex) when (ex is TimeZoneNotFoundException or InvalidTimeZoneException)
+                { throw new ArgumentException("Time zone is invalid."); }
+                var configuration = await db.SchedulingIntegrationConfigurations.SingleOrDefaultAsync(x =>
+                    x.TenantId == tenantId && x.Channel == SchedulingChannel.Zocdoc, cancellationToken);
+                if (configuration is null)
+                {
+                    configuration = new() { TenantId = tenantId, Channel = SchedulingChannel.Zocdoc };
+                    db.SchedulingIntegrationConfigurations.Add(configuration);
+                }
+                configuration.Enabled = request.Enabled;
+                configuration.Environment = request.Environment;
+                configuration.CredentialReference = string.IsNullOrWhiteSpace(request.CredentialReference)
+                    ? null : request.CredentialReference.Trim();
+                configuration.TimeZoneId = request.TimeZoneId;
+                configuration.MinimumBookingLeadMinutes = request.MinimumBookingLeadMinutes;
+                configuration.MaximumBookingHorizonDays = request.MaximumBookingHorizonDays;
+                configuration.UpdatedAt = DateTime.UtcNow;
+                await db.SaveChangesAsync(cancellationToken);
+                return new { saved = true };
+            })).RequireAuthorization("SchedulingIntegrationAdmin").WithTags("SchedulingIntegrations");
+
+        endpoints.MapPost("/api/scheduling-integrations/zocdoc/test-connection", async (
+            ClaimsPrincipal user, ISchedulingChannelAdapterResolver resolver, CancellationToken cancellationToken) =>
+            await ExecuteAsync(user, async tenantId =>
+            {
+                var adapter = await resolver.ResolveAsync(tenantId, SchedulingChannel.Zocdoc, cancellationToken);
+                if (adapter is not ISchedulingExternalEntitySource source)
+                    throw new InvalidOperationException("Zocdoc connection testing is unavailable.");
+                await source.ValidateConnectionAsync(tenantId, cancellationToken);
+                return new { status = "Connected" };
+            })).RequireAuthorization("SchedulingIntegrationAdmin").WithTags("SchedulingIntegrations");
+
+        endpoints.MapPost("/api/scheduling-integrations/zocdoc/external-entities/refresh", async (
+            ClaimsPrincipal user, ISchedulingChannelAdapterResolver resolver, CancellationToken cancellationToken) =>
+            await ExecuteAsync(user, async tenantId =>
+            {
+                var adapter = await resolver.ResolveAsync(tenantId, SchedulingChannel.Zocdoc, cancellationToken);
+                if (adapter is not ISchedulingExternalEntitySource source)
+                    throw new InvalidOperationException("Zocdoc external entities are unavailable.");
+                return await source.GetExternalEntitiesAsync(tenantId, cancellationToken);
+            })).RequireAuthorization("SchedulingIntegrationAdmin").WithTags("SchedulingIntegrations");
+
         endpoints.MapGet("/api/scheduling-integrations/zocdoc/appointments/status", async (
             ClaimsPrincipal user, SchedulingDbContext db, CancellationToken cancellationToken) =>
             await ExecuteAsync(user, tenantId => db.ExternalAppointmentReferences.AsNoTracking()
                 .Where(x => x.TenantId == tenantId && x.Channel == SchedulingChannel.Zocdoc)
                 .OrderByDescending(x => x.UpdatedAt).Take(500).ToListAsync(cancellationToken)))
-            .RequireAuthorization().WithTags("SchedulingIntegrationAppointments");
+            .RequireAuthorization("SchedulingIntegrationAdmin").WithTags("SchedulingIntegrationAppointments");
 
         endpoints.MapPost("/api/scheduling-integrations/zocdoc/availability/reconcile", async (
             DateTimeOffset from, DateTimeOffset to, int? providerId, ClaimsPrincipal user,
             IZocdocAvailabilitySynchronizer synchronizer, CancellationToken cancellationToken) =>
             await ExecuteAsync(user, tenantId => synchronizer.ReconcileAsync(
                 new(tenantId, from, to, providerId), cancellationToken)))
-            .RequireAuthorization().WithTags("SchedulingIntegrationAvailability");
+            .RequireAuthorization("SchedulingIntegrationAdmin").WithTags("SchedulingIntegrationAvailability");
 
         endpoints.MapGet("/api/scheduling-integrations/zocdoc/availability/status", async (
             ClaimsPrincipal user, SchedulingDbContext db, CancellationToken cancellationToken) =>
             await ExecuteAsync(user, tenantId => db.SchedulingAvailabilitySyncStates.AsNoTracking()
                 .Where(x => x.TenantId == tenantId && x.Channel == SchedulingChannel.Zocdoc)
                 .OrderByDescending(x => x.LastAttemptAt).Take(500).ToListAsync(cancellationToken)))
-            .RequireAuthorization().WithTags("SchedulingIntegrationAvailability");
+            .RequireAuthorization("SchedulingIntegrationAdmin").WithTags("SchedulingIntegrationAvailability");
 
         endpoints.MapGet("/api/scheduling-integrations/{channel}/availability", async (
             SchedulingChannel channel, DateTimeOffset from, DateTimeOffset to, int? providerId,
@@ -43,11 +138,11 @@ public static class SchedulingIntegrationAdminApi
                 FromUtc = from,
                 ToUtc = to
             }, cancellationToken)))
-            .RequireAuthorization()
+            .RequireAuthorization("SchedulingIntegrationAdmin")
             .WithTags("SchedulingIntegrationAvailability");
 
         var group = endpoints.MapGroup("/api/scheduling-integrations/{channel}/mappings")
-            .RequireAuthorization()
+            .RequireAuthorization("SchedulingIntegrationAdmin")
             .WithTags("SchedulingIntegrationMappings");
 
         group.MapGet("/", async (SchedulingChannel channel, SchedulingResourceType? entityType,
@@ -133,6 +228,13 @@ public static class SchedulingIntegrationAdminApi
         }
         catch (KeyNotFoundException) { return (default, Results.NotFound()); }
         catch (UnsupportedSchedulingChannelException ex) { return (default, Results.BadRequest(new { message = ex.Message })); }
+        catch (ZocdocIntegrationException ex)
+        {
+            return (default, Results.Problem(
+                title: "Zocdoc operation failed.",
+                detail: ex.Kind.ToString(),
+                statusCode: StatusCodes.Status502BadGateway));
+        }
         catch (InvalidOperationException ex) { return (default, Results.Conflict(new { message = ex.Message })); }
     }
 }

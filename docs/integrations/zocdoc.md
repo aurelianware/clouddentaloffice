@@ -31,6 +31,25 @@ between tenants.
 
 ## Tenant configuration
 
+Administrators configure and operate the integration in the Portal at:
+
+```text
+Settings -> Integrations -> Scheduling
+```
+
+The page provides Zocdoc status and mapping counts, safe non-secret settings,
+provider/location/visit-reason mapping, publishable availability inspection,
+connection testing, external-reference refresh, availability reconciliation,
+and sanitized operational diagnostics. The route and every backing Scheduling
+Service endpoint require the `Admin` role and derive the tenant exclusively from
+the authenticated tenant claim.
+
+The UI accepts only an opaque credential reference. It never accepts, reads, or
+returns the client secret, webhook signing key, OAuth tokens, raw webhook bodies,
+or remote payloads. Secret values remain in Azure Key Vault or Container App
+secret configuration. A connection test is the safe way to verify that the
+referenced credentials are present and valid.
+
 Create or update the tenant's `SchedulingIntegrationConfiguration`:
 
 ```text
