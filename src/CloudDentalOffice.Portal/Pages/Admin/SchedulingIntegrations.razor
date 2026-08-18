@@ -179,14 +179,26 @@
     }, "Mapping saved.");
     private Task InspectAvailability() => Run(async () =>
     {
-        var from = new DateTimeOffset((_availabilityDate ?? DateTime.Today).Date, TimeZoneInfo.Local.GetUtcOffset(_availabilityDate ?? DateTime.Today));
+        var from = AvailabilityWindowStart();
         _slots = await Client.GetAvailabilityAsync(from, from.AddDays(1), _providerId, _locationId, _appointmentTypeId, _relationship);
     }, "Availability calculated.");
     private Task Reconcile() => Run(async () =>
     {
-        var from = new DateTimeOffset((_availabilityDate ?? DateTime.Today).Date, TimeZoneInfo.Local.GetUtcOffset(_availabilityDate ?? DateTime.Today));
+        var from = AvailabilityWindowStart();
         await Client.ReconcileAsync(from, from.AddDays(1), _providerId); await Load();
     }, "Availability reconciliation queued.");
+    private DateTimeOffset AvailabilityWindowStart()
+    {
+        var timeZone = PracticeTimeZone();
+        var date = (_availabilityDate ?? TimeZoneInfo.ConvertTime(DateTime.UtcNow, timeZone).Date).Date;
+        return new DateTimeOffset(date, timeZone.GetUtcOffset(date));
+    }
+    private TimeZoneInfo PracticeTimeZone()
+    {
+        try { return TimeZoneInfo.FindSystemTimeZoneById(_config.TimeZoneId); }
+        catch (TimeZoneNotFoundException) { return TimeZoneInfo.Utc; }
+        catch (InvalidTimeZoneException) { return TimeZoneInfo.Utc; }
+    }
     private IEnumerable<SchedulingInternalEntity> Unmapped(SchedulingResourceType type) => _unmapped.GetValueOrDefault(type) ?? [];
     private IEnumerable<ExternalSchedulingEntity> External(SchedulingResourceType type) => _external.Where(x => x.EntityType == type);
     private string? Selection(SchedulingInternalEntity item) => _selections.GetValueOrDefault($"{item.EntityType}:{item.InternalId}");

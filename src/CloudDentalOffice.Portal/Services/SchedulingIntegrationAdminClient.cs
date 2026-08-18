@@ -70,10 +70,16 @@ public sealed class SchedulingIntegrationAdminClient(HttpClient http) : ISchedul
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
     public Task<SchedulingIntegrationOverview> GetOverviewAsync(CancellationToken cancellationToken = default) =>
         GetAsync<SchedulingIntegrationOverview>("api/scheduling-integrations/zocdoc/overview", cancellationToken);
-    public async Task SaveConfigurationAsync(SchedulingIntegrationConfigurationInput input, CancellationToken cancellationToken = default) =>
-        await SendAsync(await http.PutAsJsonAsync("api/scheduling-integrations/zocdoc/configuration", input, cancellationToken), cancellationToken);
-    public async Task TestConnectionAsync(CancellationToken cancellationToken = default) =>
-        await SendAsync(await http.PostAsync("api/scheduling-integrations/zocdoc/test-connection", null, cancellationToken), cancellationToken);
+    public async Task SaveConfigurationAsync(SchedulingIntegrationConfigurationInput input, CancellationToken cancellationToken = default)
+    {
+        using var response = await http.PutAsJsonAsync("api/scheduling-integrations/zocdoc/configuration", input, cancellationToken);
+        await SendAsync(response, cancellationToken);
+    }
+    public async Task TestConnectionAsync(CancellationToken cancellationToken = default)
+    {
+        using var response = await http.PostAsync("api/scheduling-integrations/zocdoc/test-connection", null, cancellationToken);
+        await SendAsync(response, cancellationToken);
+    }
     public Task<IReadOnlyList<ExternalSchedulingEntity>> RefreshExternalEntitiesAsync(CancellationToken cancellationToken = default) =>
         PostAndReadAsync<ExternalSchedulingEntity>("api/scheduling-integrations/zocdoc/external-entities/refresh", cancellationToken);
     public Task<IReadOnlyList<SchedulingMapping>> GetMappingsAsync(CancellationToken cancellationToken = default) =>
@@ -81,10 +87,14 @@ public sealed class SchedulingIntegrationAdminClient(HttpClient http) : ISchedul
     public Task<IReadOnlyList<SchedulingInternalEntity>> GetUnmappedAsync(SchedulingResourceType type, CancellationToken cancellationToken = default) =>
         GetListAsync<SchedulingInternalEntity>($"api/scheduling-integrations/zocdoc/mappings/unmapped/{type}", cancellationToken);
     public async Task SaveMappingAsync(SchedulingResourceType type, string internalId, string externalId,
-        string displayName, CancellationToken cancellationToken = default) => await SendAsync(await http.PostAsJsonAsync(
+        string displayName, CancellationToken cancellationToken = default)
+    {
+        using var response = await http.PostAsJsonAsync(
             "api/scheduling-integrations/zocdoc/mappings/", new
             { EntityType = type, InternalId = internalId, ExternalId = externalId, ExternalDisplayName = displayName, IsActive = true },
-            cancellationToken), cancellationToken);
+            cancellationToken);
+        await SendAsync(response, cancellationToken);
+    }
     public Task<IReadOnlyList<SchedulingAvailabilitySlot>> GetAvailabilityAsync(DateTimeOffset from, DateTimeOffset to,
         int? providerId, Guid? locationId, string? appointmentTypeId, PatientRelationship relationship,
         CancellationToken cancellationToken = default)
@@ -100,7 +110,8 @@ public sealed class SchedulingIntegrationAdminClient(HttpClient http) : ISchedul
     {
         var url = $"api/scheduling-integrations/zocdoc/availability/reconcile?from={Uri.EscapeDataString(from.ToString("O"))}&to={Uri.EscapeDataString(to.ToString("O"))}";
         if (providerId.HasValue) url += $"&providerId={providerId}";
-        await SendAsync(await http.PostAsync(url, null, cancellationToken), cancellationToken);
+        using var response = await http.PostAsync(url, null, cancellationToken);
+        await SendAsync(response, cancellationToken);
     }
     public async Task<IReadOnlyList<IntegrationDiagnostic>> GetDiagnosticsAsync(CancellationToken cancellationToken = default)
     {
@@ -140,6 +151,18 @@ public sealed class SchedulingIntegrationAdminClient(HttpClient http) : ISchedul
         {
             using var json = JsonDocument.Parse(value);
             if (json.RootElement.TryGetProperty("message", out var message)) return message.GetString() ?? "Request failed.";
+            if (json.RootElement.TryGetProperty("errors", out var errors) && errors.ValueKind == JsonValueKind.Object)
+            {
+                foreach (var error in errors.EnumerateObject())
+                {
+                    if (error.Value.ValueKind != JsonValueKind.Array) continue;
+                    foreach (var detail in error.Value.EnumerateArray())
+                    {
+                        var text = detail.GetString();
+                        if (!string.IsNullOrWhiteSpace(text)) return text;
+                    }
+                }
+            }
             if (json.RootElement.TryGetProperty("title", out var title)) return title.GetString() ?? "Request failed.";
         }
         catch (JsonException) { }
@@ -166,7 +189,7 @@ public sealed class SchedulingAdminAuthorizationHandler(
             throw new InvalidOperationException("Scheduling admin authentication is not configured.");
         var token = new JwtSecurityToken(
             issuer: configuration["Jwt:Issuer"] ?? "CloudDentalOffice",
-            audience: configuration["Jwt:Audience"] ?? "CloudDentalOfficeUsers",
+            audience: configuration["Jwt:Audience"] ?? "CloudDentalOffice",
             claims: [new("tenant_id", tenantId), new(ClaimTypes.Role, "Admin")],
             expires: DateTime.UtcNow.AddMinutes(2),
             signingCredentials: new(new SymmetricSecurityKey(Encoding.UTF8.GetBytes(key)), SecurityAlgorithms.HmacSha256));

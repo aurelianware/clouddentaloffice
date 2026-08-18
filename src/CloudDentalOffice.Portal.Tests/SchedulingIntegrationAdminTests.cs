@@ -54,6 +54,8 @@ public sealed class SchedulingIntegrationAdminTests
             SchedulingIntegrationAdminClient.Sanitize(phi, "Bad Gateway"));
         Assert.Equal("Authentication failed",
             SchedulingIntegrationAdminClient.Sanitize("{\"title\":\"Authentication failed\",\"patient\":\"Jane Doe\"}", null));
+        Assert.Equal("TimeZoneId is required.",
+            SchedulingIntegrationAdminClient.Sanitize("{\"title\":\"One or more validation errors occurred.\",\"errors\":{\"TimeZoneId\":[\"TimeZoneId is required.\"]}}", null));
     }
 
     private static SchedulingAdminAuthorizationHandler Handler(IEnumerable<Claim> claims)
@@ -64,7 +66,7 @@ public sealed class SchedulingIntegrationAdminTests
         {
             ["Jwt:Key"] = "test-key-with-at-least-thirty-two-bytes-long",
             ["Jwt:Issuer"] = "CloudDentalOffice",
-            ["Jwt:Audience"] = "CloudDentalOfficeUsers"
+            ["Jwt:Audience"] = "CloudDentalOffice"
         }).Build();
         return new(auth, config);
     }
