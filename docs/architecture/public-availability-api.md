@@ -104,7 +104,7 @@ so the display offset never affects booking revalidation.
 GET /api/public/v1/availability.ics?from=…&to=…[&providerId=…&locationId=…&appointmentTypeId=…]
 ```
 
-Returns `text/calendar`. Each bookable slot becomes one `VEVENT`
+Returns `text/calendar; charset=utf-8`. Each bookable slot becomes one `VEVENT`
 (`TRANSP:TRANSPARENT`, summary `Available — <type>`). A busy period simply has
 no event, because the slot was excluded upstream. The feed contains no patient
 data, no appointment details, and no internal calendar events — only free time.

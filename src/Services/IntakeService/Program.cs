@@ -191,7 +191,7 @@ app.MapGet("/api/public/v1/availability.ics", async (
     {
         var view = await scheduling.GetPublishedAvailabilityAsync(tenantId,
             new(relationship, from, to, appointmentTypeId, providerId, locationId), http.RequestAborted);
-        return Results.Text(AvailabilityIcsWriter.Write(view, DateTime.UtcNow), "text/calendar");
+        return Results.Text(AvailabilityIcsWriter.Write(view, DateTime.UtcNow), "text/calendar; charset=utf-8");
     }
     catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or InvalidOperationException)
     {
@@ -511,7 +511,7 @@ public static class AvailabilityIcsWriter
         return builder.ToString();
     }
 
-    private static string Stamp(DateTime utc) => utc.ToUniversalTime().ToString("yyyyMMdd'T'HHmmss'Z'");
+    private static string Stamp(DateTime utc) => utc.ToUniversalTime().ToString("yyyyMMdd'T'HHmmss'Z'", System.Globalization.CultureInfo.InvariantCulture);
 
     // Stable, opaque per-slot identity derived from the encrypted availability
     // token; carries no patient or schedule identifiers.

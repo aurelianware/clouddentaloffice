@@ -75,6 +75,9 @@ public sealed class PublicWebsiteSchedulingService(
             .Select(x => x.TimeZoneId).SingleOrDefaultAsync(cancellationToken);
         timeZoneId = string.IsNullOrWhiteSpace(timeZoneId) ? "UTC" : timeZoneId;
         var timeZone = ResolveTimeZone(timeZoneId);
+        // When the time zone can't be resolved, fall back to UTC so the
+        // returned TimeZone field is consistent with the (unconverted) timestamps.
+        if (timeZone is null) timeZoneId = "UTC";
         // Present each bookable slot in the practice's local offset (the token
         // still encodes the canonical UTC instant, so booking revalidation is
         // unaffected by the display offset).

@@ -74,7 +74,7 @@ public sealed record PublicSchedulingAvailabilitySlot
     public required DateTimeOffset End { get; init; }
 
     /// <summary>Whole-appointment duration. Derived so partners never receive a slot shorter than the visit.</summary>
-    public int DurationMinutes => (int)Math.Round((End - Start).TotalMinutes);
+    public int DurationMinutes => (int)Math.Ceiling((End - Start).TotalMinutes);
 }
 
 /// <summary>

@@ -28,7 +28,16 @@ public sealed class PublicSchedulingClient(HttpClient http, IConfiguration confi
         using var response = await Send(tenantId, "availability/v1", request, cancellationToken);
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadFromJsonAsync<PublicAvailabilityView>(cancellationToken)
-            ?? new PublicAvailabilityView { TimeZone = "UTC", From = request.From, To = request.To, Slots = [] };
+            ?? new PublicAvailabilityView
+            {
+                ProviderCode = request.ProviderCode,
+                LocationCode = request.LocationCode,
+                AppointmentTypeCode = request.AppointmentTypeCode,
+                TimeZone = "UTC",
+                From = request.From,
+                To = request.To,
+                Slots = []
+            };
     }
 
     public async Task<ValidatedPublicSchedulingSelection?> ValidateAsync(string tenantId, string token,
