@@ -343,6 +343,13 @@ builder.Services.AddHttpClient<IBookingRequestService, BookingRequestServiceHttp
     client.DefaultRequestHeaders.Add("Accept", "application/json");
     client.Timeout = TimeSpan.FromSeconds(30);
 });
+builder.Services.AddTransient<SchedulingAdminAuthorizationHandler>();
+builder.Services.AddHttpClient<ISchedulingIntegrationAdminClient, SchedulingIntegrationAdminClient>(client =>
+{
+    client.BaseAddress = new Uri(visionGatewayUrl);
+    client.DefaultRequestHeaders.Add("Accept", "application/json");
+    client.Timeout = TimeSpan.FromSeconds(30);
+}).AddHttpMessageHandler<SchedulingAdminAuthorizationHandler>();
 
 // Remaining services still use monolith mode (migrate one at a time)
 builder.Services.AddScoped<IClaimService, ClaimServiceImpl>();

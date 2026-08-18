@@ -140,10 +140,14 @@
             </AuthorizeView>
             
             <!-- Settings -->
-            <MudNavLink Href="/settings" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Settings"
-                        Style="border-left: 3px solid transparent; transition: all 0.3s ease;">
-                Settings
-            </MudNavLink>
+            <MudNavGroup Title="Settings" Icon="@Icons.Material.Filled.Settings" Expanded="false">
+                <MudNavLink Href="/settings" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.Tune">Practice Settings</MudNavLink>
+                <AuthorizeView Roles="Admin">
+                    <MudNavGroup Title="Integrations" Icon="@Icons.Material.Filled.Extension" Expanded="false">
+                        <MudNavLink Href="/settings/integrations/scheduling" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.EventAvailable">Scheduling</MudNavLink>
+                    </MudNavGroup>
+                </AuthorizeView>
+            </MudNavGroup>
         </MudNavMenu>
         
         <!-- Footer branding in drawer -->

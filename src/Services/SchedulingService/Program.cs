@@ -53,7 +53,8 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJw
         ClockSkew = TimeSpan.FromMinutes(2)
     };
 });
-builder.Services.AddAuthorization();
+builder.Services.AddAuthorization(options =>
+    options.AddPolicy("SchedulingIntegrationAdmin", policy => policy.RequireRole("Admin")));
 
 // Consume public booking-request events from Service Bus and turn them into
 // (unconfirmed) appointments. Runs only when ServiceBus is configured; the
