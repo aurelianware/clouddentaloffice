@@ -2,6 +2,8 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.HttpOverrides;
 using System.Net;
 using System.Text.Json.Serialization;
@@ -50,7 +52,13 @@ builder.Services.AddOptions<PublicBookingOptions>()
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c => c.SwaggerDoc("v1", new() { Title = "Intake Service", Version = "v1" }));
-builder.Services.AddHealthChecks();
+builder.Services.AddSingleton<IntakeDatabaseReadiness>();
+builder.Services.AddHealthChecks()
+    // Liveness: the process is alive. Deliberately has no database dependency so a
+    // transient database outage does not trigger container restarts.
+    .AddCheck("self", () => HealthCheckResult.Healthy(), tags: ["live"])
+    // Readiness: reflects successful schema initialization and current connectivity.
+    .AddCheck<IntakeDatabaseReadinessHealthCheck>("database", tags: ["ready"]);
 builder.Services.AddEventPublishing(builder.Configuration);
 builder.Services.ConfigureHttpJsonOptions(options =>
     options.SerializerOptions.Converters.Add(new JsonStringEnumConverter()));
@@ -95,12 +103,24 @@ builder.Services.AddRateLimiter(options =>
 });
 
 var app = builder.Build();
-await using (var scope = app.Services.CreateAsyncScope())
-    await scope.ServiceProvider.GetRequiredService<IntakeDbContext>().Database.EnsureCreatedAsync();
+
+// Bring the schema to the expected migration version BEFORE the host starts serving
+// or the durable inbox dispatcher runs. This fails closed: if the database is
+// unreachable or the schema is outdated, initialization throws and the host never
+// starts, so IntakeService never accepts Zocdoc webhooks against an unknown schema.
+await IntakeDatabaseInitializer.InitializeAsync(
+    app.Services,
+    migrateOnStartup: app.Configuration.GetValue("Database:MigrateOnStartup", true));
+
 if (app.Environment.IsDevelopment()) { app.UseSwagger(); app.UseSwaggerUI(); }
 app.UseForwardedHeaders();
 app.UseRateLimiter();
-app.MapHealthChecks("/health");
+// Liveness (process alive) and readiness (schema initialized + reachable) are
+// distinct so a temporary database outage stops traffic without restarting a live
+// process. "/health" remains an alias for liveness for existing external checks.
+app.MapHealthChecks("/health", new() { Predicate = check => check.Tags.Contains("live") });
+app.MapHealthChecks("/health/live", new() { Predicate = check => check.Tags.Contains("live") });
+app.MapHealthChecks("/health/ready", new() { Predicate = check => check.Tags.Contains("ready") });
 
 app.MapGet("/api/public/availability", async (
     PatientRelationship patientRelationship, DateTimeOffset from, DateTimeOffset to,

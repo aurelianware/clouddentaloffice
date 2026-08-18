@@ -805,7 +805,7 @@
                         {
                           "type": "Liveness",
                           "httpGet": {
-                            "path": "/health",
+                            "path": "/health/live",
                             "port": 5109
                           },
                           "initialDelaySeconds": 10,
@@ -814,7 +814,7 @@
                         {
                           "type": "Readiness",
                           "httpGet": {
-                            "path": "/health",
+                            "path": "/health/ready",
                             "port": 5109
                           },
                           "initialDelaySeconds": 5,

@@ -38,6 +38,30 @@ jobs:
     name: Tests
     needs: [build]
     runs-on: ubuntu-latest
+
+    # PostgreSQL is the provider IntakeService runs on in production. Exposing it
+    # here lets the IntakeService migration lifecycle tests validate the real
+    # migration path (schema creation, baselining, idempotency) instead of only an
+    # in-memory or SQLite approximation. Tests that need it read INTAKE_TEST_POSTGRES
+    # and skip cleanly when it is absent, so local runs stay deterministic.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      INTAKE_TEST_POSTGRES: "Host=localhost;Port=5432;Database=postgres;Username=postgres;Password=postgres"
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -68,3 +92,31 @@ jobs:
           path: TestResults/**/*.trx
           if-no-files-found: warn
           retention-days: 14
+
+  intake-migrations:
+    name: IntakeService migration integrity
+    needs: [build]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 8 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+          cache: true
+          cache-dependency-path: '**/*.csproj'
+
+      - name: Install EF Core tools
+        run: dotnet tool install --global dotnet-ef --version 8.0.0
+
+      # Fails the build if the IntakeService model has changed without a matching
+      # migration, so schema drift never reaches a deployed database unnoticed.
+      # has-pending-model-changes is supported by the pinned EF Core 8.0 tooling and
+      # compares the model to the committed snapshot without needing a database.
+      - name: Check for un-migrated model changes
+        run: >-
+          dotnet ef migrations has-pending-model-changes
+          --project src/Services/IntakeService/IntakeService.csproj
+          --startup-project src/Services/IntakeService/IntakeService.csproj
