@@ -101,6 +101,14 @@ public static class SchedulingIntegrationSchema
           "CreatedAt" TEXT NOT NULL, "UpdatedAt" TEXT NOT NULL);
         CREATE UNIQUE INDEX IF NOT EXISTS "IX_SchedulingIntegrationEvents_TenantId_Channel_ExternalEventId"
           ON "SchedulingIntegrationEvents" ("TenantId", "Channel", "ExternalEventId");
+
+        CREATE TABLE IF NOT EXISTS "SchedulingAvailabilitySyncStates" (
+          "Id" TEXT NOT NULL CONSTRAINT "PK_SchedulingAvailabilitySyncStates" PRIMARY KEY,
+          "TenantId" TEXT NOT NULL, "Channel" INTEGER NOT NULL, "ProviderId" INTEGER NOT NULL,
+          "LocalDate" TEXT NOT NULL, "ContentHash" TEXT NULL, "Status" INTEGER NOT NULL,
+          "Diagnostic" TEXT NULL, "LastAttemptAt" TEXT NOT NULL, "LastSuccessAt" TEXT NULL);
+        CREATE UNIQUE INDEX IF NOT EXISTS "IX_SchedulingAvailabilitySyncStates_Target"
+          ON "SchedulingAvailabilitySyncStates" ("TenantId", "Channel", "ProviderId", "LocalDate");
         """;
 
     private const string PostgreSql = """
@@ -151,6 +159,15 @@ public static class SchedulingIntegrationSchema
           "CreatedAt" timestamp with time zone NOT NULL, "UpdatedAt" timestamp with time zone NOT NULL);
         CREATE UNIQUE INDEX IF NOT EXISTS "IX_SchedulingIntegrationEvents_TenantId_Channel_ExternalEventId"
           ON "SchedulingIntegrationEvents" ("TenantId", "Channel", "ExternalEventId");
+
+        CREATE TABLE IF NOT EXISTS "SchedulingAvailabilitySyncStates" (
+          "Id" uuid NOT NULL CONSTRAINT "PK_SchedulingAvailabilitySyncStates" PRIMARY KEY,
+          "TenantId" varchar(64) NOT NULL, "Channel" integer NOT NULL, "ProviderId" integer NOT NULL,
+          "LocalDate" date NOT NULL, "ContentHash" varchar(128) NULL, "Status" integer NOT NULL,
+          "Diagnostic" varchar(1000) NULL, "LastAttemptAt" timestamp with time zone NOT NULL,
+          "LastSuccessAt" timestamp with time zone NULL);
+        CREATE UNIQUE INDEX IF NOT EXISTS "IX_SchedulingAvailabilitySyncStates_Target"
+          ON "SchedulingAvailabilitySyncStates" ("TenantId", "Channel", "ProviderId", "LocalDate");
         """;
 
     private const string SqlServer = """
@@ -202,5 +219,13 @@ public static class SchedulingIntegrationSchema
             [CreatedAt] datetime2 NOT NULL, [UpdatedAt] datetime2 NOT NULL);
           CREATE UNIQUE INDEX [IX_SchedulingIntegrationEvents_TenantId_Channel_ExternalEventId]
             ON [SchedulingIntegrationEvents] ([TenantId], [Channel], [ExternalEventId]); END;
+        IF OBJECT_ID(N'[SchedulingAvailabilitySyncStates]', N'U') IS NULL BEGIN
+          CREATE TABLE [SchedulingAvailabilitySyncStates] (
+            [Id] uniqueidentifier NOT NULL CONSTRAINT [PK_SchedulingAvailabilitySyncStates] PRIMARY KEY,
+            [TenantId] nvarchar(64) NOT NULL, [Channel] int NOT NULL, [ProviderId] int NOT NULL,
+            [LocalDate] date NOT NULL, [ContentHash] nvarchar(128) NULL, [Status] int NOT NULL,
+            [Diagnostic] nvarchar(1000) NULL, [LastAttemptAt] datetime2 NOT NULL, [LastSuccessAt] datetime2 NULL);
+          CREATE UNIQUE INDEX [IX_SchedulingAvailabilitySyncStates_Target]
+            ON [SchedulingAvailabilitySyncStates] ([TenantId], [Channel], [ProviderId], [LocalDate]); END;
         """;
 }

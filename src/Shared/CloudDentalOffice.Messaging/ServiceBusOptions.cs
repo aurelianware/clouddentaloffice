@@ -18,5 +18,8 @@ public sealed class ServiceBusOptions
     /// <summary>Subscription the SchedulingService consumer reads from.</summary>
     public string BookingSubscription { get; set; } = "scheduling";
 
+    public string SchedulingAvailabilityTopic { get; set; } = "scheduling-availability";
+    public string SchedulingAvailabilitySubscription { get; set; } = "zocdoc";
+
     public bool IsConfigured => !string.IsNullOrWhiteSpace(ConnectionString);
 }

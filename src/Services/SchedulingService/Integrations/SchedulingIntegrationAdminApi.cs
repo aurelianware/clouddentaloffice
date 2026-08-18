@@ -1,10 +1,26 @@
 using System.Security.Claims;
 using CloudDentalOffice.Contracts.Scheduling;
+using Microsoft.EntityFrameworkCore;
+using SchedulingService.Integrations.Zocdoc;
 
 public static class SchedulingIntegrationAdminApi
 {
     public static IEndpointRouteBuilder MapSchedulingIntegrationAdminApi(this IEndpointRouteBuilder endpoints)
     {
+        endpoints.MapPost("/api/scheduling-integrations/zocdoc/availability/reconcile", async (
+            DateTimeOffset from, DateTimeOffset to, int? providerId, ClaimsPrincipal user,
+            IZocdocAvailabilitySynchronizer synchronizer, CancellationToken cancellationToken) =>
+            await ExecuteAsync(user, tenantId => synchronizer.ReconcileAsync(
+                new(tenantId, from, to, providerId), cancellationToken)))
+            .RequireAuthorization().WithTags("SchedulingIntegrationAvailability");
+
+        endpoints.MapGet("/api/scheduling-integrations/zocdoc/availability/status", async (
+            ClaimsPrincipal user, SchedulingDbContext db, CancellationToken cancellationToken) =>
+            await ExecuteAsync(user, tenantId => db.SchedulingAvailabilitySyncStates.AsNoTracking()
+                .Where(x => x.TenantId == tenantId && x.Channel == SchedulingChannel.Zocdoc)
+                .OrderByDescending(x => x.LastAttemptAt).Take(500).ToListAsync(cancellationToken)))
+            .RequireAuthorization().WithTags("SchedulingIntegrationAvailability");
+
         endpoints.MapGet("/api/scheduling-integrations/{channel}/availability", async (
             SchedulingChannel channel, DateTimeOffset from, DateTimeOffset to, int? providerId,
             Guid? locationId, string? appointmentTypeId, PatientRelationship patientRelationship,

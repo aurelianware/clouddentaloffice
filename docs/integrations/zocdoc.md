@@ -69,6 +69,8 @@ for the future signed-webhook implementation and is not consumed by this PR.
 - retrieve visit-reason IDs and names from `GET /v1/visit_reasons`;
 - map Zocdoc transport DTOs into channel-neutral provider, location, and visit
   reason entities for the CDO mapping workflow.
+- replace the complete timeslot set for one mapped provider/local date through
+  `PUT /v1/providers/{provider_id}/calendar/timeslots?date=YYYY-MM-DD`.
 
 Zocdoc JSON DTOs are internal to `Integrations/Zocdoc`. They are never returned
 from core SchedulingService APIs.
@@ -92,10 +94,42 @@ and PHI are not logged.
 
 ## Deliberately deferred
 
-- publishing canonical CDO availability through the replacing timeslot `PUT`
 - Zocdoc appointment creation, confirmation, cancellation, or rescheduling
 - signed webhook receipt and HMAC-SHA256 verification
 - credential rotation and production certification automation
 
 These must build on the canonical availability and booking boundaries rather
 than adding Zocdoc fields to core scheduling entities.
+
+## Availability synchronization
+
+```text
+CDO provider schedules and appointments
+  -> canonical availability engine
+  -> tenant-scoped provider/location/visit-reason mappings
+  -> Zocdoc adapter
+  -> provider/date timeslot replacement
+```
+
+Zocdoc's API replaces every slot for a provider and date; an empty `timeslots`
+array clears that date. Reconciliation therefore recalculates the complete
+provider/date unit. A persisted content hash suppresses unchanged requests,
+making duplicate events retry-safe and avoiding unnecessary API calls.
+
+Scheduling changes publish a PHI-free `SchedulingAvailabilityChangedEvent` to
+the `scheduling-availability` Service Bus topic. The independent Zocdoc consumer
+reconciles only the affected provider and dates. A Zocdoc outage is recorded for
+retry and never rolls back the local appointment transaction.
+
+Provider, location, and appointment-type/visit-reason mappings must be active.
+Unmapped slots are omitted and recorded in tenant-scoped diagnostics available
+to administrators:
+
+```text
+GET  /api/scheduling-integrations/zocdoc/availability/status
+POST /api/scheduling-integrations/zocdoc/availability/reconcile?from=...&to=...&providerId=...
+```
+
+Both routes require authenticated tenant context. Metrics from the
+`CloudDentalOffice.Scheduling.Zocdoc` meter cover attempts, successes, failures,
+mapping skips, and API latency without patient information.

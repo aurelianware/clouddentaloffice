@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 
 public enum SchedulingResourceType { Provider, Location, VisitReason }
 public enum SchedulingIntegrationEventStatus { Processing, Completed, Failed }
+public enum AvailabilitySyncStatus { Pending, Succeeded, Failed, SkippedMapping, Disabled }
 
 [Index(nameof(TenantId), nameof(Channel), IsUnique = true)]
 public sealed class SchedulingIntegrationConfiguration
@@ -119,4 +120,19 @@ public sealed class SchedulingIntegrationEvent
     [MaxLength(1000)] public string? FailureReason { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+}
+
+[Index(nameof(TenantId), nameof(Channel), nameof(ProviderId), nameof(LocalDate), IsUnique = true)]
+public sealed class SchedulingAvailabilitySyncState
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    [MaxLength(64)] public string TenantId { get; set; } = string.Empty;
+    public SchedulingChannel Channel { get; set; }
+    public int ProviderId { get; set; }
+    public DateOnly LocalDate { get; set; }
+    [MaxLength(128)] public string? ContentHash { get; set; }
+    public AvailabilitySyncStatus Status { get; set; } = AvailabilitySyncStatus.Pending;
+    [MaxLength(1000)] public string? Diagnostic { get; set; }
+    public DateTime LastAttemptAt { get; set; }
+    public DateTime? LastSuccessAt { get; set; }
 }

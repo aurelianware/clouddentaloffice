@@ -75,6 +75,19 @@ internal sealed record ZocdocVisitReasonDto
     [JsonPropertyName("specialty_id")] public string? SpecialtyId { get; init; }
 }
 
+internal sealed record ZocdocTimeslotPutRequest(
+    [property: JsonPropertyName("timeslots")] IReadOnlyList<ZocdocTimeslotRequest> Timeslots);
+
+internal sealed record ZocdocTimeslotRequest
+{
+    [JsonPropertyName("provider_id")] public required string ProviderId { get; init; }
+    [JsonPropertyName("location_id")] public required string LocationId { get; init; }
+    [JsonPropertyName("start_time")] public required string StartTime { get; init; }
+    [JsonPropertyName("time_zone")] public required string TimeZone { get; init; }
+    [JsonPropertyName("allowed_visit_reason_ids")] public required IReadOnlyList<string> AllowedVisitReasonIds { get; init; }
+    [JsonPropertyName("patient_type")] public string? PatientType { get; init; }
+}
+
 internal static class ZocdocMapper
 {
     public static IReadOnlyList<ExternalSchedulingEntity> ToCanonical(

@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using CloudDentalOffice.Contracts.Scheduling;
+using CloudDentalOffice.Contracts.Events;
 using CloudDentalOffice.Messaging;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -29,6 +30,7 @@ builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c => c.SwaggerDoc("v1", new() { Title = "Scheduling Service", Version = "v1" }));
 builder.Services.AddHealthChecks();
 builder.Services.AddSchedulingIntegrations();
+builder.Services.AddEventPublishing(builder.Configuration);
 
 // When configured, administrative scheduling-integration routes accept the
 // same bearer tokens as the portal. If Jwt:Key is absent, a per-process random
@@ -57,10 +59,8 @@ builder.Services.AddAuthorization();
 // (unconfirmed) appointments. Runs only when ServiceBus is configured; the
 // consumer self-guards otherwise. Public booking traffic never reaches this
 // service directly — the internet-facing IntakeService publishes the events.
-var serviceBusOptions = new ServiceBusOptions();
-builder.Configuration.GetSection(ServiceBusOptions.SectionName).Bind(serviceBusOptions);
-builder.Services.AddSingleton(serviceBusOptions);
 builder.Services.AddHostedService<BookingRequestConsumer>();
+builder.Services.AddHostedService<SchedulingService.Integrations.Zocdoc.ZocdocAvailabilityConsumer>();
 
 var app = builder.Build();
 if (app.Environment.IsDevelopment()) { app.UseSwagger(); app.UseSwaggerUI(); }
@@ -92,7 +92,8 @@ app.MapGet("/api/appointments/{id:guid}", async (Guid id, SchedulingDbContext db
 }).WithTags("Appointments");
 
 app.MapPost("/api/appointments", async (
-    CreateAppointmentRequest request, ClaimsPrincipal user, SchedulingDbContext db) =>
+    CreateAppointmentRequest request, ClaimsPrincipal user, SchedulingDbContext db,
+    IEventPublisher events, ILogger<Program> logger) =>
 {
     var tenantId = SchedulingIntegrationAdminApi.TenantId(user);
     if (string.IsNullOrWhiteSpace(tenantId)) return Results.Unauthorized();
@@ -114,6 +115,17 @@ app.MapPost("/api/appointments", async (
     };
     db.Appointments.Add(apt);
     await db.SaveChangesAsync();
+    try
+    {
+        await events.PublishAsync(new SchedulingAvailabilityChangedEvent(
+            tenantId, apt.ProviderId, apt.StartTime, apt.EndTime, "AppointmentScheduled"));
+    }
+    catch (Exception ex)
+    {
+        // The local appointment is authoritative. External availability is eventually reconciled.
+        logger.LogError(ex, "Could not enqueue external availability reconciliation for tenant {TenantId}, provider {ProviderId}",
+            tenantId, apt.ProviderId);
+    }
     return Results.Created($"/api/appointments/{apt.Id}", apt);
 }).RequireAuthorization().WithTags("Appointments");
 
@@ -209,6 +221,7 @@ public class SchedulingDbContext(DbContextOptions<SchedulingDbContext> options) 
     public DbSet<SchedulingBlockedTime> SchedulingBlockedTimes => Set<SchedulingBlockedTime>();
     public DbSet<ExternalAppointmentReference> ExternalAppointmentReferences => Set<ExternalAppointmentReference>();
     public DbSet<SchedulingIntegrationEvent> SchedulingIntegrationEvents => Set<SchedulingIntegrationEvent>();
+    public DbSet<SchedulingAvailabilitySyncState> SchedulingAvailabilitySyncStates => Set<SchedulingAvailabilitySyncState>();
 }
 
 internal static class PublicBookingAuth

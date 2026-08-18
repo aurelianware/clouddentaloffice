@@ -96,6 +96,22 @@ resource schedulingSubscription 'Microsoft.ServiceBus/namespaces/topics/subscrip
   properties: { maxDeliveryCount: 10, deadLetteringOnMessageExpiration: true }
 }
 
+resource schedulingAvailabilityTopic 'Microsoft.ServiceBus/namespaces/topics@2024-01-01' = {
+  parent: serviceBus
+  name: 'scheduling-availability'
+  properties: {
+    requiresDuplicateDetection: true
+    duplicateDetectionHistoryTimeWindow: 'P1D'
+    defaultMessageTimeToLive: 'P14D'
+  }
+}
+
+resource zocdocAvailabilitySubscription 'Microsoft.ServiceBus/namespaces/topics/subscriptions@2024-01-01' = {
+  parent: schedulingAvailabilityTopic
+  name: 'zocdoc'
+  properties: { maxDeliveryCount: 10, deadLetteringOnMessageExpiration: true }
+}
+
 resource bookingSendPolicy 'Microsoft.ServiceBus/namespaces/authorizationRules@2024-01-01' = {
   parent: serviceBus
   name: 'booking-intake-send'
@@ -105,7 +121,8 @@ resource bookingSendPolicy 'Microsoft.ServiceBus/namespaces/authorizationRules@2
 resource bookingListenPolicy 'Microsoft.ServiceBus/namespaces/authorizationRules@2024-01-01' = {
   parent: serviceBus
   name: 'booking-scheduling-listen'
-  properties: { rights: [ 'Listen' ] }
+  // Scheduling consumes both topics and publishes PHI-free availability-change events.
+  properties: { rights: [ 'Listen', 'Send' ] }
   // Service Bus can reject concurrent authorization-rule writes with 429.
   dependsOn: [ bookingSendPolicy ]
 }

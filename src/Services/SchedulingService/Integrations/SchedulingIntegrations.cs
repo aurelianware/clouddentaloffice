@@ -275,6 +275,8 @@ public static class SchedulingIntegrationServiceCollectionExtensions
             .AddScoped<ISchedulingIntegrationIdempotencyStore, SchedulingIntegrationIdempotencyStore>()
             .AddSingleton<IZocdocCredentialProvider, ConfigurationZocdocCredentialProvider>()
             .AddSingleton<IZocdocAccessTokenProvider, ZocdocAccessTokenProvider>()
+            .AddSingleton<ZocdocAvailabilityMetrics>()
+            .AddScoped<IZocdocAvailabilitySynchronizer, ZocdocAvailabilitySynchronizer>()
             .AddScoped<ZocdocSchedulingAdapter>()
             .AddScoped<ISchedulingChannelAdapter>(provider => provider.GetRequiredService<ZocdocSchedulingAdapter>())
             .AddScoped<ISchedulingExternalEntitySource>(provider => provider.GetRequiredService<ZocdocSchedulingAdapter>());

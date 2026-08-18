@@ -299,6 +299,20 @@ resource schedulingService 'Microsoft.App/containerApps@2023-05-01' = {
               ]
             }
           }
+          {
+            name: 'zocdoc-availability-messages'
+            custom: {
+              type: 'azure-servicebus'
+              metadata: {
+                topicName: 'scheduling-availability'
+                subscriptionName: 'zocdoc'
+                messageCount: '1'
+              }
+              auth: [
+                { secretRef: 'servicebus-listen', triggerParameter: 'connection' }
+              ]
+            }
+          }
         ]
       }
     }
