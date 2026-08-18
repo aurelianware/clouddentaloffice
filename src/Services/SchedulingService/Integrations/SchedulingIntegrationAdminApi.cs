@@ -94,6 +94,19 @@ public static class SchedulingIntegrationAdminApi
                 return new { status = "Connected" };
             })).RequireAuthorization("SchedulingIntegrationAdmin").WithTags("SchedulingIntegrations");
 
+        endpoints.MapGet("/api/scheduling-integrations/zocdoc/readiness", async (
+            bool probeAuthentication, ClaimsPrincipal user, IZocdocOperationsService operations,
+            CancellationToken cancellationToken) => await ExecuteAsync(user, tenantId =>
+                operations.GetReadinessAsync(tenantId, probeAuthentication, cancellationToken)))
+            .RequireAuthorization("SchedulingIntegrationAdmin").WithTags("SchedulingIntegrations");
+
+        endpoints.MapGet("/api/scheduling-integrations/zocdoc/reconciliation", async (
+            int staleAfterMinutes, ClaimsPrincipal user, IZocdocOperationsService operations,
+            CancellationToken cancellationToken) => await ExecuteAsync(user, tenantId =>
+                operations.ReconcileAsync(tenantId,
+                    TimeSpan.FromMinutes(staleAfterMinutes == 0 ? 1440 : staleAfterMinutes), cancellationToken)))
+            .RequireAuthorization("SchedulingIntegrationAdmin").WithTags("SchedulingIntegrations");
+
         endpoints.MapPost("/api/scheduling-integrations/zocdoc/external-entities/refresh", async (
             ClaimsPrincipal user, ISchedulingChannelAdapterResolver resolver, CancellationToken cancellationToken) =>
             await ExecuteAsync(user, async tenantId =>

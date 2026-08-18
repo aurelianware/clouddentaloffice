@@ -259,3 +259,112 @@ Tenant administrators can inspect the persisted state without PHI through:
 ```text
 GET /api/scheduling-integrations/zocdoc/appointments/status
 ```
+
+## Readiness and reconciliation
+
+The authenticated, tenant-bound operational endpoints are:
+
+```text
+GET /api/scheduling-integrations/zocdoc/readiness?probeAuthentication=true
+GET /api/scheduling-integrations/zocdoc/reconciliation?staleAfterMinutes=1440
+```
+
+Readiness verifies safe configuration, an explicit OAuth/API probe, complete and
+valid provider/location/visit-reason mappings, presence of a secret-backed webhook
+key, and recorded successful availability and appointment synchronization. It never
+returns credentials. Reconciliation returns aggregate, PHI-free counts for dangling
+external references, stale availability, failed or stale-pending outbound work,
+failed inbound events, and conflicts. Use the existing targeted availability
+reconciliation action after correcting mappings or schedules.
+
+An appointment created from a Zocdoc webhook always receives an
+`ExternalAppointmentReference`. The current appointment schema does not retain a
+separate source-channel field, so a pre-existing CDO appointment that should have
+been associated with Zocdoc but has no reference cannot be inferred safely. Compare
+partner exports during pilot reconciliation instead of guessing from patient data.
+
+## Sandbox validation
+
+Zocdoc publishes predefined sandbox entities and appointment IDs for endpoint
+testing. External tests are isolated from the normal solution and skip cleanly when
+credentials are absent:
+
+```bash
+export ZOCDOC_SANDBOX_CLIENT_ID='<sandbox client id>'
+export ZOCDOC_SANDBOX_CLIENT_SECRET='<sandbox client secret>'
+dotnet test src/Services/Zocdoc.IntegrationTests/Zocdoc.IntegrationTests.csproj
+```
+
+The automated sandbox suite verifies OAuth, reference data, multiple-location data,
+new and existing patient fixtures, and pending, confirmed, booking-failed,
+cancelled, no-show, pending-reschedule, rescheduled, and reschedule-failed states.
+It also verifies authentication rejection. Local automated tests cover invalid,
+malformed, and replayed signed webhooks, unavailable-slot collision handling,
+idempotency, tenant isolation, mapping failures, retry classification, and lifecycle
+commands without contacting Zocdoc.
+
+State-changing sandbox cases (create/confirm/cancel/reschedule), insurance rejection
+fixtures, and `POST /v1/webhook/mock-request` are partner-assisted checklist steps.
+They require Zocdoc-issued scopes, a configured callback URL, and shared sandbox
+coordination; do not make them unattended CI tests.
+
+## Production operations runbook
+
+Before enabling a tenant:
+
+1. Run the sandbox suite and save test output without environment values.
+2. Configure all mappings, then run readiness with authentication probing.
+3. Ask Zocdoc to configure the HTTPS webhook URL and verify one mock event end to end.
+4. Reconcile a narrow provider/date range and confirm published slots in Zocdoc.
+5. Perform one new-patient and one existing-patient booking; verify confirmation and
+   durable external references.
+6. Exercise cancel, reschedule, arrived, and no-show where partner permissions allow.
+7. Start the pilot with one location, a small provider set, and daily reconciliation.
+
+During operation, alert on availability success rate, webhook validation failures,
+booking conflicts, outbound failures, API latency, and Service Bus dead-letter count.
+The application emits `CloudDentalOffice.Scheduling.Zocdoc` availability counters
+and latency plus `CloudDentalOffice.Intake.Zocdoc` webhook received/validation-failed
+counters. Appointment created/conflict/failure totals can be derived from the
+tenant-scoped persisted event and external-reference states without patient labels.
+Service Bus dead-letter depth is an Azure Monitor broker metric, not an in-process
+counter. Do not add tenant, appointment, patient, email, or phone values as metric
+labels.
+
+For an incident:
+
+1. Disable the tenant integration if signatures, credentials, or tenant routing may
+   be compromised; local scheduling remains authoritative.
+2. Inspect readiness and reconciliation, then Azure Service Bus active/dead-letter
+   counts and sanitized structured logs.
+3. Correct credentials or mappings, replay only verified messages, and perform a
+   targeted reconciliation. Do not replay raw webhook bodies from logs.
+4. Escalate remote correlation IDs and timestamps to Zocdoc; never send PHI unless
+   the approved support channel explicitly requires it.
+
+Credential rotation: add the replacement secret version, update the opaque reference
+or secret binding, restart instances to clear process token caches, probe OAuth, ask
+Zocdoc to rotate the webhook key, validate a signed mock event, then revoke the old
+credentials. Sandbox and production credentials must remain separate.
+
+## Reliability and security notes
+
+- Typed clients use bounded 30-second timeouts and the repository standard resilience
+  handler. Retried operations are replacement/idempotent or guarded by persisted state.
+- Database uniqueness constraints protect tenant/channel external appointments,
+  internal/external mappings, provider/date sync state, and webhook event IDs.
+- Webhooks are limited to 1 MiB, rate limited, timestamp bounded to five minutes,
+  verified over raw bytes with constant-time HMAC comparison, and tenant-routed only
+  from trusted route configuration.
+- Zocdoc's webhook delivery documentation retries connection/no-response failures for
+  up to 48 hours, not arbitrary HTTP error responses. A `503` must therefore be
+  reconciled operationally rather than assumed delivered later.
+- Service Bus consumers retry transient failures and dead-letter permanent lifecycle
+  failures. Availability and appointments remain eventually consistent during a
+  remote outage.
+- OAuth tokens are memory-only and tenant/environment/client keyed. Client and webhook
+  secrets stay in secret-backed configuration and are never returned to the browser.
+- Logs and metrics exclude payload bodies, demographics, tokens, and patient identifiers.
+
+See [the partner/certification checklist](zocdoc-certification-checklist.md) for the
+sign-off artifact used with Zocdoc.
