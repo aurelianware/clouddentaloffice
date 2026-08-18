@@ -25,6 +25,7 @@ builder.Services.AddDbContext<SchedulingDbContext>(options =>
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c => c.SwaggerDoc("v1", new() { Title = "Scheduling Service", Version = "v1" }));
 builder.Services.AddHealthChecks();
+builder.Services.AddSchedulingIntegrations();
 
 // Consume public booking-request events from Service Bus and turn them into
 // (unconfirmed) appointments. Runs only when ServiceBus is configured; the
@@ -140,6 +141,7 @@ using (var scope = app.Services.CreateScope())
     var db = scope.ServiceProvider.GetRequiredService<SchedulingDbContext>();
     await db.Database.EnsureCreatedAsync();
     await BookingRequestSchema.EnsureAsync(db);
+    await SchedulingIntegrationSchema.EnsureAsync(db);
 }
 
 app.Run();
@@ -163,6 +165,10 @@ public class SchedulingDbContext(DbContextOptions<SchedulingDbContext> options) 
 {
     public DbSet<Appointment> Appointments => Set<Appointment>();
     public DbSet<BookingRequest> BookingRequests => Set<BookingRequest>();
+    public DbSet<SchedulingIntegrationConfiguration> SchedulingIntegrationConfigurations => Set<SchedulingIntegrationConfiguration>();
+    public DbSet<ExternalSchedulingResourceMapping> ExternalSchedulingResourceMappings => Set<ExternalSchedulingResourceMapping>();
+    public DbSet<ExternalAppointmentReference> ExternalAppointmentReferences => Set<ExternalAppointmentReference>();
+    public DbSet<SchedulingIntegrationEvent> SchedulingIntegrationEvents => Set<SchedulingIntegrationEvent>();
 }
 
 internal static class PublicBookingAuth
