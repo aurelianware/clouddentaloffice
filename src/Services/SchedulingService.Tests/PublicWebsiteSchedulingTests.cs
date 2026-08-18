@@ -55,6 +55,37 @@ public sealed class PublicWebsiteSchedulingTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task PublishedViewSurfacesPracticeTimeZoneOffsetsSlotsAndDuration()
+    {
+        _db.SchedulingIntegrationConfigurations.Add(new()
+        {
+            TenantId = "practice-a", Channel = SchedulingChannel.PublicWebsite, Enabled = true,
+            TimeZoneId = "America/Phoenix"
+        });
+        await _db.SaveChangesAsync();
+
+        var view = await Service().GetPublishedAsync("practice-a", Request(PatientRelationship.New));
+
+        Assert.Equal("America/Phoenix", view.TimeZone);
+        var slot = Assert.Single(view.Slots);
+        // Phoenix is UTC-07:00 year round; the underlying instant is unchanged.
+        Assert.Equal(TimeSpan.FromHours(-7), slot.Start.Offset);
+        Assert.Equal(At(10), slot.Start);
+        Assert.Equal(60, slot.DurationMinutes);
+        // Data minimization: no tenant id or PHI in the published envelope.
+        Assert.DoesNotContain("practice-a", System.Text.Json.JsonSerializer.Serialize(view));
+    }
+
+    [Fact]
+    public async Task PublishedViewDefaultsToUtcWhenNoPracticeConfiguration()
+    {
+        var view = await Service().GetPublishedAsync("practice-a", Request(PatientRelationship.New));
+
+        Assert.Equal("UTC", view.TimeZone);
+        Assert.Equal(TimeSpan.Zero, Assert.Single(view.Slots).Start.Offset);
+    }
+
+    [Fact]
     public async Task ExistingPatientRelationshipIsNotSubstitutedForIdentity()
     {
         _availability.Slots = [];
