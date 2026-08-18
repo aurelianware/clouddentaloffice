@@ -343,5 +343,11 @@ public sealed class ZocdocSchedulingAdapterTests
             CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task ConfirmAppointmentAsync(string tenantId, SchedulingIntegrationConfiguration configuration,
             string appointmentId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task CancelAppointmentAsync(string tenantId, SchedulingIntegrationConfiguration configuration,
+            string appointmentId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task RescheduleAppointmentAsync(string tenantId, SchedulingIntegrationConfiguration configuration,
+            string appointmentId, DateTimeOffset startTime, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task UpdateAppointmentStatusAsync(string tenantId, SchedulingIntegrationConfiguration configuration,
+            string appointmentId, string status, CancellationToken cancellationToken = default) => throw new NotSupportedException();
     }
 }

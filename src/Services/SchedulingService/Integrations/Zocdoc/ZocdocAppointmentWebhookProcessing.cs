@@ -118,6 +118,15 @@ internal sealed class ZocdocAppointmentWebhookProcessor(
             if (existingReference is { SyncStatus: ExternalAppointmentSyncStatus.Pending })
             {
                 var remoteOperation = RemoteOperation(remote.Status, existingReference, startUtc);
+                if (remoteOperation is null)
+                {
+                    existingReference.LastExternalUpdatedAt = webhook.ExternalUpdatedAt;
+                    existingReference.UpdatedAt = DateTime.UtcNow;
+                    await db.SaveChangesAsync(cancellationToken);
+                    await idempotency.CompleteAsync(webhook.TenantId, SchedulingChannel.Zocdoc,
+                        webhook.ExternalEventId, existingReference.AppointmentId, cancellationToken);
+                    return;
+                }
                 if (!string.Equals(existingReference.PendingOperation, remoteOperation, StringComparison.Ordinal))
                 {
                     existingReference.SyncStatus = ExternalAppointmentSyncStatus.Conflict;
@@ -155,7 +164,8 @@ internal sealed class ZocdocAppointmentWebhookProcessor(
             Appointment appointment;
             if (existingReference is not null)
             {
-                appointment = await db.Appointments.SingleAsync(x => x.Id == existingReference.AppointmentId, cancellationToken);
+                appointment = await db.Appointments.SingleAsync(x => x.Id == existingReference.AppointmentId &&
+                    x.TenantId == webhook.TenantId, cancellationToken);
                 appointment.ProviderId = providerId; appointment.LocationId = locationId;
                 appointment.AppointmentTypeId = visitReason.InternalId;
                 appointment.StartTime = startUtc; appointment.EndTime = endUtc;

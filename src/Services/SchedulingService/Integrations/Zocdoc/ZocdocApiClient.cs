@@ -26,11 +26,11 @@ internal interface IZocdocApiClient
     Task ConfirmAppointmentAsync(string tenantId, SchedulingIntegrationConfiguration configuration,
         string appointmentId, CancellationToken cancellationToken = default);
     Task CancelAppointmentAsync(string tenantId, SchedulingIntegrationConfiguration configuration,
-        string appointmentId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        string appointmentId, CancellationToken cancellationToken = default);
     Task RescheduleAppointmentAsync(string tenantId, SchedulingIntegrationConfiguration configuration,
-        string appointmentId, DateTimeOffset startTime, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        string appointmentId, DateTimeOffset startTime, CancellationToken cancellationToken = default);
     Task UpdateAppointmentStatusAsync(string tenantId, SchedulingIntegrationConfiguration configuration,
-        string appointmentId, string status, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        string appointmentId, string status, CancellationToken cancellationToken = default);
 }
 
 internal sealed class ZocdocApiClient(
