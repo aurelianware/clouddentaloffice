@@ -7,6 +7,7 @@ using System.Net;
 using System.Text.Json.Serialization;
 using System.Text.Json;
 using System.ComponentModel.DataAnnotations;
+using System.Diagnostics.Metrics;
 using CloudDentalOffice.Contracts.Events;
 using CloudDentalOffice.Contracts.Scheduling;
 using CloudDentalOffice.Messaging;
@@ -19,6 +20,7 @@ using CloudDentalOffice.Messaging;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.AddSingleton<ZocdocWebhookMetrics>();
 builder.Services.AddHttpClient<IPublicSchedulingClient, PublicSchedulingClient>(client =>
 {
     client.BaseAddress = new Uri(builder.Configuration["Services:SchedulingService"] ?? "http://scheduling-service:5102/");
@@ -98,8 +100,10 @@ app.MapGet("/api/public/availability", async (
 
 app.MapPost("/api/integrations/zocdoc/{integrationId}/webhooks", async (
     string integrationId, HttpContext http, IConfiguration configuration,
-    IEventPublisher publisher, ServiceBusOptions serviceBus, TimeProvider timeProvider) =>
+    IEventPublisher publisher, ServiceBusOptions serviceBus, TimeProvider timeProvider,
+    ZocdocWebhookMetrics metrics) =>
 {
+    metrics.Received.Add(1);
     var integration = configuration.GetSection("ZocdocWebhooks:Integrations").GetChildren()
         .Select(x => x.Get<ZocdocWebhookIntegrationOptions>())
         .FirstOrDefault(x => x is not null && string.Equals(x.IntegrationId, integrationId, StringComparison.Ordinal));
@@ -121,17 +125,23 @@ app.MapPost("/api/integrations/zocdoc/{integrationId}/webhooks", async (
         http.Request.Headers["webhook-timestamp"].ToString(),
         http.Request.Headers["webhook-signature"].ToString(),
         integration.WebhookSecret, timeProvider.GetUtcNow()))
+    {
+        metrics.ValidationFailures.Add(1);
         return Results.Unauthorized();
+    }
 
     ZocdocWebhookEnvelope? webhook;
     try { webhook = JsonSerializer.Deserialize<ZocdocWebhookEnvelope>(body); }
-    catch (JsonException) { return Results.BadRequest(); }
+    catch (JsonException) { metrics.ValidationFailures.Add(1); return Results.BadRequest(); }
     var appointment = webhook?.Data?.AppointmentData;
     if (webhook?.EventType != "appointment_updated" || webhook.Data?.DataType != "appointment_data" ||
         appointment is null || string.IsNullOrWhiteSpace(appointment.AppointmentId) ||
         appointment.AppointmentUpdateType is not ("created" or "updated" or "cancelled") ||
         appointment.UpdatedAt == default)
+    {
+        metrics.ValidationFailures.Add(1);
         return Results.BadRequest();
+    }
 
     var externalEventId = $"{appointment.AppointmentId}:{appointment.UpdatedAt:O}:{appointment.AppointmentUpdateType}";
     await publisher.PublishAsync(new ZocdocAppointmentWebhookEvent(
@@ -345,6 +355,21 @@ public sealed class ZocdocWebhookIntegrationOptions
     public string TenantId { get; set; } = string.Empty;
     public string WebhookSecret { get; set; } = string.Empty;
     public bool Enabled { get; set; }
+}
+
+public sealed class ZocdocWebhookMetrics : IDisposable
+{
+    private readonly Meter _meter = new("CloudDentalOffice.Intake.Zocdoc");
+    public Counter<long> Received { get; }
+    public Counter<long> ValidationFailures { get; }
+
+    public ZocdocWebhookMetrics()
+    {
+        Received = _meter.CreateCounter<long>("intake.zocdoc.webhook.received");
+        ValidationFailures = _meter.CreateCounter<long>("intake.zocdoc.webhook.validation_failures");
+    }
+
+    public void Dispose() => _meter.Dispose();
 }
 
 public sealed record ZocdocWebhookEnvelope(

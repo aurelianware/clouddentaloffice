@@ -293,7 +293,8 @@ public static class SchedulingIntegrationServiceCollectionExtensions
 {
     public static IServiceCollection AddSchedulingIntegrations(this IServiceCollection services)
     {
-        services.AddScoped<ISchedulingIntegrationConfigurationStore, SchedulingIntegrationConfigurationStore>()
+        services.AddSingleton(TimeProvider.System)
+            .AddScoped<ISchedulingIntegrationConfigurationStore, SchedulingIntegrationConfigurationStore>()
             .AddScoped<ISchedulingChannelAdapterResolver, SchedulingChannelAdapterResolver>()
             .AddScoped<ISchedulingEntityCatalog, SchedulingEntityCatalog>()
             .AddScoped<ISchedulingEntityMappingService, SchedulingEntityMappingService>()
@@ -306,6 +307,7 @@ public static class SchedulingIntegrationServiceCollectionExtensions
             .AddScoped<IZocdocAppointmentWebhookProcessor, ZocdocAppointmentWebhookProcessor>()
             .AddScoped<IAppointmentLifecycleService, AppointmentLifecycleService>()
             .AddScoped<IZocdocAppointmentLifecycleSynchronizer, ZocdocAppointmentLifecycleSynchronizer>()
+            .AddScoped<IZocdocOperationsService, ZocdocOperationsService>()
             .AddSingleton<IZocdocCredentialProvider, ConfigurationZocdocCredentialProvider>()
             .AddSingleton<IZocdocAccessTokenProvider, ZocdocAccessTokenProvider>()
             .AddSingleton<ZocdocAvailabilityMetrics>()
