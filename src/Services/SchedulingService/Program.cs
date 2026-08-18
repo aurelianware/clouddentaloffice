@@ -29,9 +29,9 @@ builder.Services.AddSwaggerGen(c => c.SwaggerDoc("v1", new() { Title = "Scheduli
 builder.Services.AddHealthChecks();
 builder.Services.AddSchedulingIntegrations();
 
-// Administrative scheduling-integration routes use the same bearer tokens as
-// the portal. A per-process key keeps the service fail-closed when Jwt:Key has
-// not been configured (for example in a local test environment).
+// When configured, administrative scheduling-integration routes accept the
+// same bearer tokens as the portal. If Jwt:Key is absent, a per-process random
+// key deliberately keeps every admin request unauthorized (fail closed).
 var configuredJwtKey = builder.Configuration["Jwt:Key"];
 var signingKey = string.IsNullOrWhiteSpace(configuredJwtKey)
     ? RandomNumberGenerator.GetBytes(32)

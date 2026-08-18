@@ -37,6 +37,8 @@ public interface ISchedulingEntityCatalog
 
 public interface ISchedulingEntityMappingService
 {
+    Task<SchedulingEntityMappingDto?> FindByIdAsync(string tenantId, SchedulingChannel channel,
+        Guid mappingId, CancellationToken cancellationToken = default);
     Task<SchedulingEntityMappingDto?> FindByInternalIdAsync(string tenantId, SchedulingChannel channel,
         SchedulingResourceType entityType, string internalId, CancellationToken cancellationToken = default);
     Task<SchedulingEntityMappingDto?> FindByExternalIdAsync(string tenantId, SchedulingChannel channel,
@@ -102,6 +104,16 @@ public sealed partial class SchedulingEntityMappingService(
     [GeneratedRegex("^[A-Za-z0-9][A-Za-z0-9._:/-]{0,255}$", RegexOptions.CultureInvariant)]
     private static partial Regex ExternalIdPattern();
 
+    public async Task<SchedulingEntityMappingDto?> FindByIdAsync(string tenantId, SchedulingChannel channel,
+        Guid mappingId, CancellationToken cancellationToken = default)
+    {
+        ValidateContext(tenantId, channel);
+        if (mappingId == Guid.Empty) throw new ArgumentException("Mapping identifier is required.", nameof(mappingId));
+        var mapping = await Query(tenantId, channel).AsNoTracking()
+            .SingleOrDefaultAsync(x => x.Id == mappingId, cancellationToken);
+        return mapping?.ToDto();
+    }
+
     public async Task<SchedulingEntityMappingDto?> FindByInternalIdAsync(string tenantId, SchedulingChannel channel,
         SchedulingResourceType entityType, string internalId, CancellationToken cancellationToken = default)
     {
@@ -155,11 +167,14 @@ public sealed partial class SchedulingEntityMappingService(
                 x.ResourceType == request.EntityType && x.InternalId == request.InternalId, cancellationToken);
         }
 
-        var duplicate = await Query(tenantId, channel).AnyAsync(x => x.IsActive &&
+        // The persisted unique indexes apply regardless of lifecycle state, so
+        // reject all duplicate identifiers before SaveChanges can surface a
+        // provider-specific DbUpdateException.
+        var duplicate = await Query(tenantId, channel).AnyAsync(x =>
             x.ResourceType == request.EntityType && x.Id != (mapping == null ? Guid.Empty : mapping.Id) &&
             (x.InternalId == request.InternalId || x.ExternalId == request.ExternalId), cancellationToken);
-        if (request.IsActive && duplicate)
-            throw new InvalidOperationException("An active mapping already uses this internal or external identifier.");
+        if (duplicate)
+            throw new InvalidOperationException("A mapping already uses this internal or external identifier.");
 
         if (mapping is null)
         {
@@ -199,9 +214,9 @@ public sealed partial class SchedulingEntityMappingService(
     {
         ValidateContext(tenantId, channel);
         var internalEntities = await catalog.ListAsync(tenantId, entityType, cancellationToken);
-        var mappedIds = await Query(tenantId, channel).Where(x => x.ResourceType == entityType && x.IsActive)
-            .Select(x => x.InternalId).ToListAsync(cancellationToken);
-        return internalEntities.Where(x => x.IsActive && !mappedIds.Contains(x.InternalId, StringComparer.Ordinal)).ToList();
+        var mappedIds = (await Query(tenantId, channel).Where(x => x.ResourceType == entityType && x.IsActive)
+            .Select(x => x.InternalId).ToListAsync(cancellationToken)).ToHashSet(StringComparer.Ordinal);
+        return internalEntities.Where(x => x.IsActive && !mappedIds.Contains(x.InternalId)).ToList();
     }
 
     public async Task<IReadOnlyList<SchedulingEntityMappingDto>> ListInvalidAsync(string tenantId,

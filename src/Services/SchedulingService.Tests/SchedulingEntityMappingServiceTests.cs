@@ -81,6 +81,32 @@ public sealed class SchedulingEntityMappingServiceTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task RejectsInactiveDuplicatesBeforeDatabaseConstraintFailure()
+    {
+        await AddCatalogRequest("practice-a", providerId: 42);
+        await AddCatalogRequest("practice-a", providerId: 43);
+        await _service.UpsertAsync("practice-a", SchedulingChannel.Zocdoc,
+            new(SchedulingResourceType.Provider, "42", "provider-shared", null, IsActive: false));
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => _service.UpsertAsync(
+            "practice-a", SchedulingChannel.Zocdoc,
+            new(SchedulingResourceType.Provider, "43", "provider-shared", null, IsActive: false)));
+    }
+
+    [Fact]
+    public async Task FindsMappingByIdWithinTenantAndChannel()
+    {
+        await AddCatalogRequest("practice-a", providerId: 42);
+        var mapping = await _service.UpsertAsync("practice-a", SchedulingChannel.Zocdoc,
+            new(SchedulingResourceType.Provider, "42", "provider-42", null));
+
+        Assert.Equal(mapping.Id, (await _service.FindByIdAsync(
+            "practice-a", SchedulingChannel.Zocdoc, mapping.Id))!.Id);
+        Assert.Null(await _service.FindByIdAsync("practice-b", SchedulingChannel.Zocdoc, mapping.Id));
+        Assert.Null(await _service.FindByIdAsync("practice-a", SchedulingChannel.Google, mapping.Id));
+    }
+
+    [Fact]
     public async Task MappingLookupAndUpdateAreTenantIsolated()
     {
         await AddCatalogRequest("practice-a", providerId: 42);

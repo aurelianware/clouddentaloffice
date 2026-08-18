@@ -14,6 +14,11 @@ public static class SchedulingIntegrationAdminApi
             CancellationToken cancellationToken) => await ExecuteAsync(user, tenantId =>
                 service.ListAsync(tenantId, channel, entityType, includeInactive, cancellationToken)));
 
+        group.MapGet("/{id:guid}", async (SchedulingChannel channel, Guid id, ClaimsPrincipal user,
+            ISchedulingEntityMappingService service, CancellationToken cancellationToken) =>
+            await ExecuteNullableAsync(user, tenantId =>
+                service.FindByIdAsync(tenantId, channel, id, cancellationToken)));
+
         group.MapGet("/by-internal/{entityType}/{internalId}", async (SchedulingChannel channel,
             SchedulingResourceType entityType, string internalId, ClaimsPrincipal user,
             ISchedulingEntityMappingService service, CancellationToken cancellationToken) =>
