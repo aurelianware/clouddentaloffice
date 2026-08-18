@@ -113,7 +113,8 @@ app.MapPost("/api/integrations/zocdoc/{integrationId}/webhooks", async (
 
     var externalEventId = $"{appointment.AppointmentId}:{appointment.UpdatedAt:O}:{appointment.AppointmentUpdateType}";
     await publisher.PublishAsync(new ZocdocAppointmentWebhookEvent(
-        integration.TenantId, externalEventId, appointment.AppointmentId, appointment.AppointmentUpdateType),
+        integration.TenantId, externalEventId, appointment.AppointmentId, appointment.AppointmentUpdateType)
+        { ExternalUpdatedAt = appointment.UpdatedAt.UtcDateTime },
         http.RequestAborted);
     return Results.Accepted();
 }).RequireRateLimiting("zocdoc-webhooks").WithTags("ZocdocWebhooks");

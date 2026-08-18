@@ -14,6 +14,34 @@ public static class SchedulingIntegrationSchema
             : provider.Contains("SqlServer", StringComparison.Ordinal) ? SqlServer : Sqlite;
         await db.Database.ExecuteSqlRawAsync(sql, cancellationToken);
         await EnsureMappingColumnsAsync(db, provider, cancellationToken);
+        await EnsureAppointmentReferenceColumnsAsync(db, provider, cancellationToken);
+    }
+
+    private static async Task EnsureAppointmentReferenceColumnsAsync(
+        SchedulingDbContext db, string provider, CancellationToken cancellationToken)
+    {
+        var columns = new Dictionary<string, (string Sqlite, string Postgres, string SqlServer)>
+        {
+            ["SyncStatus"] = ("INTEGER NOT NULL DEFAULT 0", "integer NOT NULL DEFAULT 0", "int NOT NULL DEFAULT 0"),
+            ["PendingOperation"] = ("TEXT NULL", "varchar(40) NULL", "nvarchar(40) NULL"),
+            ["PendingStartUtc"] = ("TEXT NULL", "timestamp with time zone NULL", "datetime2 NULL"),
+            ["LastSyncError"] = ("TEXT NULL", "varchar(1000) NULL", "nvarchar(1000) NULL"),
+            ["LastSyncedAt"] = ("TEXT NULL", "timestamp with time zone NULL", "datetime2 NULL"),
+            ["LastExternalUpdatedAt"] = ("TEXT NULL", "timestamp with time zone NULL", "datetime2 NULL")
+        };
+        foreach (var (column, types) in columns)
+        {
+            if (provider.Contains("Sqlite", StringComparison.Ordinal) &&
+                await SqliteHasColumnAsync(db, "ExternalAppointmentReferences", column, cancellationToken)) continue;
+            var definition = provider.Contains("Npgsql", StringComparison.Ordinal) ? types.Postgres
+                : provider.Contains("SqlServer", StringComparison.Ordinal) ? types.SqlServer : types.Sqlite;
+            var statement = provider.Contains("Npgsql", StringComparison.Ordinal)
+                ? $"ALTER TABLE \"ExternalAppointmentReferences\" ADD COLUMN IF NOT EXISTS \"{column}\" {definition};"
+                : provider.Contains("SqlServer", StringComparison.Ordinal)
+                    ? $"IF COL_LENGTH('ExternalAppointmentReferences', '{column}') IS NULL ALTER TABLE [ExternalAppointmentReferences] ADD [{column}] {definition};"
+                    : $"ALTER TABLE \"ExternalAppointmentReferences\" ADD COLUMN \"{column}\" {definition};";
+            await db.Database.ExecuteSqlRawAsync(statement, cancellationToken);
+        }
     }
 
     private static async Task EnsureMappingColumnsAsync(
@@ -88,6 +116,9 @@ public static class SchedulingIntegrationSchema
           "TenantId" TEXT NOT NULL, "AppointmentId" TEXT NOT NULL, "Channel" INTEGER NOT NULL,
           "ExternalAppointmentId" TEXT NOT NULL, "ExternalProviderId" TEXT NULL,
           "ExternalLocationId" TEXT NULL, "ExternalVisitReasonId" TEXT NULL,
+          "SyncStatus" INTEGER NOT NULL DEFAULT 0, "PendingOperation" TEXT NULL,
+          "PendingStartUtc" TEXT NULL, "LastSyncError" TEXT NULL,
+          "LastSyncedAt" TEXT NULL, "LastExternalUpdatedAt" TEXT NULL,
           "CreatedAt" TEXT NOT NULL, "UpdatedAt" TEXT NOT NULL);
         CREATE UNIQUE INDEX IF NOT EXISTS "IX_ExternalAppointmentReferences_External"
           ON "ExternalAppointmentReferences" ("TenantId", "Channel", "ExternalAppointmentId");
@@ -146,6 +177,9 @@ public static class SchedulingIntegrationSchema
           "TenantId" varchar(64) NOT NULL, "AppointmentId" uuid NOT NULL, "Channel" integer NOT NULL,
           "ExternalAppointmentId" varchar(256) NOT NULL, "ExternalProviderId" varchar(256) NULL,
           "ExternalLocationId" varchar(256) NULL, "ExternalVisitReasonId" varchar(256) NULL,
+          "SyncStatus" integer NOT NULL DEFAULT 0, "PendingOperation" varchar(40) NULL,
+          "PendingStartUtc" timestamp with time zone NULL, "LastSyncError" varchar(1000) NULL,
+          "LastSyncedAt" timestamp with time zone NULL, "LastExternalUpdatedAt" timestamp with time zone NULL,
           "CreatedAt" timestamp with time zone NOT NULL, "UpdatedAt" timestamp with time zone NOT NULL);
         CREATE UNIQUE INDEX IF NOT EXISTS "IX_ExternalAppointmentReferences_External"
           ON "ExternalAppointmentReferences" ("TenantId", "Channel", "ExternalAppointmentId");
@@ -206,6 +240,10 @@ public static class SchedulingIntegrationSchema
             [TenantId] nvarchar(64) NOT NULL, [AppointmentId] uniqueidentifier NOT NULL, [Channel] int NOT NULL,
             [ExternalAppointmentId] nvarchar(256) NOT NULL, [ExternalProviderId] nvarchar(256) NULL,
             [ExternalLocationId] nvarchar(256) NULL, [ExternalVisitReasonId] nvarchar(256) NULL,
+            [SyncStatus] int NOT NULL CONSTRAINT [DF_ExternalAppointmentReferences_SyncStatus] DEFAULT 0,
+            [PendingOperation] nvarchar(40) NULL, [PendingStartUtc] datetime2 NULL,
+            [LastSyncError] nvarchar(1000) NULL, [LastSyncedAt] datetime2 NULL,
+            [LastExternalUpdatedAt] datetime2 NULL,
             [CreatedAt] datetime2 NOT NULL, [UpdatedAt] datetime2 NOT NULL);
           CREATE UNIQUE INDEX [IX_ExternalAppointmentReferences_External]
             ON [ExternalAppointmentReferences] ([TenantId], [Channel], [ExternalAppointmentId]);
