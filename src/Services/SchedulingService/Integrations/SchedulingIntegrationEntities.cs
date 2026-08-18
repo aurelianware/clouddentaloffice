@@ -14,6 +14,9 @@ public sealed class SchedulingIntegrationConfiguration
     public bool Enabled { get; set; }
     [MaxLength(40)] public string Environment { get; set; } = "Production";
     [MaxLength(512)] public string? CredentialReference { get; set; }
+    [MaxLength(100)] public string TimeZoneId { get; set; } = "UTC";
+    public int MinimumBookingLeadMinutes { get; set; }
+    public int MaximumBookingHorizonDays { get; set; } = 90;
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 }
@@ -56,6 +59,36 @@ public sealed class SchedulingAppointmentTypeDefinition
         CloudDentalOffice.Contracts.Scheduling.PatientRelationship.Existing => ExistingPatientAllowed,
         _ => false
     };
+}
+
+[Index(nameof(TenantId), nameof(ProviderId), nameof(LocationId), nameof(DayOfWeek))]
+public sealed class SchedulingProviderWorkingHours
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    [MaxLength(64)] public string TenantId { get; set; } = string.Empty;
+    public int ProviderId { get; set; }
+    public Guid LocationId { get; set; }
+    public DayOfWeek DayOfWeek { get; set; }
+    public TimeOnly StartLocal { get; set; }
+    public TimeOnly EndLocal { get; set; }
+    public bool IsActive { get; set; } = true;
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+}
+
+[Index(nameof(TenantId), nameof(StartUtc), nameof(EndUtc))]
+public sealed class SchedulingBlockedTime
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    [MaxLength(64)] public string TenantId { get; set; } = string.Empty;
+    public int? ProviderId { get; set; }
+    public Guid? LocationId { get; set; }
+    public DateTime StartUtc { get; set; }
+    public DateTime EndUtc { get; set; }
+    [MaxLength(200)] public string? Reason { get; set; }
+    public bool IsActive { get; set; } = true;
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 }
 
 [Index(nameof(TenantId), nameof(Channel), nameof(ExternalAppointmentId), IsUnique = true)]

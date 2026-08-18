@@ -26,6 +26,7 @@ public record CreateAppointmentRequest
     public string? Notes { get; init; }
     public string? Operatory { get; init; }
     public Guid? LocationId { get; init; }
+    public string? AppointmentTypeId { get; init; }
 }
 
 /// <summary>
@@ -105,16 +106,17 @@ public sealed record SchedulingAvailabilitySlot
     public required int ProviderId { get; init; }
     public required Guid LocationId { get; init; }
     public required string AppointmentTypeId { get; init; }
-    public required DateTime StartUtc { get; init; }
-    public required DateTime EndUtc { get; init; }
+    public required DateTimeOffset StartUtc { get; init; }
+    public required DateTimeOffset EndUtc { get; init; }
     public PatientRelationship PatientRelationship { get; init; } = PatientRelationship.Unknown;
 }
 
 public sealed record SchedulingAvailabilityQuery
 {
     public required string TenantId { get; init; }
-    public required DateTime FromUtc { get; init; }
-    public required DateTime ToUtc { get; init; }
+    public SchedulingChannel Channel { get; init; } = SchedulingChannel.Internal;
+    public required DateTimeOffset FromUtc { get; init; }
+    public required DateTimeOffset ToUtc { get; init; }
     public int? ProviderId { get; init; }
     public Guid? LocationId { get; init; }
     public string? AppointmentTypeId { get; init; }
