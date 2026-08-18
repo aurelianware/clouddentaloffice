@@ -63,7 +63,7 @@ Cloud Dental Office uses a **microservices architecture** with each bounded cont
 | **AuthService** | 5106 | JWT authentication, OpenID Connect, multi-tenant identity |
 | **PrescriptionService** | 5107 | e-Prescribing with DoseSpot integration, EPCS compliance, Surescripts certified |
 | **VisionService** | 5108 | AI vision platform — privaseeAI integration, insurance card OCR (Azure AI Vision), narcotics cabinet monitoring, consent recording, clinical note generation |
-| **IntakeService** | 5109 | Isolated public intake. Publishes validated booking requests and has no database or read access to patient/clinical systems. |
+| **IntakeService** | 5109 | Isolated public intake. Publishes validated booking requests and stores only minimized, durable integration-inbox records; it has no read access to patient/clinical systems. |
 
 ### Shared Libraries
 
@@ -147,8 +147,8 @@ The topic decouples the website from the scheduler:
 - **Service Bus unreachable, or not configured:** IntakeService returns `503`
   (rather than a false `202`), so the calling website falls back to its own
   delivery path (e.g. email).
-- IntakeService has no database, so a scheduling-database outage cannot affect
-  the public endpoint at all.
+- IntakeService has an isolated inbox database and no access to the scheduling
+  database, so a scheduling-database outage does not affect durable webhook intake.
 
 ### Configuration
 
@@ -160,6 +160,8 @@ The topic decouples the website from the scheduler:
 | `PublicBooking:ApiKey` / `PublicBooking:TenantId` | Backwards-compatible single-practice credential mapping. |
 | `PublicBooking:Clients:{index}:ApiKey` / `TenantId` | Credential-to-tenant mappings for multiple practices. Store these in a secret provider. |
 | `TrustedProxies` | Proxy IPs allowed to supply forwarded client headers. |
+| `ConnectionStrings:IntakeDb` | Isolated durable inbox database (PostgreSQL in production). |
+| `IntegrationInbox:*` | Dispatcher batch, lease, bounded retry, and tenant admin-client settings. |
 | `ServiceBus:ConnectionString` | Service Bus namespace connection string. Empty → events are logged and dropped. |
 | `ServiceBus:BookingTopic` | Topic to publish to (default `booking-requests`). |
 

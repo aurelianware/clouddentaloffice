@@ -152,8 +152,10 @@ the `webhook-signature` `v1` value against HMAC-SHA256 of the exact UTF-8 bytes
 `<webhook-timestamp>.<raw request body>` using a constant-time comparison. The
 tenant comes only from the trusted route mapping, never from the event body.
 
-After verification, IntakeService publishes a PHI-free event containing only
-the tenant, external event ID, appointment ID, and update type. SchedulingService
+After verification, IntakeService commits a PHI-free event containing only the
+tenant, external event ID, appointment ID, and update type to its isolated durable
+inbox before returning `202`. A background dispatcher publishes that record to
+Service Bus; SchedulingService
 then fetches the current appointment from `GET /v1/appointments/{appointment_id}`,
 resolves tenant-scoped provider/location/visit-reason mappings, safely matches or
 creates the patient through PatientService, revalidates the slot, persists the
@@ -171,9 +173,10 @@ slot is no longer available.
 - `401`: signature missing, invalid, wrong secret, or timestamp outside five minutes.
 - `404`: the route identifier is unknown or the tenant integration is disabled.
 - `400`: the signed body is malformed or is not a supported appointment event.
-- `503`: Service Bus is unavailable and the event was not accepted. Zocdoc's
-  documented retry behavior is based on connection/no-response failures rather
-  than HTTP status, so operators should verify delivery and reconcile manually.
+- `503`: the inbox database could not durably commit the event; it was not accepted.
+- Service Bus outages do not change webhook acknowledgement after the inbox commit.
+  Pending records retry with bounded exponential backoff and eventually enter
+  `Failed` rather than being discarded.
 - A dead-lettered `DisabledIntegration` message means the integration was disabled
   after ingress accepted the event.
 - Repeated processing failures usually indicate missing entity mappings, a slot
@@ -328,7 +331,9 @@ and latency plus `CloudDentalOffice.Intake.Zocdoc` webhook received/validation-f
 counters. Appointment created/conflict/failure totals can be derived from the
 tenant-scoped persisted event and external-reference states without patient labels.
 Service Bus dead-letter depth is an Azure Monitor broker metric, not an in-process
-counter. Do not add tenant, appointment, patient, email, or phone values as metric
+counter. IntakeService additionally emits inbox persisted, publish success/failure,
+retry, poison, and oldest-pending-age instruments. Do not add tenant, appointment,
+patient, email, or phone values as metric
 labels.
 
 For an incident:
@@ -337,9 +342,13 @@ For an incident:
    be compromised; local scheduling remains authoritative.
 2. Inspect readiness and reconciliation, then Azure Service Bus active/dead-letter
    counts and sanitized structured logs.
-3. Correct credentials or mappings, replay only verified messages, and perform a
+3. Inspect the tenant-scoped internal inbox status endpoint. After correcting the
+   broker/configuration issue, requeue a `Failed` record through
+   `POST /api/internal/integration-inbox/{id}/retry` using its tenant-bound admin key.
+   The admin API returns status/counts only and never returns payloads.
+4. Correct credentials or mappings, replay only verified messages, and perform a
    targeted reconciliation. Do not replay raw webhook bodies from logs.
-4. Escalate remote correlation IDs and timestamps to Zocdoc; never send PHI unless
+5. Escalate remote correlation IDs and timestamps to Zocdoc; never send PHI unless
    the approved support channel explicitly requires it.
 
 Credential rotation: add the replacement secret version, update the opaque reference
@@ -356,15 +365,43 @@ credentials. Sandbox and production credentials must remain separate.
 - Webhooks are limited to 1 MiB, rate limited, timestamp bounded to five minutes,
   verified over raw bytes with constant-time HMAC comparison, and tenant-routed only
   from trusted route configuration.
-- Zocdoc's webhook delivery documentation retries connection/no-response failures for
-  up to 48 hours, not arbitrary HTTP error responses. A `503` must therefore be
-  reconciled operationally rather than assumed delivered later.
+- Correctness does not depend on Zocdoc retries: verified events are acknowledged
+  only after the inbox transaction commits.
 - Service Bus consumers retry transient failures and dead-letter permanent lifecycle
   failures. Availability and appointments remain eventually consistent during a
   remote outage.
 - OAuth tokens are memory-only and tenant/environment/client keyed. Client and webhook
   secrets stay in secret-backed configuration and are never returned to the browser.
 - Logs and metrics exclude payload bodies, demographics, tokens, and patient identifiers.
+
+```text
+Zocdoc
+  ↓
+verified webhook
+  ↓
+Durable Inbox
+  ↓
+ACK
+  ↓
+publisher
+  ↓
+Service Bus
+  ↓
+SchedulingService
+```
+
+`Published` is IntakeService's responsibility boundary. Downstream completion remains
+observable through SchedulingService idempotency state and Service Bus diagnostics;
+there is intentionally no reverse acknowledgement coupling the two services.
+
+The inbox schema is created on service startup using the repository's existing
+`EnsureCreated` convention. Rollback requires draining `Received`/`Publishing` records
+before deploying the prior image; retain `cdo_intake` until all retained records have
+been published or deliberately reconciled.
+
+Configure `IntegrationInbox__AdminClients__{n}__TenantId` and a distinct,
+secret-backed `IntegrationInbox__AdminClients__{n}__ApiKey` for operational access.
+Do not reuse the public-booking, scheduling-service, or webhook credential.
 
 See [the partner/certification checklist](zocdoc-certification-checklist.md) for the
 sign-off artifact used with Zocdoc.
