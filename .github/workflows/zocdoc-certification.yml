@@ -1,0 +1,68 @@
+name: Zocdoc Sandbox Certification
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+
+jobs:
+  certification:
+    name: Zocdoc Sandbox Tests
+    runs-on: ubuntu-latest
+    environment: zocdoc-sandbox
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 8 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+          cache: true
+          cache-dependency-path: src/Services/Zocdoc.IntegrationTests/Zocdoc.IntegrationTests.csproj
+
+      - name: Require sandbox credentials
+        env:
+          ZOCDOC_SANDBOX_CLIENT_ID: ${{ secrets.ZOCDOC_SANDBOX_CLIENT_ID }}
+          ZOCDOC_SANDBOX_CLIENT_SECRET: ${{ secrets.ZOCDOC_SANDBOX_CLIENT_SECRET }}
+        shell: bash
+        run: |
+          if [[ -z "$ZOCDOC_SANDBOX_CLIENT_ID" || -z "$ZOCDOC_SANDBOX_CLIENT_SECRET" ]]; then
+            echo "Zocdoc sandbox credentials are not configured in the zocdoc-sandbox environment." >&2
+            exit 1
+          fi
+
+      - name: Restore certification tests
+        run: dotnet restore src/Services/Zocdoc.IntegrationTests/Zocdoc.IntegrationTests.csproj
+
+      - name: Build certification tests
+        run: >-
+          dotnet build src/Services/Zocdoc.IntegrationTests/Zocdoc.IntegrationTests.csproj
+          --configuration Release
+          --no-restore
+
+      - name: Run certification tests
+        env:
+          ZOCDOC_SANDBOX_CLIENT_ID: ${{ secrets.ZOCDOC_SANDBOX_CLIENT_ID }}
+          ZOCDOC_SANDBOX_CLIENT_SECRET: ${{ secrets.ZOCDOC_SANDBOX_CLIENT_SECRET }}
+        run: >-
+          dotnet test src/Services/Zocdoc.IntegrationTests/Zocdoc.IntegrationTests.csproj
+          --configuration Release
+          --no-restore
+          --no-build
+          --logger "trx;LogFilePrefix=zocdoc-sandbox"
+          --results-directory "${{ github.workspace }}/TestResults"
+
+      - name: Upload certification results
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: zocdoc-certification-${{ github.run_id }}-${{ github.run_attempt }}
+          path: TestResults/**/*.trx
+          if-no-files-found: warn
+          retention-days: 14

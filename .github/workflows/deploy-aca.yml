@@ -30,12 +30,14 @@ name: Deploy to Azure Container Apps
 #   portalFqdn              → your app's public URL
 
 on:
-  push:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
     branches: [main]
   workflow_dispatch:
 
 env:
-  IMAGE_TAG: ${{ github.sha }}
+  IMAGE_TAG: ${{ github.event.workflow_run.head_sha || github.sha }}
   RESOURCE_GROUP: ${{ secrets.AZURE_RESOURCE_GROUP }}
 
 permissions:
@@ -43,13 +45,27 @@ permissions:
   contents: read
 
 jobs:
+  validate-manual:
+    name: Validate manual deployment
+    if: ${{ github.event_name == 'workflow_dispatch' }}
+    uses: ./.github/workflows/ci.yml
+
   build-and-deploy:
     name: Build, Push & Deploy
+    needs: [validate-manual]
+    if: >-
+      ${{ always() &&
+          ((github.event_name == 'workflow_run' &&
+            github.event.workflow_run.event == 'push' &&
+            github.event.workflow_run.conclusion == 'success') ||
+           (github.event_name == 'workflow_dispatch' && needs.validate-manual.result == 'success')) }}
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
       # Authenticate to Azure using OIDC (no long-lived credentials stored)
       # Pre-requisite: configure federated credential on your App Registration:
