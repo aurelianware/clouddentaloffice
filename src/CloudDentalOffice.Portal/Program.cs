@@ -337,12 +337,13 @@ builder.Services.AddHttpClient<CloudDentalOffice.Contracts.Vision.IVisionService
     client.Timeout = TimeSpan.FromSeconds(30);
 });
 
+builder.Services.AddTransient<SchedulingTenantAuthorizationHandler>();
 builder.Services.AddHttpClient<IBookingRequestService, BookingRequestServiceHttpClient>(client =>
 {
     client.BaseAddress = new Uri(visionGatewayUrl);
     client.DefaultRequestHeaders.Add("Accept", "application/json");
     client.Timeout = TimeSpan.FromSeconds(30);
-});
+}).AddHttpMessageHandler<SchedulingTenantAuthorizationHandler>();
 builder.Services.AddTransient<SchedulingAdminAuthorizationHandler>();
 builder.Services.AddHttpClient<ISchedulingIntegrationAdminClient, SchedulingIntegrationAdminClient>(client =>
 {

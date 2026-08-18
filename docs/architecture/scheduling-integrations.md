@@ -18,6 +18,9 @@ CloudDentalOffice appointment, patient, provider, and location domains
 
 ## Boundary rules
 
+The HTTP trust boundary and route-by-route authorization model are documented in
+[Scheduling service trust boundary](scheduling-service-security.md).
+
 - An adapter translates a vendor protocol into canonical providers,
   appointment types, availability slots, and booking commands.
 - Adapters are registered through dependency injection and selected by
