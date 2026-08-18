@@ -13,7 +13,8 @@ namespace CloudDentalOffice.Messaging;
 public sealed class ServiceBusEventPublisher : IEventPublisher, IAsyncDisposable
 {
     private readonly ServiceBusClient _client;
-    private readonly ServiceBusSender _sender;
+    private readonly ServiceBusSender _bookingSender;
+    private readonly ServiceBusSender _availabilitySender;
     private readonly ILogger<ServiceBusEventPublisher> _logger;
 
     public ServiceBusEventPublisher(ServiceBusOptions options, ILogger<ServiceBusEventPublisher> logger)
@@ -21,7 +22,8 @@ public sealed class ServiceBusEventPublisher : IEventPublisher, IAsyncDisposable
         // Only constructed when a connection string is configured (see
         // AddEventPublishing), so the null-forgiving operator is safe here.
         _client = new ServiceBusClient(options.ConnectionString!);
-        _sender = _client.CreateSender(options.BookingTopic);
+        _bookingSender = _client.CreateSender(options.BookingTopic);
+        _availabilitySender = _client.CreateSender(options.SchedulingAvailabilityTopic);
         _logger = logger;
     }
 
@@ -37,13 +39,15 @@ public sealed class ServiceBusEventPublisher : IEventPublisher, IAsyncDisposable
             CorrelationId = @event.CorrelationId
         };
 
-        await _sender.SendMessageAsync(message, cancellationToken);
+        var sender = @event is SchedulingAvailabilityChangedEvent ? _availabilitySender : _bookingSender;
+        await sender.SendMessageAsync(message, cancellationToken);
         _logger.LogInformation("Published {EventType} {EventId} to Service Bus.", typeName, @event.EventId);
     }
 
     public async ValueTask DisposeAsync()
     {
-        await _sender.DisposeAsync();
+        await _bookingSender.DisposeAsync();
+        await _availabilitySender.DisposeAsync();
         await _client.DisposeAsync();
     }
 }

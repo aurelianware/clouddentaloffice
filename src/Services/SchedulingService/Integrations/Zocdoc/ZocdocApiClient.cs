@@ -17,6 +17,9 @@ internal interface IZocdocApiClient
     Task<IReadOnlyList<ZocdocVisitReasonDto>> GetVisitReasonsAsync(
         string tenantId, SchedulingIntegrationConfiguration configuration,
         CancellationToken cancellationToken = default);
+    Task ReplaceTimeslotsAsync(string tenantId, SchedulingIntegrationConfiguration configuration,
+        string externalProviderId, DateOnly localDate, IReadOnlyList<ZocdocTimeslotRequest> timeslots,
+        CancellationToken cancellationToken = default);
 }
 
 internal sealed class ZocdocApiClient(
@@ -41,6 +44,46 @@ internal sealed class ZocdocApiClient(
         string tenantId, SchedulingIntegrationConfiguration configuration,
         CancellationToken cancellationToken = default) => GetAllPagesAsync<ZocdocVisitReasonDto>(
             tenantId, configuration, "GetVisitReasons", "v1/visit_reasons?page_size=10000", cancellationToken);
+
+    public async Task ReplaceTimeslotsAsync(string tenantId, SchedulingIntegrationConfiguration configuration,
+        string externalProviderId, DateOnly localDate, IReadOnlyList<ZocdocTimeslotRequest> timeslots,
+        CancellationToken cancellationToken = default)
+    {
+        SchedulingIntegrationConfigurationStore.ValidateTenant(tenantId);
+        if (string.IsNullOrWhiteSpace(externalProviderId))
+            throw new ArgumentException("External provider identifier is required.", nameof(externalProviderId));
+        if (timeslots.Count > 1500)
+            throw new ArgumentException("Zocdoc accepts at most 1500 timeslots per provider/date.", nameof(timeslots));
+        var configurationEndpoints = ZocdocEndpoints.For(ZocdocEndpoints.Parse(configuration.Environment));
+        var path = $"v1/providers/{Uri.EscapeDataString(externalProviderId)}/calendar/timeslots?date={localDate:yyyy-MM-dd}";
+        var stopwatch = Stopwatch.StartNew();
+        string? correlationId = null;
+        try
+        {
+            var token = await tokenProvider.GetAccessTokenAsync(tenantId, configuration, cancellationToken);
+            using var request = new HttpRequestMessage(HttpMethod.Put, new Uri(configurationEndpoints.ApiBaseUri, path))
+            {
+                Content = JsonContent.Create(new ZocdocTimeslotPutRequest(timeslots))
+            };
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+            using var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+            correlationId = CorrelationId(response);
+            if (!response.IsSuccessStatusCode) throw FromApiResponse(response, correlationId);
+            LogResult(tenantId, "ReplaceTimeslots", correlationId, "Success", stopwatch.Elapsed);
+        }
+        catch (ZocdocIntegrationException ex)
+        {
+            LogResult(tenantId, "ReplaceTimeslots", ex.ExternalCorrelationId ?? correlationId,
+                ex.Kind.ToString(), stopwatch.Elapsed);
+            throw;
+        }
+        catch (HttpRequestException ex)
+        {
+            LogResult(tenantId, "ReplaceTimeslots", correlationId, "TemporaryRemoteFailure", stopwatch.Elapsed);
+            throw new ZocdocIntegrationException(ZocdocFailureKind.TemporaryRemoteFailure,
+                "Zocdoc could not be reached.", externalCorrelationId: correlationId, innerException: ex);
+        }
+    }
 
     private async Task<IReadOnlyList<T>> GetAllPagesAsync<T>(string tenantId,
         SchedulingIntegrationConfiguration configuration, string operation, string initialPath,

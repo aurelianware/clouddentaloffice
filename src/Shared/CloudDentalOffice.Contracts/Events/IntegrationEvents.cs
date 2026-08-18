@@ -56,6 +56,14 @@ public record AppointmentScheduledEvent(Guid AppointmentId, int PatientId, int P
 public record AppointmentCompletedEvent(Guid AppointmentId, int PatientId, string? ProcedureCodes) : IntegrationEvent;
 public record AppointmentCancelledEvent(Guid AppointmentId, int PatientId, string? Reason) : IntegrationEvent;
 
+/// <summary>Requests targeted external-availability reconciliation without carrying patient data.</summary>
+public record SchedulingAvailabilityChangedEvent(
+    string TenantId,
+    int? ProviderId,
+    DateTime FromUtc,
+    DateTime ToUtc,
+    string Reason) : IntegrationEvent;
+
 // ── Claims Events ──
 public record ClaimCreatedEvent(Guid ClaimId, Guid PatientId, decimal TotalCharge) : IntegrationEvent;
 public record ClaimSubmittedEvent(Guid ClaimId, string? ClaimControlNumber, string SubmissionMethod) : IntegrationEvent;

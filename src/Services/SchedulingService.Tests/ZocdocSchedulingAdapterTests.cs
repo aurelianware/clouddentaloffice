@@ -138,6 +138,26 @@ public sealed class ZocdocSchedulingAdapterTests
     }
 
     [Fact]
+    public async Task TimeslotPublicationUsesOfficialProviderDateReplacementEndpoint()
+    {
+        var handler = new RecordingHandler(_ => Json(HttpStatusCode.OK, "{}"));
+        var client = ApiClient(handler);
+
+        await client.ReplaceTimeslotsAsync("practice-a", Configuration(), "pr_123",
+            new DateOnly(2026, 1, 5), [new ZocdocTimeslotRequest
+            {
+                ProviderId = "pr_123", LocationId = "lo_456", StartTime = "2026-01-05T09:00:00",
+                TimeZone = "America/Phoenix", AllowedVisitReasonIds = ["pc_exam"], PatientType = "new"
+            }]);
+
+        var request = Assert.Single(handler.Requests);
+        Assert.Equal(HttpMethod.Put, request.Method);
+        Assert.Equal("https://api-developer-sandbox.zocdoc.com/v1/providers/pr_123/calendar/timeslots?date=2026-01-05", request.Uri);
+        Assert.Contains("\"timeslots\"", request.Body);
+        Assert.Contains("\"allowed_visit_reason_ids\":[\"pc_exam\"]", request.Body);
+    }
+
+    [Fact]
     public async Task TransientApiFailureIsClassifiedWithoutLeakingBody()
     {
         var client = ApiClient(new RecordingHandler(_ =>
@@ -295,5 +315,9 @@ public sealed class ZocdocSchedulingAdapterTests
         public Task<IReadOnlyList<ZocdocVisitReasonDto>> GetVisitReasonsAsync(string tenantId,
             SchedulingIntegrationConfiguration configuration, CancellationToken cancellationToken = default)
         { CallCount++; return Task.FromResult(VisitReasons); }
+        public Task ReplaceTimeslotsAsync(string tenantId, SchedulingIntegrationConfiguration configuration,
+            string externalProviderId, DateOnly localDate, IReadOnlyList<ZocdocTimeslotRequest> timeslots,
+            CancellationToken cancellationToken = default)
+        { CallCount++; return Task.CompletedTask; }
     }
 }
