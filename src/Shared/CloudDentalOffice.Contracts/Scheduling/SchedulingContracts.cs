@@ -64,6 +64,88 @@ public enum PatientRelationship
     Existing
 }
 
+/// <summary>
+/// Identifies the scheduling boundary through which a request originated.
+/// Vendor-specific behavior belongs in an adapter registered for the channel.
+/// </summary>
+public enum SchedulingChannel
+{
+    Internal,
+    PublicWebsite,
+    Zocdoc,
+    Google,
+    Other
+}
+
+public sealed record SchedulingProvider
+{
+    public required string TenantId { get; init; }
+    public required int ProviderId { get; init; }
+    public required Guid LocationId { get; init; }
+    public IReadOnlyDictionary<SchedulingChannel, string> ExternalMappings { get; init; }
+        = new Dictionary<SchedulingChannel, string>();
+}
+
+public sealed record SchedulingAppointmentType
+{
+    public required string TenantId { get; init; }
+    public required string AppointmentTypeId { get; init; }
+    public required string DisplayName { get; init; }
+    public required int DurationMinutes { get; init; }
+    public required int ProviderId { get; init; }
+    public required Guid LocationId { get; init; }
+    public bool NewPatientAllowed { get; init; }
+    public bool ExistingPatientAllowed { get; init; }
+    public bool IsActive { get; init; } = true;
+}
+
+public sealed record SchedulingAvailabilitySlot
+{
+    public required string TenantId { get; init; }
+    public required int ProviderId { get; init; }
+    public required Guid LocationId { get; init; }
+    public required string AppointmentTypeId { get; init; }
+    public required DateTime StartUtc { get; init; }
+    public required DateTime EndUtc { get; init; }
+    public PatientRelationship PatientRelationship { get; init; } = PatientRelationship.Unknown;
+}
+
+public sealed record SchedulingAvailabilityQuery
+{
+    public required string TenantId { get; init; }
+    public required DateTime FromUtc { get; init; }
+    public required DateTime ToUtc { get; init; }
+    public int? ProviderId { get; init; }
+    public Guid? LocationId { get; init; }
+    public string? AppointmentTypeId { get; init; }
+    public PatientRelationship PatientRelationship { get; init; } = PatientRelationship.Unknown;
+}
+
+/// <summary>
+/// Canonical, vendor-neutral booking input. PatientRelationship is routing
+/// information only; ResolvedPatientId is required before an Appointment may
+/// be created by an internal scheduling application service.
+/// </summary>
+public sealed record SchedulingBookingCommand
+{
+    public required string TenantId { get; init; }
+    public required SchedulingChannel Channel { get; init; }
+    public required string ExternalEventId { get; init; }
+    public required string ExternalAppointmentId { get; init; }
+    public required int ResolvedPatientId { get; init; }
+    public required int ProviderId { get; init; }
+    public required Guid LocationId { get; init; }
+    public required string AppointmentTypeId { get; init; }
+    public required DateTime StartUtc { get; init; }
+    public required DateTime EndUtc { get; init; }
+    public PatientRelationship PatientRelationship { get; init; } = PatientRelationship.Unknown;
+    public string? ExternalProviderId { get; init; }
+    public string? ExternalLocationId { get; init; }
+    public string? ExternalVisitReasonId { get; init; }
+}
+
+public sealed record SchedulingBookingResult(Guid AppointmentId, bool Created);
+
 public enum BookingRequestStatus
 {
     New,
