@@ -303,6 +303,8 @@ public static class SchedulingIntegrationServiceCollectionExtensions
             .AddScoped<IExternalAppointmentReferenceStore, ExternalAppointmentReferenceStore>()
             .AddScoped<ISchedulingIntegrationIdempotencyStore, SchedulingIntegrationIdempotencyStore>()
             .AddScoped<IZocdocAppointmentWebhookProcessor, ZocdocAppointmentWebhookProcessor>()
+            .AddScoped<IAppointmentLifecycleService, AppointmentLifecycleService>()
+            .AddScoped<IZocdocAppointmentLifecycleSynchronizer, ZocdocAppointmentLifecycleSynchronizer>()
             .AddSingleton<IZocdocCredentialProvider, ConfigurationZocdocCredentialProvider>()
             .AddSingleton<IZocdocAccessTokenProvider, ZocdocAccessTokenProvider>()
             .AddSingleton<ZocdocAvailabilityMetrics>()

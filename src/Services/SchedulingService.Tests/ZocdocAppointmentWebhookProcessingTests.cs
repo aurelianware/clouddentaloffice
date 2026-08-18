@@ -121,6 +121,33 @@ public sealed class ZocdocAppointmentWebhookProcessingTests : IAsyncLifetime
         Assert.Equal(0, _api.GetCalls);
     }
 
+    [Fact]
+    public async Task IncomingRescheduleUpdatesExistingAppointmentWithoutOutgoingLoop()
+    {
+        var appointment = new Appointment
+        {
+            Id = Guid.NewGuid(), TenantId = "practice-a", PatientId = 42, ProviderId = 12,
+            LocationId = _location, AppointmentTypeId = "exam", StartTime = new DateTime(2026, 9, 7, 9, 0, 0, DateTimeKind.Utc),
+            EndTime = new DateTime(2026, 9, 7, 9, 30, 0, DateTimeKind.Utc), Status = AppointmentStatus.Confirmed
+        };
+        _db.Appointments.Add(appointment);
+        _db.ExternalAppointmentReferences.Add(new()
+        {
+            TenantId = "practice-a", Channel = SchedulingChannel.Zocdoc, AppointmentId = appointment.Id,
+            ExternalAppointmentId = "za-1", ExternalProviderId = "zp", ExternalLocationId = "zl",
+            ExternalVisitReasonId = "zv"
+        });
+        _api.StartTime = new(2026, 9, 8, 10, 0, 0, TimeSpan.Zero);
+        _api.Status = "rescheduled";
+        await _db.SaveChangesAsync();
+
+        await Service().ProcessAsync(new("practice-a", "reschedule-event", "za-1", "updated"));
+
+        Assert.Equal(_api.StartTime.UtcDateTime, appointment.StartTime);
+        Assert.Equal(AppointmentStatus.Rescheduled, appointment.Status);
+        Assert.Equal(0, _api.ConfirmCalls);
+    }
+
     private ZocdocAppointmentWebhookProcessor Service(
         ILogger<ZocdocAppointmentWebhookProcessor>? logger = null) => new(_db,
         new SchedulingIntegrationConfigurationStore(_db), new SchedulingIntegrationIdempotencyStore(_db),
@@ -135,12 +162,14 @@ public sealed class ZocdocAppointmentWebhookProcessingTests : IAsyncLifetime
     {
         public int GetCalls { get; private set; }
         public int ConfirmCalls { get; private set; }
+        public DateTimeOffset StartTime { get; set; } = new(2026, 9, 7, 9, 0, 0, TimeSpan.Zero);
+        public string Status { get; set; } = "pending_booking";
         public Task<ZocdocAppointmentDto> GetAppointmentAsync(string tenantId, SchedulingIntegrationConfiguration configuration,
             string appointmentId, CancellationToken cancellationToken = default)
         {
             GetCalls++;
             return Task.FromResult(new ZocdocAppointmentDto
-            { AppointmentId = appointmentId, Status = "pending_booking", StartTime = new(2026, 9, 7, 9, 0, 0, TimeSpan.Zero),
+            { AppointmentId = appointmentId, Status = Status, StartTime = StartTime,
                 ProviderLocationId = "zp|zl", VisitReasonId = "zv", PatientType = "new",
                 Patient = new() { FirstName = "Private", LastName = "Patient", DateOfBirth = new(1990, 1, 1), EmailAddress = "private@example.test" } });
         }

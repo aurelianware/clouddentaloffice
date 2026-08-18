@@ -7,6 +7,13 @@ public static class SchedulingIntegrationAdminApi
 {
     public static IEndpointRouteBuilder MapSchedulingIntegrationAdminApi(this IEndpointRouteBuilder endpoints)
     {
+        endpoints.MapGet("/api/scheduling-integrations/zocdoc/appointments/status", async (
+            ClaimsPrincipal user, SchedulingDbContext db, CancellationToken cancellationToken) =>
+            await ExecuteAsync(user, tenantId => db.ExternalAppointmentReferences.AsNoTracking()
+                .Where(x => x.TenantId == tenantId && x.Channel == SchedulingChannel.Zocdoc)
+                .OrderByDescending(x => x.UpdatedAt).Take(500).ToListAsync(cancellationToken)))
+            .RequireAuthorization().WithTags("SchedulingIntegrationAppointments");
+
         endpoints.MapPost("/api/scheduling-integrations/zocdoc/availability/reconcile", async (
             DateTimeOffset from, DateTimeOffset to, int? providerId, ClaimsPrincipal user,
             IZocdocAvailabilitySynchronizer synchronizer, CancellationToken cancellationToken) =>

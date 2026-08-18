@@ -196,3 +196,47 @@ POST /api/scheduling-integrations/zocdoc/availability/reconcile?from=...&to=...&
 Both routes require authenticated tenant context. Metrics from the
 `CloudDentalOffice.Scheduling.Zocdoc` meter cover attempts, successes, failures,
 mapping skips, and API latency without patient information.
+
+## Appointment lifecycle synchronization
+
+The lifecycle implementation follows Zocdoc's current documented appointment actions:
+
+| CDO change | Zocdoc operation |
+| --- | --- |
+| Cancelled | `POST /v1/appointments/cancel` with `other_provider_reason` |
+| Rescheduled | `POST /v1/appointments/reschedule` with an ISO-8601 practice-local start time |
+| Checked in | `PUT /v1/appointments/update-status` with `arrived` |
+| No-show | `PUT /v1/appointments/update-status` with `no_show` |
+
+Zocdoc permits `arrived` and `no_show` only after the appointment start, and a
+no-show appointment must be no more than two days old. Remote validation errors
+are permanent and dead-lettered rather than retried indefinitely.
+
+Locally initiated changes commit first, then publish a PHI-free
+`AppointmentLifecycleChangedEvent` to the `appointment-lifecycle` topic. The
+Zocdoc consumer performs the remote call asynchronously, so remote downtime does
+not roll back the CDO appointment. Transient failures use Service Bus retry;
+configuration, authorization, validation, incomplete mapping, and conflict
+failures are visible in the dead-letter subscription.
+
+The existing `ExternalAppointmentReference` durably retains tenant, CDO and
+Zocdoc appointment IDs, provider/location/visit-reason IDs, pending operation,
+last diagnostic, and synchronization state:
+
+```text
+Synced -> Pending -> Synced
+                    Failed
+                    Conflict
+```
+
+Incoming webhook changes are applied with source `Zocdoc` and do not publish an
+outgoing lifecycle event. The outgoing consumer processes only source
+`CloudDentalOffice`. This explicit causation boundary prevents synchronization
+loops. When an incoming change disagrees with a different pending local change,
+the reference becomes `Conflict` and CDO is not silently overwritten.
+
+Tenant administrators can inspect the persisted state without PHI through:
+
+```text
+GET /api/scheduling-integrations/zocdoc/appointments/status
+```

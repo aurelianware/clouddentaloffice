@@ -22,6 +22,8 @@ public sealed class ServiceBusOptions
     public string SchedulingAvailabilitySubscription { get; set; } = "zocdoc";
     public string ZocdocWebhookTopic { get; set; } = "zocdoc-webhooks";
     public string ZocdocWebhookSubscription { get; set; } = "scheduling";
+    public string AppointmentLifecycleTopic { get; set; } = "appointment-lifecycle";
+    public string AppointmentLifecycleSubscription { get; set; } = "zocdoc";
 
     public bool IsConfigured => !string.IsNullOrWhiteSpace(ConnectionString);
 }

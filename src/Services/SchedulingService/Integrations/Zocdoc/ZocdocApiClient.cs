@@ -25,6 +25,12 @@ internal interface IZocdocApiClient
         CancellationToken cancellationToken = default);
     Task ConfirmAppointmentAsync(string tenantId, SchedulingIntegrationConfiguration configuration,
         string appointmentId, CancellationToken cancellationToken = default);
+    Task CancelAppointmentAsync(string tenantId, SchedulingIntegrationConfiguration configuration,
+        string appointmentId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    Task RescheduleAppointmentAsync(string tenantId, SchedulingIntegrationConfiguration configuration,
+        string appointmentId, DateTimeOffset startTime, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    Task UpdateAppointmentStatusAsync(string tenantId, SchedulingIntegrationConfiguration configuration,
+        string appointmentId, string status, CancellationToken cancellationToken = default) => throw new NotSupportedException();
 }
 
 internal sealed class ZocdocApiClient(
@@ -79,6 +85,37 @@ internal sealed class ZocdocApiClient(
         using var request = new HttpRequestMessage(HttpMethod.Post,
             new Uri(endpoints.ApiBaseUri, "v1/appointments/confirm"))
         { Content = JsonContent.Create(new { appointment_id = appointmentId }) };
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        using var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+        if (!response.IsSuccessStatusCode) throw FromApiResponse(response, CorrelationId(response));
+    }
+
+    public Task CancelAppointmentAsync(string tenantId, SchedulingIntegrationConfiguration configuration,
+        string appointmentId, CancellationToken cancellationToken = default) => SendAppointmentActionAsync(
+        tenantId, configuration, HttpMethod.Post, "v1/appointments/cancel",
+        new { appointment_id = appointmentId, cancellation_reason_type = "other_provider_reason" }, cancellationToken);
+
+    public Task RescheduleAppointmentAsync(string tenantId, SchedulingIntegrationConfiguration configuration,
+        string appointmentId, DateTimeOffset startTime, CancellationToken cancellationToken = default) => SendAppointmentActionAsync(
+        tenantId, configuration, HttpMethod.Post, "v1/appointments/reschedule",
+        new { appointment_id = appointmentId, start_time = startTime.ToString("O") }, cancellationToken);
+
+    public Task UpdateAppointmentStatusAsync(string tenantId, SchedulingIntegrationConfiguration configuration,
+        string appointmentId, string status, CancellationToken cancellationToken = default)
+    {
+        if (status is not ("arrived" or "no_show")) throw new ArgumentException("Unsupported Zocdoc status.", nameof(status));
+        return SendAppointmentActionAsync(tenantId, configuration, HttpMethod.Put, "v1/appointments/update-status",
+            new { appointment_id = appointmentId, appointment_status = status }, cancellationToken);
+    }
+
+    private async Task SendAppointmentActionAsync(string tenantId, SchedulingIntegrationConfiguration configuration,
+        HttpMethod method, string path, object payload, CancellationToken cancellationToken)
+    {
+        SchedulingIntegrationConfigurationStore.ValidateTenant(tenantId);
+        var endpoints = ZocdocEndpoints.For(ZocdocEndpoints.Parse(configuration.Environment));
+        var token = await tokenProvider.GetAccessTokenAsync(tenantId, configuration, cancellationToken);
+        using var request = new HttpRequestMessage(method, new Uri(endpoints.ApiBaseUri, path))
+            { Content = JsonContent.Create(payload) };
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
         using var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         if (!response.IsSuccessStatusCode) throw FromApiResponse(response, CorrelationId(response));

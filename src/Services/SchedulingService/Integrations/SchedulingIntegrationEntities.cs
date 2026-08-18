@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 
 public enum SchedulingResourceType { Provider, Location, VisitReason }
 public enum SchedulingIntegrationEventStatus { Processing, Completed, Failed }
+public enum ExternalAppointmentSyncStatus { Synced, Pending, Failed, Conflict }
 public enum AvailabilitySyncStatus { Pending, Succeeded, Failed, SkippedMapping, Disabled }
 
 [Index(nameof(TenantId), nameof(Channel), IsUnique = true)]
@@ -104,6 +105,12 @@ public sealed class ExternalAppointmentReference
     [MaxLength(256)] public string? ExternalProviderId { get; set; }
     [MaxLength(256)] public string? ExternalLocationId { get; set; }
     [MaxLength(256)] public string? ExternalVisitReasonId { get; set; }
+    public ExternalAppointmentSyncStatus SyncStatus { get; set; } = ExternalAppointmentSyncStatus.Synced;
+    [MaxLength(40)] public string? PendingOperation { get; set; }
+    public DateTime? PendingStartUtc { get; set; }
+    [MaxLength(1000)] public string? LastSyncError { get; set; }
+    public DateTime? LastSyncedAt { get; set; }
+    public DateTime? LastExternalUpdatedAt { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 }

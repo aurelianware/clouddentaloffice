@@ -158,6 +158,25 @@ public sealed class ZocdocSchedulingAdapterTests
     }
 
     [Fact]
+    public async Task AppointmentLifecycleUsesDocumentedActionEndpointsAndPayloads()
+    {
+        var handler = new RecordingHandler(_ => Json(HttpStatusCode.OK, "{}"));
+        var client = ApiClient(handler);
+        var start = new DateTimeOffset(2026, 9, 9, 9, 0, 0, TimeSpan.FromHours(-7));
+
+        await client.CancelAppointmentAsync("practice-a", Configuration(), "za-1");
+        await client.RescheduleAppointmentAsync("practice-a", Configuration(), "za-1", start);
+        await client.UpdateAppointmentStatusAsync("practice-a", Configuration(), "za-1", "arrived");
+        await client.UpdateAppointmentStatusAsync("practice-a", Configuration(), "za-1", "no_show");
+
+        Assert.Collection(handler.Requests,
+            request => { Assert.Equal(HttpMethod.Post, request.Method); Assert.EndsWith("/v1/appointments/cancel", request.Uri); Assert.Contains("other_provider_reason", request.Body); },
+            request => { Assert.Equal(HttpMethod.Post, request.Method); Assert.EndsWith("/v1/appointments/reschedule", request.Uri); Assert.Contains("2026-09-09T09:00:00.0000000-07:00", request.Body); },
+            request => { Assert.Equal(HttpMethod.Put, request.Method); Assert.EndsWith("/v1/appointments/update-status", request.Uri); Assert.Contains("\"appointment_status\":\"arrived\"", request.Body); },
+            request => { Assert.Equal(HttpMethod.Put, request.Method); Assert.EndsWith("/v1/appointments/update-status", request.Uri); Assert.Contains("\"appointment_status\":\"no_show\"", request.Body); });
+    }
+
+    [Fact]
     public async Task TransientApiFailureIsClassifiedWithoutLeakingBody()
     {
         var client = ApiClient(new RecordingHandler(_ =>

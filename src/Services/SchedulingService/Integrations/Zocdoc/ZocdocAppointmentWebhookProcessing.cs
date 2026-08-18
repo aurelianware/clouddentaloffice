@@ -68,9 +68,28 @@ internal sealed class ZocdocAppointmentWebhookProcessor(
             if (string.Equals(webhook.UpdateType, "cancelled", StringComparison.OrdinalIgnoreCase))
             {
                 if (existingReference is null) throw new InvalidOperationException("External appointment reference not found.");
+                if (existingReference.SyncStatus == ExternalAppointmentSyncStatus.Pending &&
+                    existingReference.PendingOperation != "cancel")
+                {
+                    existingReference.SyncStatus = ExternalAppointmentSyncStatus.Conflict;
+                    existingReference.LastSyncError = "Zocdoc cancelled while a different local change was pending.";
+                    existingReference.LastExternalUpdatedAt = webhook.ExternalUpdatedAt;
+                    existingReference.UpdatedAt = DateTime.UtcNow;
+                    await db.SaveChangesAsync(cancellationToken);
+                    await idempotency.CompleteAsync(webhook.TenantId, SchedulingChannel.Zocdoc,
+                        webhook.ExternalEventId, existingReference.AppointmentId, cancellationToken);
+                    return;
+                }
                 var existing = await db.Appointments.SingleAsync(x => x.Id == existingReference.AppointmentId &&
                     x.TenantId == webhook.TenantId, cancellationToken);
                 existing.Status = AppointmentStatus.Cancelled;
+                existingReference.SyncStatus = ExternalAppointmentSyncStatus.Synced;
+                existingReference.PendingOperation = null;
+                existingReference.PendingStartUtc = null;
+                existingReference.LastSyncError = null;
+                existingReference.LastSyncedAt = DateTime.UtcNow;
+                existingReference.LastExternalUpdatedAt = webhook.ExternalUpdatedAt;
+                existingReference.UpdatedAt = DateTime.UtcNow;
                 await db.SaveChangesAsync(cancellationToken);
                 await idempotency.CompleteAsync(webhook.TenantId, SchedulingChannel.Zocdoc,
                     webhook.ExternalEventId, existing.Id, cancellationToken);
@@ -95,6 +114,22 @@ internal sealed class ZocdocAppointmentWebhookProcessor(
                 cancellationToken);
             var startUtc = remote.StartTime.UtcDateTime;
             var endUtc = startUtc.AddMinutes(appointmentType.DurationMinutes);
+
+            if (existingReference is { SyncStatus: ExternalAppointmentSyncStatus.Pending })
+            {
+                var remoteOperation = RemoteOperation(remote.Status, existingReference, startUtc);
+                if (!string.Equals(existingReference.PendingOperation, remoteOperation, StringComparison.Ordinal))
+                {
+                    existingReference.SyncStatus = ExternalAppointmentSyncStatus.Conflict;
+                    existingReference.LastSyncError = "Zocdoc changed the appointment while a different local change was pending.";
+                    existingReference.LastExternalUpdatedAt = webhook.ExternalUpdatedAt;
+                    existingReference.UpdatedAt = DateTime.UtcNow;
+                    await db.SaveChangesAsync(cancellationToken);
+                    await idempotency.CompleteAsync(webhook.TenantId, SchedulingChannel.Zocdoc,
+                        webhook.ExternalEventId, existingReference.AppointmentId, cancellationToken);
+                    return;
+                }
+            }
 
             var targetId = existingReference?.AppointmentId;
             if (existingReference is null)
@@ -124,6 +159,7 @@ internal sealed class ZocdocAppointmentWebhookProcessor(
                 appointment.ProviderId = providerId; appointment.LocationId = locationId;
                 appointment.AppointmentTypeId = visitReason.InternalId;
                 appointment.StartTime = startUtc; appointment.EndTime = endUtc;
+                appointment.Status = RemoteStatus(remote.Status, appointment.Status);
             }
             else
             {
@@ -141,8 +177,22 @@ internal sealed class ZocdocAppointmentWebhookProcessor(
                 {
                     TenantId = webhook.TenantId, AppointmentId = appointment.Id, Channel = SchedulingChannel.Zocdoc,
                     ExternalAppointmentId = webhook.AppointmentId, ExternalProviderId = externalProviderId,
-                    ExternalLocationId = externalLocationId, ExternalVisitReasonId = remote.VisitReasonId
+                    ExternalLocationId = externalLocationId, ExternalVisitReasonId = remote.VisitReasonId,
+                    SyncStatus = ExternalAppointmentSyncStatus.Synced, LastSyncedAt = DateTime.UtcNow,
+                    LastExternalUpdatedAt = webhook.ExternalUpdatedAt
                 });
+            }
+            if (existingReference is not null)
+            {
+                existingReference.ExternalProviderId = externalProviderId;
+                existingReference.ExternalLocationId = externalLocationId;
+                existingReference.ExternalVisitReasonId = remote.VisitReasonId;
+                existingReference.SyncStatus = ExternalAppointmentSyncStatus.Synced;
+                existingReference.PendingOperation = null;
+                existingReference.PendingStartUtc = null;
+                existingReference.LastSyncError = null;
+                existingReference.LastSyncedAt = existingReference.UpdatedAt = DateTime.UtcNow;
+                existingReference.LastExternalUpdatedAt = webhook.ExternalUpdatedAt;
             }
             await db.SaveChangesAsync(cancellationToken);
             if (string.Equals(remote.Status, "pending_booking", StringComparison.OrdinalIgnoreCase))
@@ -176,4 +226,24 @@ internal sealed class ZocdocAppointmentWebhookProcessor(
             throw new InvalidOperationException("Zocdoc provider-location identifier is malformed.");
         return (parts[0], parts[1]);
     }
+
+    private static string? RemoteOperation(string status, ExternalAppointmentReference reference, DateTime startUtc) =>
+        status switch
+        {
+            "cancelled" => "cancel",
+            "arrived" => "arrived",
+            "no_show" => "no_show",
+            "rescheduled" when reference.PendingStartUtc == startUtc => "reschedule",
+            _ => null
+        };
+
+    private static AppointmentStatus RemoteStatus(string status, AppointmentStatus current) => status switch
+    {
+        "confirmed" => AppointmentStatus.Confirmed,
+        "cancelled" => AppointmentStatus.Cancelled,
+        "arrived" => AppointmentStatus.CheckedIn,
+        "no_show" => AppointmentStatus.NoShow,
+        "rescheduled" => AppointmentStatus.Rescheduled,
+        _ => current
+    };
 }

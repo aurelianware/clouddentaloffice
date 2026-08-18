@@ -339,6 +339,20 @@ resource schedulingService 'Microsoft.App/containerApps@2023-05-01' = {
               ]
             }
           }
+          {
+            name: 'zocdoc-lifecycle-messages'
+            custom: {
+              type: 'azure-servicebus'
+              metadata: {
+                topicName: 'appointment-lifecycle'
+                subscriptionName: 'zocdoc'
+                messageCount: '1'
+              }
+              auth: [
+                { secretRef: 'servicebus-listen', triggerParameter: 'connection' }
+              ]
+            }
+          }
         ]
       }
     }

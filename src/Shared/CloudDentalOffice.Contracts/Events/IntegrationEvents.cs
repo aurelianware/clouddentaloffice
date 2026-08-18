@@ -69,7 +69,18 @@ public record ZocdocAppointmentWebhookEvent(
     string TenantId,
     string ExternalEventId,
     string AppointmentId,
-    string UpdateType) : IntegrationEvent;
+    string UpdateType) : IntegrationEvent
+{
+    public DateTime? ExternalUpdatedAt { get; init; }
+}
+
+/// <summary>PHI-free request to synchronize a locally initiated appointment lifecycle change.</summary>
+public record AppointmentLifecycleChangedEvent(
+    string TenantId,
+    Guid AppointmentId,
+    string Operation,
+    string Source,
+    DateTime? StartUtc = null) : IntegrationEvent;
 
 // ── Claims Events ──
 public record ClaimCreatedEvent(Guid ClaimId, Guid PatientId, decimal TotalCharge) : IntegrationEvent;

@@ -62,6 +62,7 @@ builder.Services.AddAuthorization();
 builder.Services.AddHostedService<BookingRequestConsumer>();
 builder.Services.AddHostedService<SchedulingService.Integrations.Zocdoc.ZocdocAvailabilityConsumer>();
 builder.Services.AddHostedService<SchedulingService.Integrations.Zocdoc.ZocdocAppointmentWebhookConsumer>();
+builder.Services.AddHostedService<SchedulingService.Integrations.Zocdoc.ZocdocAppointmentLifecycleConsumer>();
 
 var app = builder.Build();
 if (app.Environment.IsDevelopment()) { app.UseSwagger(); app.UseSwaggerUI(); }
@@ -128,6 +129,18 @@ app.MapPost("/api/appointments", async (
             tenantId, apt.ProviderId);
     }
     return Results.Created($"/api/appointments/{apt.Id}", apt);
+}).RequireAuthorization().WithTags("Appointments");
+
+app.MapPut("/api/appointments/{id:guid}/lifecycle", async (
+    Guid id, SchedulingService.Integrations.Zocdoc.AppointmentLifecycleCommand command,
+    ClaimsPrincipal user, SchedulingService.Integrations.Zocdoc.IAppointmentLifecycleService service,
+    CancellationToken cancellationToken) =>
+{
+    var tenantId = SchedulingIntegrationAdminApi.TenantId(user);
+    if (string.IsNullOrWhiteSpace(tenantId)) return Results.Unauthorized();
+    try { return Results.Ok(await service.ApplyLocalAsync(tenantId, id, command, cancellationToken)); }
+    catch (KeyNotFoundException) { return Results.NotFound(); }
+    catch (ArgumentException ex) { return Results.ValidationProblem(new Dictionary<string, string[]> { ["lifecycle"] = [ex.Message] }); }
 }).RequireAuthorization().WithTags("Appointments");
 
 app.MapGet("/api/booking-requests", async (SchedulingDbContext db, IConfiguration config, HttpContext http, string tenantId, string? status) =>
