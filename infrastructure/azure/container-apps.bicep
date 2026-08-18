@@ -420,8 +420,12 @@ resource intakeService 'Microsoft.App/containerApps@2023-05-01' = {
             { name: 'IntegrationInbox__AdminClients__0__ApiKey', secretRef: 'inbox-admin-key' }
           ]
           probes: [
-            { type: 'Liveness', httpGet: { path: '/health', port: 5109 }, initialDelaySeconds: 10, periodSeconds: 10 }
-            { type: 'Readiness', httpGet: { path: '/health', port: 5109 }, initialDelaySeconds: 5, periodSeconds: 5 }
+            // Liveness has no database dependency, so a transient database outage
+            // does not cause the platform to restart an otherwise-healthy process.
+            { type: 'Liveness', httpGet: { path: '/health/live', port: 5109 }, initialDelaySeconds: 10, periodSeconds: 10 }
+            // Readiness reflects successful schema migration plus current database
+            // connectivity, so traffic is only routed once the schema is ready.
+            { type: 'Readiness', httpGet: { path: '/health/ready', port: 5109 }, initialDelaySeconds: 5, periodSeconds: 5 }
           ]
         }
       ]
