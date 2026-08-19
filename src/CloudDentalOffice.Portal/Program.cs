@@ -356,6 +356,14 @@ builder.Services.AddHttpClient<ISchedulingIntegrationAdminClient, SchedulingInte
 builder.Services.AddScoped<IClaimService, ClaimServiceImpl>();
 builder.Services.AddScoped<PatientContextService>();
 builder.Services.AddScoped<IAppointmentService, AppointmentServiceImpl>();
+builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.Configure<ReviewEmailOptions>(builder.Configuration.GetSection(ReviewEmailOptions.SectionName));
+builder.Services.Configure<ReviewOutreachWorkerOptions>(builder.Configuration.GetSection(ReviewOutreachWorkerOptions.SectionName));
+builder.Services.AddScoped<IReviewOutreachEligibilityService, ReviewOutreachEligibilityService>();
+builder.Services.AddScoped<IReviewOutreachScheduler, ReviewOutreachScheduler>();
+builder.Services.AddScoped<IReviewOutreachDispatcher, ReviewOutreachDispatcher>();
+builder.Services.AddScoped<IReviewOutreachSender, EmailReviewOutreachSender>();
+builder.Services.AddHostedService<ReviewOutreachWorker>();
 builder.Services.AddScoped<ITreatmentPlanService, TreatmentPlanService>();
 builder.Services.AddScoped<IEdiService, EdiService>();
 builder.Services.AddScoped<IProviderService, ProviderServiceImpl>();
