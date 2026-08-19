@@ -184,7 +184,7 @@ public sealed class StripePaymentWebhookProcessor(CloudDentalDbContext db, TimeP
     {
         if (!payment.StatementId.HasValue) return; // Explicitly remains unapplied.
         var existingAmounts = await db.PatientPaymentAllocations.IgnoreQueryFilters().Where(x =>
-                x.TenantId == payment.TenantId && x.PaymentId == payment.PaymentId)
+                x.TenantId == payment.TenantId && x.PaymentId == payment.PaymentId && !x.UnappliedAt.HasValue)
             .Select(x => x.Amount).ToListAsync(cancellationToken);
         var existing = existingAmounts.Sum();
         var remaining = payment.Amount - existing;
@@ -194,7 +194,7 @@ public sealed class StripePaymentWebhookProcessor(CloudDentalDbContext db, TimeP
             .OrderBy(x => x.ActivityDate).ThenBy(x => x.StatementLineId).ToListAsync(cancellationToken);
         var ledgerEntryIds = lines.Select(x => x.LedgerEntryId).ToList();
         var targetAllocationRows = await db.PatientPaymentAllocations.IgnoreQueryFilters().AsNoTracking().Where(x =>
-                x.TenantId == payment.TenantId && ledgerEntryIds.Contains(x.LedgerEntryId))
+                x.TenantId == payment.TenantId && ledgerEntryIds.Contains(x.LedgerEntryId) && !x.UnappliedAt.HasValue)
             .Select(x => new { x.LedgerEntryId, x.Amount }).ToListAsync(cancellationToken);
         var targetAllocations = targetAllocationRows.GroupBy(x => x.LedgerEntryId)
             .ToDictionary(x => x.Key, x => x.Sum(row => row.Amount));

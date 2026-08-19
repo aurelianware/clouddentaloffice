@@ -3,10 +3,10 @@ using System.ComponentModel.DataAnnotations.Schema;
 
 namespace CloudDentalOffice.Portal.Models;
 
-public enum PaymentProcessorProvider { Stripe }
+public enum PaymentProcessorProvider { Stripe, Office, External }
 public enum PaymentProcessorEnvironment { Sandbox, Production }
 public enum PaymentStatus { Pending, Succeeded, Failed, Cancelled }
-public enum PatientPaymentMethod { Card, BankAccount, DigitalWallet, Other }
+public enum PatientPaymentMethod { Card, BankAccount, DigitalWallet, Cash, Check, External, Other }
 public enum PaymentProcessorEventStatus { Received, Processed, Failed, Conflict }
 public enum PaymentProcessorOnboardingStatus { NotStarted, Pending, Enabled, Restricted, Disabled }
 public enum PatientPaymentSelection { FullBalance, StatementBalance, Partial }
@@ -31,6 +31,10 @@ public sealed class PatientPayment : ITenantEntity
     public Guid? LedgerEntryId { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
+    [Required, MaxLength(100)] public string CreatedBy { get; set; } = "system";
+    public Guid? ReversalLedgerEntryId { get; set; }
+    public DateTime? ReversedAt { get; set; }
+    [MaxLength(100)] public string? ReversedBy { get; set; }
     public PatientAccount PatientAccount { get; set; } = null!;
     public ICollection<PatientPaymentAllocation> Allocations { get; set; } = [];
 }
@@ -45,7 +49,23 @@ public sealed class PatientPaymentAllocation : ITenantEntity
     [Column(TypeName = "decimal(18,2)")] public decimal Amount { get; set; }
     public DateTime CreatedAt { get; set; }
     [Required, MaxLength(100)] public string CreatedBy { get; set; } = string.Empty;
+    public DateTime? UnappliedAt { get; set; }
+    [MaxLength(100)] public string? UnappliedBy { get; set; }
+    [MaxLength(64)] public string? UnapplyReasonCode { get; set; }
     public PatientPayment Payment { get; set; } = null!;
+}
+
+[Table("FinancialAuditEvents")]
+public sealed class FinancialAuditEvent : ITenantEntity
+{
+    [Key] public Guid Id { get; set; }
+    [Required, MaxLength(64)] public string TenantId { get; set; } = string.Empty;
+    [Required, MaxLength(64)] public string Action { get; set; } = string.Empty;
+    [Required, MaxLength(64)] public string EntityType { get; set; } = string.Empty;
+    [Required, MaxLength(128)] public string EntityId { get; set; } = string.Empty;
+    [Required, MaxLength(100)] public string Actor { get; set; } = string.Empty;
+    [MaxLength(64)] public string? ReasonCode { get; set; }
+    public DateTime CreatedAt { get; set; }
 }
 
 [Table("PaymentProcessorConfigurations")]

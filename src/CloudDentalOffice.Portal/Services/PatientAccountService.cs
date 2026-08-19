@@ -91,8 +91,8 @@ public sealed class PatientAccountService(CloudDentalDbContext db, TimeProvider 
         {
             throw new DuplicateLedgerSourceException("The account or financial source was concurrently posted.");
         }
-        logger.LogInformation("Patient ledger entry {LedgerEntryId} posted for tenant {TenantId}, source {SourceType}, type {EntryType}.",
-            entry.LedgerEntryId, command.TenantId, command.SourceType, command.EntryType);
+        logger.LogInformation("Patient ledger entry {LedgerEntryId} posted from source {SourceType} with type {EntryType}.",
+            entry.LedgerEntryId, command.SourceType, command.EntryType);
         return entry;
     }
 
@@ -125,7 +125,7 @@ public sealed class PatientAccountService(CloudDentalDbContext db, TimeProvider 
         {
             throw new DuplicateLedgerSourceException("The ledger entry was concurrently reversed.");
         }
-        logger.LogInformation("Patient ledger entry {LedgerEntryId} reversed for tenant {TenantId}.", entryId, tenantId);
+        logger.LogInformation("Patient ledger entry {LedgerEntryId} reversed.", entryId);
         return reversal;
     }
 

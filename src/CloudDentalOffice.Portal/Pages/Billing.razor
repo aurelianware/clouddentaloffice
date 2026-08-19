@@ -1,153 +1,66 @@
 @page "/billing"
+@attribute [Authorize(Roles = "Admin,BillingAdmin,BillingStaff")]
 @using CloudDentalOffice.Portal.Models
-@inject IBillingService BillingService
-@inject IDialogService DialogService
+@using System.Security.Claims
+@inject IStaffPatientBillingService BillingAdminService
+@inject AuthenticationStateProvider AuthenticationState
 @inject ISnackbar Snackbar
 
-<PageTitle>Billing - Cloud Dental Office</PageTitle>
-
+<PageTitle>Patient Billing & Payments</PageTitle>
 <MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-4">
-    <MudPaper Class="pa-4" Style="background: #0a0a0a; border: 1px solid #00ffff;">
-        <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center">
-            <div>
-                <MudText Typo="Typo.h4" Style="color: #00ffff; font-weight: bold;">
-                    <MudIcon Icon="@Icons.Material.Filled.Receipt" Class="mr-2" />
-                    Billing & Invoices
-                </MudText>
-                <MudText Typo="Typo.body2" Style="color: #b0b0b0;">
-                    Manage patient billing and invoices
-                </MudText>
-            </div>
-            <MudStack Row="true" Spacing="2">
-                <MudDateRangePicker @bind-DateRange="_dateRange" Label="Date Range" 
-                                    Color="Color.Primary" Variant="Variant.Outlined" />
-                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="LoadInvoices"
-                           StartIcon="@Icons.Material.Filled.Refresh">
-                    Refresh
-                </MudButton>
-            </MudStack>
-        </MudStack>
+    <MudPaper Class="pa-4" Outlined="true">
+        <MudText Typo="Typo.h4" Color="Color.Primary"><MudIcon Icon="@Icons.Material.Filled.AccountBalanceWallet" /> Patient Billing & Payments</MudText>
+        <MudText Color="Color.Secondary">Tenant-scoped account balances, statements, payments, and insurance activity.</MudText>
     </MudPaper>
-
-    @if (!string.IsNullOrEmpty(_errorMessage))
+    @if (_dashboard is not null)
     {
-        <MudAlert Severity="Severity.Error" Variant="Variant.Filled" Class="mt-4">
-            <MudText Typo="Typo.body1" Style="font-family: monospace; white-space: pre-wrap;">@_errorMessage</MudText>
-        </MudAlert>
+        <MudGrid Class="mt-2">@foreach (var metric in DashboardMetrics()){<MudItem xs="12" sm="6" md="2"><MudPaper Class="pa-3" Outlined="true"><MudText Typo="Typo.caption">@metric.Label</MudText><MudText Typo="Typo.h6">@Money(metric.Amount, _dashboard.Currency)</MudText></MudPaper></MudItem>}</MudGrid>
     }
-
-    <MudPaper Class="pa-4 mt-4" Style="background: #0a0a0a; border: 1px solid rgba(0, 255, 255, 0.3);">
-        @if (_loading)
-        {
-            <MudProgressLinear Color="Color.Primary" Indeterminate="true" />
-        }
-        else
-        {
-            <MudTable Items="@_invoices" Hover="true" Striped="true" Dense="true">
-                <ToolBarContent>
-                    <MudText Typo="Typo.h6" Style="color: #00ffff;">Invoices</MudText>
-                    <MudSpacer />
-                    <MudChip T="string" Color="Color.Info" Size="Size.Small">Total: @_invoices.Count</MudChip>
-                </ToolBarContent>
-                <HeaderContent>
-                    <MudTh Style="color: #00ffff;">Invoice #</MudTh>
-                    <MudTh Style="color: #00ffff;">Patient</MudTh>
-                    <MudTh Style="color: #00ffff;">Date</MudTh>
-                    <MudTh Style="color: #00ffff;">Total Amount</MudTh>
-                    <MudTh Style="color: #00ffff;">Paid Amount</MudTh>
-                    <MudTh Style="color: #00ffff;">Balance</MudTh>
-                    <MudTh Style="color: #00ffff;">Status</MudTh>
-                    <MudTh Style="color: #00ffff;">Actions</MudTh>
-                </HeaderContent>
-                <RowTemplate>
-                    <MudTd DataLabel="Invoice #">
-                        <MudText Typo="Typo.body2" Style="color: #00ff88; font-weight: bold;">@context.InvoiceId</MudText>
-                    </MudTd>
-                    <MudTd DataLabel="Patient">
-                        <MudText Typo="Typo.body2">@context.PatientName</MudText>
-                    </MudTd>
-                    <MudTd DataLabel="Date">
-                        <MudText Typo="Typo.body2">@context.InvoiceDate.ToString("MM/dd/yyyy")</MudText>
-                    </MudTd>
-                    <MudTd DataLabel="Total">
-                        <MudText Typo="Typo.body2">@context.TotalAmount.ToString("C")</MudText>
-                    </MudTd>
-                    <MudTd DataLabel="Paid">
-                        <MudText Typo="Typo.body2" Style="color: #00ff88;">@context.PaidAmount.ToString("C")</MudText>
-                    </MudTd>
-                    <MudTd DataLabel="Balance">
-                        <MudText Typo="Typo.body2" Style="@(context.Balance > 0 ? "color: #ff6b6b;" : "color: #00ff88;")">
-                            @context.Balance.ToString("C")
-                        </MudText>
-                    </MudTd>
-                    <MudTd DataLabel="Status">
-                        @{
-                            var statusColor = context.Status switch
-                            {
-                                "Paid" => Color.Success,
-                                "Partial" => Color.Warning,
-                                "Unpaid" => Color.Error,
-                                _ => Color.Default
-                            };
-                        }
-                        <MudChip T="string" Color="statusColor" Size="Size.Small">@context.Status</MudChip>
-                    </MudTd>
-                    <MudTd DataLabel="Actions">
-                        <MudIconButton Icon="@Icons.Material.Filled.Visibility" Size="Size.Small" Color="Color.Info"
-                                       OnClick="@(() => ViewInvoice(context))" />
-                        <MudIconButton Icon="@Icons.Material.Filled.Payment" Size="Size.Small" Color="Color.Success"
-                                       OnClick="@(() => ProcessPayment(context))" />
-                    </MudTd>
-                </RowTemplate>
-                <NoRecordsContent>
-                    <MudText Style="color: #b0b0b0;">No invoices found for the selected date range</MudText>
-                </NoRecordsContent>
-            </MudTable>
-        }
-    </MudPaper>
+    <MudPaper Class="pa-4 mt-4" Outlined="true"><MudStack Row="true" AlignItems="AlignItems.End" Spacing="2"><MudNumericField T="int" @bind-Value="_patientId" Label="Patient ID" Min="1" Variant="Variant.Outlined" /><MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="LoadAccount" Disabled="_busy">Open patient account</MudButton></MudStack></MudPaper>
+    @if (_account is not null)
+    {
+        <MudPaper Class="pa-4 mt-4" Outlined="true">
+            <MudText Typo="Typo.h5">@_account.PatientName</MudText>
+            <MudGrid><MudItem xs="6" md="3"><MudText Typo="Typo.caption">Current balance</MudText><MudText Typo="Typo.h6">@Money(_account.Summary.Balance.AmountDue, _account.Summary.Balance.Currency)</MudText></MudItem><MudItem xs="6" md="3"><MudText Typo="Typo.caption">Unapplied credit</MudText><MudText Typo="Typo.h6">@Money(_account.UnappliedCredit, _account.Summary.Balance.Currency)</MudText></MudItem><MudItem xs="6" md="3"><MudText Typo="Typo.caption">Last statement</MudText><MudText>@(_account.LastStatement?.StatementDate.ToString("d") ?? "None")</MudText></MudItem><MudItem xs="6" md="3"><MudText Typo="Typo.caption">Payment status</MudText><MudText>@(_account.LastPaymentStatus?.ToString() ?? "None")</MudText></MudItem></MudGrid>
+        </MudPaper>
+        <MudTabs Class="mt-4" Rounded="true" PanelClass="pa-4">
+            <MudTabPanel Text="Ledger">
+                <MudTable Items="_account.Ledger" Dense="true" Breakpoint="Breakpoint.Sm"><HeaderContent><MudTh>Date</MudTh><MudTh>Type</MudTh><MudTh>Amount</MudTh><MudTh>Category</MudTh><MudTh>Ledger ID</MudTh><MudTh>Posted by</MudTh></HeaderContent><RowTemplate><MudTd DataLabel="Date">@context.EffectiveDate.ToString("d")</MudTd><MudTd DataLabel="Type">@context.EntryType</MudTd><MudTd DataLabel="Amount">@Money(context.Amount, context.Currency)</MudTd><MudTd DataLabel="Category">@context.DescriptionCode</MudTd><MudTd DataLabel="Ledger ID">@context.LedgerEntryId</MudTd><MudTd DataLabel="Posted by">@context.CreatedBy</MudTd></RowTemplate></MudTable>
+                @if (Can(BillingPermissions.Adjust))
+                {<MudDivider Class="my-4" /><MudText Typo="Typo.h6">Post adjustment</MudText><MudStack Row="true" AlignItems="AlignItems.End" Spacing="2"><MudSelect T="PatientLedgerEntryType" @bind-Value="_adjustmentType" Label="Type" Variant="Variant.Outlined"><MudSelectItem Value="PatientLedgerEntryType.Credit">Credit</MudSelectItem><MudSelectItem Value="PatientLedgerEntryType.DebitAdjustment">Debit adjustment</MudSelectItem><MudSelectItem Value="PatientLedgerEntryType.WriteOff">Write-off</MudSelectItem><MudSelectItem Value="PatientLedgerEntryType.ContractualAdjustment">Contractual adjustment</MudSelectItem></MudSelect><MudNumericField T="decimal" @bind-Value="_adjustmentAmount" Label="Amount" Min="0.01m" Variant="Variant.Outlined" /><MudTextField @bind-Value="_reason" Label="Reason code" Variant="Variant.Outlined" /><MudButton OnClick="PostAdjustment" Color="Color.Warning" Variant="Variant.Filled">Post</MudButton></MudStack>}
+            </MudTabPanel>
+            <MudTabPanel Text="Statements">
+                @if (Can(BillingPermissions.Adjust)){<MudStack Row="true" AlignItems="AlignItems.End" Class="mb-3"><MudDatePicker @bind-Date="_dueDate" Label="Due date" /><MudButton OnClick="GenerateStatement" Variant="Variant.Filled" Color="Color.Primary">Generate statement</MudButton></MudStack>}
+                <MudTable Items="_account.Statements" Dense="true"><HeaderContent><MudTh>Date</MudTh><MudTh>Due</MudTh><MudTh>Status</MudTh><MudTh>Amount due</MudTh><MudTh></MudTh></HeaderContent><RowTemplate><MudTd>@context.StatementDate.ToString("d")</MudTd><MudTd>@context.DueDate.ToString("d")</MudTd><MudTd>@context.Status</MudTd><MudTd>@Money(context.AmountDue, context.Currency)</MudTd><MudTd>@if (context.Status == PatientStatementStatus.Ready && Can(BillingPermissions.Adjust)){<MudButton Size="Size.Small" OnClick="@(() => SendStatement(context.StatementId))">Send</MudButton>}</MudTd></RowTemplate></MudTable>
+            </MudTabPanel>
+            <MudTabPanel Text="Payments">
+                @if (Can(BillingPermissions.PostPayment)){<MudStack Row="true" AlignItems="AlignItems.End" Class="mb-3" Spacing="2"><MudSelect T="PatientPaymentMethod" @bind-Value="_method" Label="Method" Variant="Variant.Outlined"><MudSelectItem Value="PatientPaymentMethod.Cash">Cash</MudSelectItem><MudSelectItem Value="PatientPaymentMethod.Check">Check</MudSelectItem><MudSelectItem Value="PatientPaymentMethod.External">External</MudSelectItem></MudSelect><MudNumericField T="decimal" @bind-Value="_paymentAmount" Label="Amount" Min="0.01m" Variant="Variant.Outlined" /><MudTextField @bind-Value="_reference" Label="Receipt/check reference" Variant="Variant.Outlined" /><MudButton OnClick="RecordPayment" Variant="Variant.Filled" Color="Color.Success">Record payment</MudButton></MudStack>}
+                <MudTable Items="_account.Payments" Dense="true" Breakpoint="Breakpoint.Sm"><HeaderContent><MudTh>Date</MudTh><MudTh>Amount</MudTh><MudTh>Method</MudTh><MudTh>Processor</MudTh><MudTh>Status</MudTh><MudTh>Reference</MudTh><MudTh>Payment ID</MudTh><MudTh>Allocation</MudTh><MudTh>Active allocation IDs</MudTh><MudTh>Refund</MudTh><MudTh></MudTh></HeaderContent><RowTemplate><MudTd>@context.PaymentDate.ToString("g")</MudTd><MudTd>@Money(context.Amount, context.Currency)</MudTd><MudTd>@context.Method</MudTd><MudTd>@context.Processor</MudTd><MudTd>@context.Status</MudTd><MudTd>@context.SafeReference</MudTd><MudTd>@context.PaymentId</MudTd><MudTd>@Money(context.Allocated, context.Currency) / @Money(context.Amount, context.Currency)</MudTd><MudTd>@string.Join(", ", context.Allocations.Where(x => !x.UnappliedAt.HasValue).Select(x => x.PaymentAllocationId))</MudTd><MudTd>@context.RefundStatus</MudTd><MudTd>@if (context.CanReverse && Can(BillingPermissions.Adjust)){<MudButton Size="Size.Small" Color="Color.Error" OnClick="@(() => ReversePayment(context.PaymentId))">Reverse</MudButton>}</MudTd></RowTemplate></MudTable>
+                @if (Can(BillingPermissions.PostPayment)){<MudDivider Class="my-4" /><MudText Typo="Typo.h6">Apply payment to charge</MudText><MudStack Row="true" AlignItems="AlignItems.End"><MudTextField @bind-Value="_allocationPayment" Label="Payment ID" /><MudTextField @bind-Value="_allocationLedger" Label="Charge ledger ID" /><MudNumericField T="decimal" @bind-Value="_allocationAmount" Label="Amount" Min="0.01m" /><MudButton OnClick="AllocatePayment">Apply</MudButton></MudStack><MudText Typo="Typo.h6" Class="mt-4">Unapply allocation</MudText><MudStack Row="true" AlignItems="AlignItems.End"><MudTextField @bind-Value="_allocationId" Label="Allocation ID" /><MudTextField @bind-Value="_unapplyReason" Label="Reason code" /><MudButton OnClick="UnapplyPayment" Color="Color.Warning">Unapply</MudButton></MudStack><MudText Typo="Typo.caption">Unapply preserves the original allocation and its audit history.</MudText>}
+            </MudTabPanel>
+            <MudTabPanel Text="Insurance activity"><MudTable Items="_account.InsuranceActivity" Dense="true"><HeaderContent><MudTh>Date</MudTh><MudTh>Type</MudTh><MudTh>Amount</MudTh><MudTh>Category</MudTh></HeaderContent><RowTemplate><MudTd>@context.EffectiveDate.ToString("d")</MudTd><MudTd>@context.EntryType</MudTd><MudTd>@Money(context.Amount, context.Currency)</MudTd><MudTd>@context.DescriptionCode</MudTd></RowTemplate></MudTable></MudTabPanel>
+        </MudTabs>
+    }
 </MudContainer>
 
 @code {
-    private List<Invoice> _invoices = new();
-    private bool _loading = false;
-    private DateRange? _dateRange = new DateRange(DateTime.Today.AddMonths(-1), DateTime.Today);
-    private string? _errorMessage = null;
-
-    protected override async Task OnInitializedAsync()
-    {
-        await LoadInvoices();
-    }
-
-    private async Task LoadInvoices()
-    {
-        try
-        {
-            _loading = true;
-            _errorMessage = null;
-            
-            if (_dateRange?.Start != null && _dateRange?.End != null)
-            {
-                _invoices = await BillingService.GetInvoicesAsync(_dateRange.Start.Value, _dateRange.End.Value);
-            }
-        }
-        catch (Exception ex)
-        {
-            _errorMessage = $"Error loading invoices: {ex.Message}";
-            Snackbar.Add(_errorMessage, Severity.Error);
-        }
-        finally
-        {
-            _loading = false;
-        }
-    }
-
-    private void ViewInvoice(Invoice invoice)
-    {
-        Snackbar.Add($"View invoice: {invoice.InvoiceId}", Severity.Info);
-    }
-
-    private void ProcessPayment(Invoice invoice)
-    {
-        Snackbar.Add($"Process payment for invoice: {invoice.InvoiceId}", Severity.Info);
-    }
+    private ClaimsPrincipal _user = new(new ClaimsIdentity()); private StaffBillingDashboard? _dashboard; private StaffPatientBillingAccount? _account; private int _patientId = 1; private bool _busy;
+    private decimal _paymentAmount, _adjustmentAmount, _allocationAmount; private string _reference = "", _reason = "", _allocationPayment = "", _allocationLedger = "", _allocationId = "", _unapplyReason = "";
+    private PatientPaymentMethod _method = PatientPaymentMethod.Cash; private PatientLedgerEntryType _adjustmentType = PatientLedgerEntryType.Credit; private DateTime? _dueDate = DateTime.Today.AddDays(30);
+    protected override async Task OnInitializedAsync(){_user=(await AuthenticationState.GetAuthenticationStateAsync()).User;await RefreshDashboard();}
+    private bool Can(string permission)=>BillingPermissions.Has(_user,permission);
+    private IEnumerable<(string Label,decimal Amount)> DashboardMetrics()=>new[]{("Today collected",_dashboard!.TodayCollected),("Online payments",_dashboard.OnlinePayments),("Office payments",_dashboard.OfficePayments),("Failed online",_dashboard.FailedOnlinePayments),("Refunds",_dashboard.Refunds)};
+    private async Task RefreshDashboard()=>_dashboard=await BillingAdminService.GetDashboardAsync(_user,DateTime.UtcNow);
+    private async Task LoadAccount()=>await Run(async()=>_account=await BillingAdminService.GetAccountAsync(_user,_patientId));
+    private async Task RecordPayment()=>await Run(async()=>{await BillingAdminService.RecordPaymentAsync(_user,new(_patientId,new Money(_paymentAmount),_method,_reference,DateTime.UtcNow));await Reload();});
+    private async Task PostAdjustment()=>await Run(async()=>{await BillingAdminService.PostAdjustmentAsync(_user,new(_patientId,new Money(_adjustmentAmount),_adjustmentType,_reason,DateTime.UtcNow));await Reload();});
+    private async Task ReversePayment(Guid id)=>await Run(async()=>{await BillingAdminService.ReverseManualPaymentAsync(_user,id,string.IsNullOrWhiteSpace(_reason)?"staff-correction":_reason);await Reload();});
+    private async Task GenerateStatement()=>await Run(async()=>{var due=(_dueDate??DateTime.Today.AddDays(30)).Date;await BillingAdminService.GenerateStatementAsync(_user,_patientId,DateTime.SpecifyKind(due,DateTimeKind.Utc));await Reload();});
+    private async Task SendStatement(Guid id)=>await Run(async()=>{await BillingAdminService.SendStatementAsync(_user,id);await Reload();});
+    private async Task AllocatePayment()=>await Run(async()=>{await BillingAdminService.AllocateAsync(_user,RequiredGuid(_allocationPayment,"payment"),RequiredGuid(_allocationLedger,"charge ledger"),new Money(_allocationAmount));await Reload();});
+    private async Task UnapplyPayment()=>await Run(async()=>{await BillingAdminService.UnapplyAsync(_user,RequiredGuid(_allocationId,"allocation"),_unapplyReason);await Reload();});
+    private async Task Reload(){_account=await BillingAdminService.GetAccountAsync(_user,_patientId);await RefreshDashboard();}
+    private async Task Run(Func<Task> action){try{_busy=true;await action();Snackbar.Add("Billing operation completed.",Severity.Success);}catch(Exception ex) when(ex is ArgumentException or InvalidOperationException or KeyNotFoundException or UnauthorizedAccessException){Snackbar.Add(ex.Message,Severity.Error);}finally{_busy=false;}}
+    private static Guid RequiredGuid(string value,string label)=>Guid.TryParse(value,out var id)?id:throw new ArgumentException($"Enter a valid {label} ID.");
+    private static string Money(decimal amount,string currency)=>$"{amount:N2} {currency}";
 }
