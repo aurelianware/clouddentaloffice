@@ -391,7 +391,7 @@ resource intakeService 'Microsoft.App/containerApps@2023-05-01' = {
         { name: 'servicebus-send', value: serviceBusSendConnection }
         { name: 'booking-key', value: publicBookingApiKey }
         { name: 'scheduling-service-api-key', value: publicSchedulingServiceApiKey }
-      ], empty(zocdocWebhookSecret) ? [] : [
+      ], empty(zocdocWebhookIntegrationId) || empty(zocdocWebhookSecret) ? [] : [
         { name: 'zocdoc-webhook-secret', value: zocdocWebhookSecret }
       ], empty(integrationInboxAdminApiKey) ? [] : [
         { name: 'inbox-admin-key', value: integrationInboxAdminApiKey }
