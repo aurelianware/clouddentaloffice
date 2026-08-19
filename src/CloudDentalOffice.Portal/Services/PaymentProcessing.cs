@@ -14,7 +14,7 @@ public sealed record PaymentSession(string InternalPaymentReference, string Exte
     string? ExternalPaymentId, Uri? CheckoutUrl, string? ClientToken, DateTime? ExpiresAt, PaymentStatus Status);
 
 public sealed record PaymentRefundRequest(string TenantId, Guid PaymentId, Money Amount,
-    string InternalRefundReference);
+    string InternalRefundReference, string Reason = "requested_by_customer", string RequestedBy = "system");
 
 public sealed record PaymentRefundResult(string InternalRefundReference, string? ExternalRefundId,
     PaymentStatus Status);
@@ -52,6 +52,8 @@ public interface IPaymentCheckoutService
 public interface IPaymentRefundService
 {
     Task<PaymentRefundResult> RefundAsync(PaymentRefundRequest request, CancellationToken cancellationToken = default);
+    Task<PaymentRefundResult> RetryAsync(string tenantId, Guid refundId, string requestedBy,
+        CancellationToken cancellationToken = default);
 }
 
 public interface IPaymentReconciliationService
@@ -191,24 +193,112 @@ public sealed class PaymentCheckoutService(CloudDentalDbContext db, IPaymentProc
 }
 
 public sealed class PaymentRefundService(CloudDentalDbContext db, IPaymentProcessorResolver resolver,
-    ITenantProvider tenantProvider) : IPaymentRefundService
+    ITenantProvider tenantProvider, TimeProvider clock) : IPaymentRefundService
 {
+    public PaymentRefundService(CloudDentalDbContext db, IPaymentProcessorResolver resolver,
+        ITenantProvider tenantProvider) : this(db, resolver, tenantProvider, TimeProvider.System) { }
     public async Task<PaymentRefundResult> RefundAsync(PaymentRefundRequest request,
         CancellationToken cancellationToken = default)
     {
         PaymentTenantGuard.Ensure(tenantProvider, request.TenantId);
         PaymentCheckoutService.ValidateReference(request.InternalRefundReference, nameof(request.InternalRefundReference));
-        var payment = await db.PatientPayments.IgnoreQueryFilters().AsNoTracking().SingleOrDefaultAsync(x =>
+        ValidateActorAndReason(request.RequestedBy, request.Reason);
+        var payment = await db.PatientPayments.IgnoreQueryFilters().SingleOrDefaultAsync(x =>
             x.TenantId == request.TenantId && x.PaymentId == request.PaymentId, cancellationToken)
             ?? throw new KeyNotFoundException("Payment was not found for the tenant.");
         if (payment.Status != PaymentStatus.Succeeded || string.IsNullOrWhiteSpace(payment.ExternalPaymentId))
             throw new InvalidOperationException("Only a succeeded processor payment can be refunded.");
         if (request.Amount.Amount <= 0 || request.Amount.Amount > payment.Amount || request.Amount.Currency != payment.Currency)
             throw new ArgumentOutOfRangeException(nameof(request.Amount));
+        await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
+        var reserved = await db.PatientRefunds.IgnoreQueryFilters().Where(x => x.TenantId == request.TenantId &&
+                x.PaymentId == request.PaymentId && x.Status != PatientRefundStatus.Failed)
+            .Select(x => x.Amount).ToListAsync(cancellationToken);
+        if (reserved.Sum() + request.Amount.Amount > payment.Amount)
+            throw new InvalidOperationException("Cumulative refunds cannot exceed the settled payment amount.");
+        if (await db.PatientRefunds.IgnoreQueryFilters().AnyAsync(x => x.TenantId == request.TenantId &&
+            x.InternalRefundReference == request.InternalRefundReference, cancellationToken))
+            throw new InvalidOperationException("The refund reference already exists.");
         var (processor, configuration) = await resolver.ResolveAsync(request.TenantId, cancellationToken);
         if (processor.Provider != payment.Processor)
             throw new PaymentProcessorUnavailableException("The original payment processor is not the enabled processor.");
-        return await processor.RefundAsync(configuration, request, payment.ExternalPaymentId, cancellationToken);
+        var refund = new PatientRefund
+        {
+            RefundId = Guid.NewGuid(), TenantId = request.TenantId, PaymentId = payment.PaymentId,
+            Amount = request.Amount.Amount, Currency = request.Amount.Currency, Reason = request.Reason.Trim(),
+            Processor = payment.Processor, InternalRefundReference = request.InternalRefundReference,
+            Status = PatientRefundStatus.Requested, RequestedBy = request.RequestedBy.Trim(),
+            RequestedAt = clock.GetUtcNow().UtcDateTime
+        };
+        db.PatientRefunds.Add(refund);
+        db.FinancialAuditEvents.Add(new FinancialAuditEvent
+        {
+            Id = Guid.NewGuid(), TenantId = request.TenantId, Action = "RefundRequested",
+            EntityType = nameof(PatientRefund), EntityId = refund.RefundId.ToString("N"),
+            Actor = request.RequestedBy.Trim(), ReasonCode = request.Reason.Trim(), CreatedAt = refund.RequestedAt
+        });
+        await db.SaveChangesAsync(cancellationToken); // Durable CDO intent precedes the remote call.
+        await transaction.CommitAsync(cancellationToken);
+        return await SubmitAsync(refund, payment, configuration, processor, request, cancellationToken);
+    }
+
+    public async Task<PaymentRefundResult> RetryAsync(string tenantId, Guid refundId, string requestedBy,
+        CancellationToken cancellationToken = default)
+    {
+        PaymentTenantGuard.Ensure(tenantProvider, tenantId);
+        ValidateActorAndReason(requestedBy, "retry");
+        var refund = await db.PatientRefunds.IgnoreQueryFilters().SingleOrDefaultAsync(x =>
+            x.TenantId == tenantId && x.RefundId == refundId, cancellationToken)
+            ?? throw new KeyNotFoundException("Refund was not found for the tenant.");
+        if (refund.Status != PatientRefundStatus.Failed || !string.IsNullOrWhiteSpace(refund.ExternalRefundId))
+            throw new InvalidOperationException("Only a failed refund without a confirmed Stripe refund can be retried.");
+        var payment = await db.PatientPayments.IgnoreQueryFilters().SingleAsync(x =>
+            x.TenantId == tenantId && x.PaymentId == refund.PaymentId, cancellationToken);
+        var (processor, configuration) = await resolver.ResolveAsync(tenantId, cancellationToken);
+        if (processor.Provider != refund.Processor || string.IsNullOrWhiteSpace(payment.ExternalPaymentId))
+            throw new PaymentProcessorUnavailableException("The original payment processor is unavailable.");
+        refund.Status = PatientRefundStatus.Requested;
+        refund.FailureCode = null;
+        db.FinancialAuditEvents.Add(new FinancialAuditEvent
+        {
+            Id = Guid.NewGuid(), TenantId = tenantId, Action = "RefundRetried",
+            EntityType = nameof(PatientRefund), EntityId = refund.RefundId.ToString("N"),
+            Actor = requestedBy.Trim(), ReasonCode = "retry", CreatedAt = clock.GetUtcNow().UtcDateTime
+        });
+        await db.SaveChangesAsync(cancellationToken);
+        var request = new PaymentRefundRequest(tenantId, payment.PaymentId,
+            new Money(refund.Amount, refund.Currency), refund.InternalRefundReference, refund.Reason, requestedBy);
+        return await SubmitAsync(refund, payment, configuration, processor, request, cancellationToken);
+    }
+
+    private async Task<PaymentRefundResult> SubmitAsync(PatientRefund refund, PatientPayment payment,
+        PaymentProcessorConfiguration configuration, IPaymentProcessor processor, PaymentRefundRequest request,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var result = await processor.RefundAsync(configuration, request, payment.ExternalPaymentId!, cancellationToken);
+            refund.ExternalRefundId = PaymentCheckoutService.BoundedExternal(result.ExternalRefundId, nameof(result.ExternalRefundId));
+            refund.Status = result.Status == PaymentStatus.Failed ? PatientRefundStatus.Failed : PatientRefundStatus.Pending;
+            refund.FailureCode = result.Status == PaymentStatus.Failed ? "stripe-refund-rejected" : null;
+            await db.SaveChangesAsync(cancellationToken);
+            return result;
+        }
+        catch (Exception ex) when (ex is StripeConnectException or PaymentProcessorUnavailableException or HttpRequestException)
+        {
+            refund.Status = PatientRefundStatus.Failed;
+            refund.FailureCode = "stripe-refund-request-failed";
+            await db.SaveChangesAsync(CancellationToken.None);
+            throw;
+        }
+    }
+
+    private static void ValidateActorAndReason(string actor, string reason)
+    {
+        if (string.IsNullOrWhiteSpace(actor) || actor.Trim().Length > 100)
+            throw new ArgumentException("A bounded refund actor is required.");
+        if (string.IsNullOrWhiteSpace(reason) || reason.Trim().Length > 64)
+            throw new ArgumentException("A bounded refund reason is required.");
     }
 }
 

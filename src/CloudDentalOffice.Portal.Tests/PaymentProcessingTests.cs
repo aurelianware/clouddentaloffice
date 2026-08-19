@@ -170,6 +170,32 @@ public sealed class PaymentProcessingTests : IDisposable
         Assert.Equal(PaymentStatus.Pending, result.Status);
         Assert.Equal("refund-1", result.ExternalRefundId);
         Assert.Equal(1, _processor.RefundCalls);
+        Assert.Equal(PatientRefundStatus.Pending,
+            (await _db.PatientRefunds.IgnoreQueryFilters().SingleAsync()).Status);
+        Assert.DoesNotContain(_db.PatientLedgerEntries, x => x.EntryType == PatientLedgerEntryType.Refund);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => refunds.RefundAsync(new PaymentRefundRequest(
+            "tenant-a", payment.PaymentId, new Money(31m), "refund-2")));
+    }
+
+    [Fact]
+    public async Task Transient_refund_transport_failure_is_durable_and_retryable()
+    {
+        await SeedAccount();
+        await Checkout().CreateAsync(Request(50m, "payment-1"));
+        var payment = await Reconciliation().ReconcileAsync(Event("event-1", "external-payment-1", "payment-1", 50m));
+        var refunds = new PaymentRefundService(_db, _resolver, _tenant, _clock);
+        _processor.RefundFailure = new HttpRequestException("temporary transport failure");
+        await Assert.ThrowsAsync<HttpRequestException>(() => refunds.RefundAsync(new PaymentRefundRequest(
+            "tenant-a", payment.PaymentId, new Money(20m), "refund-retry", RequestedBy: "staff")));
+        var refund = await _db.PatientRefunds.IgnoreQueryFilters().SingleAsync();
+        Assert.Equal(PatientRefundStatus.Failed, refund.Status);
+        Assert.Null(refund.ExternalRefundId);
+
+        _processor.RefundFailure = null;
+        var retried = await refunds.RetryAsync("tenant-a", refund.RefundId, "staff");
+        Assert.Equal(PaymentStatus.Pending, retried.Status);
+        Assert.Equal(PatientRefundStatus.Pending,
+            (await _db.PatientRefunds.IgnoreQueryFilters().SingleAsync()).Status);
     }
 
     [Fact]
@@ -239,6 +265,7 @@ public sealed class PaymentProcessingTests : IDisposable
         public PaymentProcessorProvider Provider => PaymentProcessorProvider.Stripe;
         public int SessionCalls { get; private set; }
         public int RefundCalls { get; private set; }
+        public Exception? RefundFailure { get; set; }
         public Task<PaymentSession> CreateSessionAsync(PaymentProcessorConfiguration configuration, PaymentRequest request,
             CancellationToken cancellationToken = default)
         {
@@ -251,6 +278,7 @@ public sealed class PaymentProcessingTests : IDisposable
             PaymentRefundRequest request, string externalPaymentId, CancellationToken cancellationToken = default)
         {
             RefundCalls++;
+            if (RefundFailure is not null) throw RefundFailure;
             return Task.FromResult(new PaymentRefundResult(request.InternalRefundReference, "refund-1", PaymentStatus.Pending));
         }
     }

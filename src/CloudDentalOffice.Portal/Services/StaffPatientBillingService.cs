@@ -49,11 +49,16 @@ public interface IStaffPatientBillingService
     Task UnapplyAsync(ClaimsPrincipal user, Guid allocationId, string reasonCode, CancellationToken cancellationToken = default);
     Task<PatientStatement> GenerateStatementAsync(ClaimsPrincipal user, int patientId, DateTime dueDate, CancellationToken cancellationToken = default);
     Task<PatientStatement> SendStatementAsync(ClaimsPrincipal user, Guid statementId, CancellationToken cancellationToken = default);
+    Task<PaymentRefundResult> RequestRefundAsync(ClaimsPrincipal user, Guid paymentId, Money amount,
+        string reason, CancellationToken cancellationToken = default);
+    Task<StripeReconciliationSummary> ReconcileStripeAsync(ClaimsPrincipal user, DateTime since,
+        CancellationToken cancellationToken = default);
 }
 
 public sealed class StaffPatientBillingService(CloudDentalDbContext db, IPatientAccountService accounts,
     IPatientStatementService statements, IPaymentAllocationService allocations, ITenantProvider tenantProvider,
-    TimeProvider clock) : IStaffPatientBillingService
+    TimeProvider clock, IPaymentRefundService? refunds = null,
+    IStripePaymentReconciliationService? stripeReconciliation = null) : IStaffPatientBillingService
 {
     public async Task<StaffBillingDashboard> GetDashboardAsync(ClaimsPrincipal user, DateTime date,
         CancellationToken cancellationToken = default)
@@ -88,11 +93,13 @@ public sealed class StaffPatientBillingService(CloudDentalDbContext db, IPatient
             ?? throw new KeyNotFoundException("Patient account was not found for the tenant.");
         var ledger = await accounts.GetLedgerAsync(tenant, patientId, cancellationToken);
         var patientStatements = await statements.ListAsync(tenant, patientId, cancellationToken);
-        var paymentRows = await db.PatientPayments.IgnoreQueryFilters().AsNoTracking().Where(x =>
-                x.TenantId == tenant && x.PatientAccountId == summary.AccountId)
-            .Include(x => x.Allocations).OrderByDescending(x => x.PaymentDate).ToListAsync(cancellationToken);
-        var refunds = ledger.Where(x => x.EntryType == PatientLedgerEntryType.Refund)
-            .Select(x => x.SourceId).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var accountPayments = db.PatientPayments.IgnoreQueryFilters().Where(x =>
+            x.TenantId == tenant && x.PatientAccountId == summary.AccountId);
+        var paymentRows = await accountPayments.AsNoTracking().Include(x => x.Allocations)
+            .OrderByDescending(x => x.PaymentDate).ToListAsync(cancellationToken);
+        var refundRows = await db.PatientRefunds.IgnoreQueryFilters().AsNoTracking().Where(x =>
+            x.TenantId == tenant && accountPayments.Select(p => p.PaymentId).Contains(x.PaymentId))
+            .ToListAsync(cancellationToken);
         var paymentModels = paymentRows.Select(x =>
         {
             var active = x.Allocations.Where(a => !a.UnappliedAt.HasValue).ToList();
@@ -100,7 +107,7 @@ public sealed class StaffPatientBillingService(CloudDentalDbContext db, IPatient
             var safe = SafeReference(x.ExternalPaymentId ?? x.InternalPaymentReference);
             return new StaffBillingPayment(x.PaymentId, x.Amount, x.Currency, x.PaymentDate, x.Method, x.Processor,
                 x.Status, safe, allocated, Math.Max(0, x.Amount - allocated),
-                refunds.Contains(x.PaymentId.ToString("N")) ? "Refunded" : "None", x.LedgerEntryId,
+                RefundLabel(refundRows.Where(r => r.PaymentId == x.PaymentId)), x.LedgerEntryId,
                 x.Processor != PaymentProcessorProvider.Stripe && x.Status == PaymentStatus.Succeeded && !x.ReversedAt.HasValue,
                 x.Allocations.OrderByDescending(a => a.CreatedAt).ToList());
         }).ToList();
@@ -260,6 +267,24 @@ public sealed class StaffPatientBillingService(CloudDentalDbContext db, IPatient
         return statement;
     }
 
+    public Task<PaymentRefundResult> RequestRefundAsync(ClaimsPrincipal user, Guid paymentId, Money amount,
+        string reason, CancellationToken cancellationToken = default)
+    {
+        var context = Context(user, BillingPermissions.Refund);
+        ValidateReason(reason);
+        return (refunds ?? throw new InvalidOperationException("Refund processing is unavailable.")).RefundAsync(
+            new PaymentRefundRequest(context.Tenant, paymentId, amount,
+            $"refund_{Guid.NewGuid():N}", reason.Trim(), context.Actor), cancellationToken);
+    }
+
+    public Task<StripeReconciliationSummary> ReconcileStripeAsync(ClaimsPrincipal user, DateTime since,
+        CancellationToken cancellationToken = default)
+    {
+        var context = Context(user, BillingPermissions.ConfigurePayments);
+        return (stripeReconciliation ?? throw new InvalidOperationException("Stripe reconciliation is unavailable."))
+            .ReconcileAsync(context.Tenant, since, cancellationToken);
+    }
+
     private BillingContext Context(ClaimsPrincipal user, string permission)
     {
         if (!BillingPermissions.Has(user, permission)) throw new UnauthorizedAccessException("Billing permission is required.");
@@ -279,6 +304,13 @@ public sealed class StaffPatientBillingService(CloudDentalDbContext db, IPatient
             Action = action, EntityType = entityType, EntityId = entityId, Actor = context.Actor,
             ReasonCode = reason?.Trim(), CreatedAt = clock.GetUtcNow().UtcDateTime });
     private static string SafeReference(string value) => value.Length <= 8 ? value : value[^8..];
+    private static string RefundLabel(IEnumerable<PatientRefund> values)
+    {
+        var rows = values.ToList();
+        if (rows.Count == 0) return "None";
+        return string.Join(", ", rows.OrderByDescending(x => x.RequestedAt).Select(x =>
+            $"{x.Amount:N2} {x.Currency} {x.Status}"));
+    }
     private static void ValidateReason(string value)
     {
         if (string.IsNullOrWhiteSpace(value) || value.Trim().Length > 64)

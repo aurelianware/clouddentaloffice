@@ -176,8 +176,8 @@ public sealed class StripePaymentWebhookProcessor(CloudDentalDbContext db, TimeP
         await transaction.CommitAsync(cancellationToken);
         metrics.Succeeded.Add(1);
         metrics.PostingLatency.Record(Math.Max(0, (now - webhook.OccurredAt).TotalSeconds));
-        logger.LogInformation("Stripe event {ExternalEventId} posted payment {PaymentId} for tenant {TenantId}.",
-            webhook.ExternalEventId, payment.PaymentId, webhook.TenantId);
+        logger.LogInformation("Stripe event {ExternalEventId} posted payment {PaymentId}.",
+            webhook.ExternalEventId, payment.PaymentId);
     }
 
     private async Task AllocateStatementAsync(PatientPayment payment, DateTime now, CancellationToken cancellationToken)
@@ -295,14 +295,19 @@ public sealed class StripePaymentWebhookConsumer(IServiceProvider services, Serv
 
     private async Task ProcessAsync(ProcessMessageEventArgs args)
     {
-        if (args.Message.Subject != nameof(StripePaymentWebhookEvent))
+        if (args.Message.Subject is not (nameof(StripePaymentWebhookEvent) or nameof(StripeRefundWebhookEvent)))
         {
             metrics.DeadLetters.Add(1);
             await args.DeadLetterMessageAsync(args.Message, "UnexpectedSubject");
             return;
         }
-        StripePaymentWebhookEvent? webhook;
-        try { webhook = JsonSerializer.Deserialize<StripePaymentWebhookEvent>(args.Message.Body.ToString()); }
+        object? webhook;
+        try
+        {
+            webhook = args.Message.Subject == nameof(StripeRefundWebhookEvent)
+                ? JsonSerializer.Deserialize<StripeRefundWebhookEvent>(args.Message.Body.ToString())
+                : JsonSerializer.Deserialize<StripePaymentWebhookEvent>(args.Message.Body.ToString());
+        }
         catch (JsonException) { webhook = null; }
         if (webhook is null)
         {
@@ -313,25 +318,36 @@ public sealed class StripePaymentWebhookConsumer(IServiceProvider services, Serv
         await using var scope = services.CreateAsyncScope();
         try
         {
-            await scope.ServiceProvider.GetRequiredService<IStripePaymentWebhookProcessor>()
-                .ProcessAsync(webhook, args.CancellationToken);
+            if (webhook is StripeRefundWebhookEvent refund)
+                await scope.ServiceProvider.GetRequiredService<IStripeRefundWebhookProcessor>()
+                    .ProcessAsync(refund, args.CancellationToken);
+            else
+                await scope.ServiceProvider.GetRequiredService<IStripePaymentWebhookProcessor>()
+                    .ProcessAsync((StripePaymentWebhookEvent)webhook, args.CancellationToken);
             await args.CompleteMessageAsync(args.Message, args.CancellationToken);
         }
         catch (StripeWebhookPermanentException ex)
         {
             metrics.DeadLetters.Add(1);
             logger.LogWarning("Stripe event {ExternalEventId} was rejected ({FailureKind}).",
-                webhook.ExternalEventId, ex.GetType().Name);
+                ExternalEventId(webhook), ex.GetType().Name);
             await args.DeadLetterMessageAsync(args.Message, "PermanentValidationFailure",
                 cancellationToken: args.CancellationToken);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             logger.LogWarning("Stripe event {ExternalEventId} processing will retry ({FailureKind}).",
-                webhook.ExternalEventId, ex.GetType().Name);
+                ExternalEventId(webhook), ex.GetType().Name);
             await args.AbandonMessageAsync(args.Message, cancellationToken: args.CancellationToken);
         }
     }
+
+    private static string ExternalEventId(object webhook) => webhook switch
+    {
+        StripePaymentWebhookEvent payment => payment.ExternalEventId,
+        StripeRefundWebhookEvent refund => refund.ExternalEventId,
+        _ => "unknown"
+    };
 
     public override async Task StopAsync(CancellationToken cancellationToken)
     {

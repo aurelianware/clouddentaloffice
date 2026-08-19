@@ -11,6 +11,13 @@ public enum PaymentProcessorEventStatus { Received, Processed, Failed, Conflict 
 public enum PaymentProcessorOnboardingStatus { NotStarted, Pending, Enabled, Restricted, Disabled }
 public enum PatientPaymentSelection { FullBalance, StatementBalance, Partial }
 public enum PatientPaymentAttemptStatus { Pending, SessionCreated, Failed, Completed, Cancelled, ReviewRequired }
+public enum PatientRefundStatus { Requested, Pending, Succeeded, Failed, ReviewRequired }
+public enum PaymentReconciliationIssueType
+{
+    MissingStripePayment, UnknownStripePayment, AmountMismatch, CurrencyMismatch,
+    PendingTooLong, RefundMismatch, DisconnectedAccount
+}
+public enum PaymentReconciliationIssueStatus { ReviewRequired, Resolved }
 
 [Table("PatientPayments")]
 public sealed class PatientPayment : ITenantEntity
@@ -53,6 +60,42 @@ public sealed class PatientPaymentAllocation : ITenantEntity
     [MaxLength(100)] public string? UnappliedBy { get; set; }
     [MaxLength(64)] public string? UnapplyReasonCode { get; set; }
     public PatientPayment Payment { get; set; } = null!;
+}
+
+[Table("PatientRefunds")]
+public sealed class PatientRefund : ITenantEntity
+{
+    [Key] public Guid RefundId { get; set; }
+    [Required, MaxLength(64)] public string TenantId { get; set; } = string.Empty;
+    public Guid PaymentId { get; set; }
+    [Column(TypeName = "decimal(18,2)")] public decimal Amount { get; set; }
+    [Required, MaxLength(3)] public string Currency { get; set; } = "USD";
+    [Required, MaxLength(64)] public string Reason { get; set; } = string.Empty;
+    public PaymentProcessorProvider Processor { get; set; }
+    [Required, MaxLength(128)] public string InternalRefundReference { get; set; } = string.Empty;
+    [MaxLength(128)] public string? ExternalRefundId { get; set; }
+    public PatientRefundStatus Status { get; set; }
+    [MaxLength(64)] public string? FailureCode { get; set; }
+    [Required, MaxLength(100)] public string RequestedBy { get; set; } = string.Empty;
+    public DateTime RequestedAt { get; set; }
+    public DateTime? CompletedAt { get; set; }
+    public Guid? LedgerEntryId { get; set; }
+    public PatientPayment Payment { get; set; } = null!;
+}
+
+[Table("PaymentReconciliationIssues")]
+public sealed class PaymentReconciliationIssue : ITenantEntity
+{
+    [Key] public Guid Id { get; set; }
+    [Required, MaxLength(64)] public string TenantId { get; set; } = string.Empty;
+    public PaymentReconciliationIssueType IssueType { get; set; }
+    public PaymentReconciliationIssueStatus Status { get; set; }
+    public Guid? PaymentId { get; set; }
+    public Guid? RefundId { get; set; }
+    [MaxLength(128)] public string? ExternalReference { get; set; }
+    [Required, MaxLength(64)] public string DiagnosticCode { get; set; } = string.Empty;
+    public DateTime DetectedAt { get; set; }
+    public DateTime? ResolvedAt { get; set; }
 }
 
 [Table("FinancialAuditEvents")]

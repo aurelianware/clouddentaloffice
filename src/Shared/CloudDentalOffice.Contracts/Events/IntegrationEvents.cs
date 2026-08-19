@@ -102,6 +102,20 @@ public record StripePaymentWebhookEvent(
     string PaymentStatus,
     bool LiveMode) : IntegrationEvent;
 
+/// <summary>Verified, PHI-free Stripe Connect refund event accepted by IntakeService.</summary>
+public record StripeRefundWebhookEvent(
+    string TenantId,
+    string ExternalEventId,
+    string EventType,
+    string ConnectedAccountId,
+    string ExternalRefundId,
+    string? PaymentIntentId,
+    string? RefundReference,
+    long AmountMinor,
+    string Currency,
+    string RefundStatus,
+    bool LiveMode) : IntegrationEvent;
+
 // ── Claims Events ──
 public record ClaimCreatedEvent(Guid ClaimId, Guid PatientId, decimal TotalCharge) : IntegrationEvent;
 public record ClaimSubmittedEvent(Guid ClaimId, string? ClaimControlNumber, string SubmissionMethod) : IntegrationEvent;
