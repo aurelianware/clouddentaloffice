@@ -1,11 +1,22 @@
 using CloudDentalOffice.Contracts.Events;
 using CloudDentalOffice.Contracts.Scheduling;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
 using System.Data;
 using System.Text.Json;
 
-public sealed class BookingRequestWorkflow(SchedulingDbContext db)
+public sealed class BookingRequestWorkflow
 {
+    private readonly SchedulingDbContext db;
+    private readonly IPatientAcquisitionService acquisition;
+    private readonly ILogger<BookingRequestWorkflow> logger;
+    public BookingRequestWorkflow(SchedulingDbContext db, IPatientAcquisitionService? acquisition = null,
+        ILogger<BookingRequestWorkflow>? logger = null)
+    {
+        this.db = db;
+        this.acquisition = acquisition ?? new PatientAcquisitionService(db, TimeProvider.System);
+        this.logger = logger ?? NullLogger<BookingRequestWorkflow>.Instance;
+    }
     public async Task<BookingRequest> MatchPatientAsync(Guid id, string tenantId, MatchBookingPatientRequest match, CancellationToken cancellationToken = default)
     {
         if (match.PatientId <= 0) throw new ArgumentException("A real patient is required.");
@@ -65,7 +76,17 @@ public sealed class BookingRequestWorkflow(SchedulingDbContext db)
             RequestedAppointmentTypeId = TrimTo(evt.RequestedAppointmentTypeId, 128),
             SubmittedAtUtc = SchedulingTime.NormalizeUtc(evt.SubmittedAtUtc ?? evt.OccurredAt)
         });
-        try { await db.SaveChangesAsync(cancellationToken); return true; }
+        try
+        {
+            await db.SaveChangesAsync(cancellationToken);
+            var request = await db.BookingRequests.SingleAsync(r => r.TenantId == evt.TenantId && r.EventId == evt.EventId, cancellationToken);
+            try { await acquisition.RecordBookingRequestAsync(request, cancellationToken); }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                logger.LogWarning(ex, "Booking request {BookingRequestId} was saved, but acquisition analytics could not be recorded.", request.Id);
+            }
+            return true;
+        }
         catch (DbUpdateException)
         {
             db.ChangeTracker.Clear();
@@ -141,6 +162,11 @@ public sealed class BookingRequestWorkflow(SchedulingDbContext db)
         request.UpdatedAt = DateTime.UtcNow;
         await db.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
+        try { await acquisition.RecordScheduledAsync(request, appointment, cancellationToken); }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning(ex, "Appointment {AppointmentId} was scheduled, but acquisition analytics could not be recorded.", appointment.Id);
+        }
         return (request, appointment, true);
     }
 

@@ -351,6 +351,12 @@ builder.Services.AddHttpClient<ISchedulingIntegrationAdminClient, SchedulingInte
     client.DefaultRequestHeaders.Add("Accept", "application/json");
     client.Timeout = TimeSpan.FromSeconds(30);
 }).AddHttpMessageHandler<SchedulingAdminAuthorizationHandler>();
+builder.Services.AddHttpClient<IPatientAcquisitionClient, PatientAcquisitionClient>(client =>
+{
+    client.BaseAddress = new Uri(visionGatewayUrl);
+    client.DefaultRequestHeaders.Add("Accept", "application/json");
+    client.Timeout = TimeSpan.FromSeconds(30);
+}).AddHttpMessageHandler<SchedulingAdminAuthorizationHandler>();
 
 // Remaining services still use monolith mode (migrate one at a time)
 builder.Services.AddScoped<IClaimService, ClaimServiceImpl>();

@@ -80,6 +80,14 @@ builder.Services.AddRateLimiter(options =>
         var clientKey = httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
         return RateLimitPartition.GetFixedWindowLimiter(clientKey, _ => PublicBookingRateLimits.Create());
     });
+    options.AddPolicy("public-acquisition", httpContext =>
+    {
+        var clientKey = httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+        return RateLimitPartition.GetFixedWindowLimiter(clientKey, _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = 120, Window = TimeSpan.FromMinutes(1), QueueLimit = 0
+        });
+    });
     options.AddPolicy("zocdoc-webhooks", httpContext =>
     {
         var clientKey = httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
@@ -288,6 +296,22 @@ app.MapPost("/api/internal/integration-inbox/{id:guid}/retry", async (
     return await inbox.RequeueAsync(tenantId, id, cancellationToken)
         ? Results.Accepted() : Results.NotFound();
 }).RequireRateLimiting("integration-inbox-admin").WithTags("IntegrationInbox");
+
+app.MapPost("/api/public/v1/acquisition-events", async (
+    PublicAcquisitionEvent input, IConfiguration config, IPublicSchedulingClient scheduling, HttpContext http) =>
+{
+    var section = config.GetSection("PublicBooking");
+    if (!section.GetValue("Enabled", false)) return Results.NotFound();
+    var tenantId = IntakeAuth.ResolveTenant(http, section);
+    if (tenantId is null) return Results.Unauthorized();
+    try
+    {
+        var accepted = await scheduling.RecordAcquisitionAsync(tenantId, input, http.RequestAborted);
+        return accepted ? Results.Accepted() : Results.Ok(new { accepted = false });
+    }
+    catch (HttpRequestException) { return Results.Problem(title: "Acquisition measurement is temporarily unavailable.", statusCode: 503); }
+}).WithMetadata(new Microsoft.AspNetCore.Mvc.RequestSizeLimitAttribute(4096))
+  .RequireRateLimiting("public-acquisition").WithTags("PatientAcquisition");
 
 app.MapPost("/api/public/booking-requests", async (
     PublicBookingRequest request,
