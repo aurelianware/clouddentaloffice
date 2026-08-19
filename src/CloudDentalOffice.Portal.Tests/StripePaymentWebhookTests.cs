@@ -80,6 +80,25 @@ public sealed class StripePaymentWebhookTests : IDisposable
             (await _db.PaymentProcessorEvents.IgnoreQueryFilters().SingleAsync()).Status);
     }
 
+    [Theory]
+    [InlineData("USD", 5000)]
+    [InlineData("JPY", 50)]
+    [InlineData("KWD", 50000)]
+    public async Task Stripe_minor_units_use_the_currency_exponent(string currency, long amountMinor)
+    {
+        await _db.PatientPayments.IgnoreQueryFilters().Where(x => x.PaymentId == _paymentId)
+            .ExecuteUpdateAsync(x => x.SetProperty(p => p.Currency, currency));
+        await _db.PatientPaymentAttempts.IgnoreQueryFilters().Where(x => x.Id == _attemptId)
+            .ExecuteUpdateAsync(x => x.SetProperty(p => p.Currency, currency));
+        _db.ChangeTracker.Clear();
+
+        await Service().ProcessAsync(Event() with { Currency = currency, AmountMinor = amountMinor });
+
+        Assert.Equal(PaymentStatus.Succeeded,
+            (await _db.PatientPayments.IgnoreQueryFilters().SingleAsync()).Status);
+        Assert.Single(await _db.PatientLedgerEntries.IgnoreQueryFilters().ToListAsync());
+    }
+
     [Fact]
     public async Task Async_failure_marks_payment_failed_without_posting()
     {

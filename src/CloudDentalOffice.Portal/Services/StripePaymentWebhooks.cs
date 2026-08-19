@@ -56,6 +56,24 @@ public sealed class StripePaymentWebhookProcessor(CloudDentalDbContext db, TimeP
                 x.TenantId == webhook.TenantId && x.Processor == PaymentProcessorProvider.Stripe &&
                 x.ExternalEventId == webhook.ExternalEventId, cancellationToken)) return;
 
+        try
+        {
+            await ProcessNewAsync(webhook, cancellationToken);
+        }
+        catch (DbUpdateException)
+        {
+            // Another consumer can commit the same Stripe event after the optimistic
+            // check above. The database uniqueness constraint is authoritative.
+            db.ChangeTracker.Clear();
+            if (await db.PaymentProcessorEvents.IgnoreQueryFilters().AsNoTracking().AnyAsync(x =>
+                    x.TenantId == webhook.TenantId && x.Processor == PaymentProcessorProvider.Stripe &&
+                    x.ExternalEventId == webhook.ExternalEventId, cancellationToken)) return;
+            throw;
+        }
+    }
+
+    private async Task ProcessNewAsync(StripePaymentWebhookEvent webhook, CancellationToken cancellationToken)
+    {
         await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
         var configuration = await db.PaymentProcessorConfigurations.IgnoreQueryFilters().AsNoTracking().SingleOrDefaultAsync(x =>
             x.TenantId == webhook.TenantId && x.Provider == PaymentProcessorProvider.Stripe && x.Enabled,
@@ -174,12 +192,15 @@ public sealed class StripePaymentWebhookProcessor(CloudDentalDbContext db, TimeP
         var lines = await db.PatientStatementLines.IgnoreQueryFilters().AsNoTracking().Where(x =>
                 x.TenantId == payment.TenantId && x.StatementId == payment.StatementId && x.Amount > 0)
             .OrderBy(x => x.ActivityDate).ThenBy(x => x.StatementLineId).ToListAsync(cancellationToken);
+        var ledgerEntryIds = lines.Select(x => x.LedgerEntryId).ToList();
+        var targetAllocationRows = await db.PatientPaymentAllocations.IgnoreQueryFilters().AsNoTracking().Where(x =>
+                x.TenantId == payment.TenantId && ledgerEntryIds.Contains(x.LedgerEntryId))
+            .Select(x => new { x.LedgerEntryId, x.Amount }).ToListAsync(cancellationToken);
+        var targetAllocations = targetAllocationRows.GroupBy(x => x.LedgerEntryId)
+            .ToDictionary(x => x.Key, x => x.Sum(row => row.Amount));
         foreach (var line in lines)
         {
-            var targetAmounts = await db.PatientPaymentAllocations.IgnoreQueryFilters().Where(x =>
-                    x.TenantId == payment.TenantId && x.LedgerEntryId == line.LedgerEntryId)
-                .Select(x => x.Amount).ToListAsync(cancellationToken);
-            var allocated = targetAmounts.Sum();
+            var allocated = targetAllocations.GetValueOrDefault(line.LedgerEntryId);
             var amount = Math.Min(remaining, Math.Max(0, line.Amount - allocated));
             if (amount <= 0) continue;
             db.PatientPaymentAllocations.Add(new PatientPaymentAllocation
@@ -215,8 +236,14 @@ public sealed class StripePaymentWebhookProcessor(CloudDentalDbContext db, TimeP
         if (attempt.StripeCheckoutSessionId != webhook.CheckoutSessionId ||
             payment.ExternalSessionId != webhook.CheckoutSessionId) return "checkout-session-mismatch";
         if (!string.Equals(payment.Currency, webhook.Currency, StringComparison.OrdinalIgnoreCase)) return "currency-mismatch";
-        var exponent = ZeroDecimalCurrencies.Contains(webhook.Currency) ? 0 : 2;
-        var expectedMinor = decimal.ToInt64(payment.Amount * (decimal)Math.Pow(10, exponent));
+        var multiplier = CurrencyExponent(webhook.Currency) switch
+        {
+            0 => 1m,
+            3 => 1_000m,
+            _ => 100m
+        };
+        var expectedMinor = decimal.ToInt64(decimal.Round(payment.Amount * multiplier, 0,
+            MidpointRounding.AwayFromZero));
         if (expectedMinor != webhook.AmountMinor) return "amount-mismatch";
         if (attempt.StripePaymentIntentId is not null && webhook.PaymentIntentId is not null &&
             attempt.StripePaymentIntentId != webhook.PaymentIntentId) return "payment-intent-mismatch";
@@ -225,6 +252,11 @@ public sealed class StripePaymentWebhookProcessor(CloudDentalDbContext db, TimeP
 
     private static readonly HashSet<string> ZeroDecimalCurrencies = new(StringComparer.OrdinalIgnoreCase)
         { "BIF", "CLP", "DJF", "GNF", "JPY", "KMF", "KRW", "MGA", "PYG", "RWF", "UGX", "VND", "VUV", "XAF", "XOF", "XPF" };
+    private static readonly HashSet<string> ThreeDecimalCurrencies = new(StringComparer.OrdinalIgnoreCase)
+        { "BHD", "JOD", "KWD", "OMR", "TND" };
+
+    private static int CurrencyExponent(string currency) => ZeroDecimalCurrencies.Contains(currency)
+        ? 0 : ThreeDecimalCurrencies.Contains(currency) ? 3 : 2;
 
     private static void Validate(StripePaymentWebhookEvent webhook)
     {
