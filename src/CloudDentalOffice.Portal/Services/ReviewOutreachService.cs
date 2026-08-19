@@ -190,11 +190,15 @@ public sealed class ReviewOutreachDispatcher(CloudDentalDbContext db, IReviewOut
                 logger.LogInformation("Review outreach suppressed for tenant {TenantId}: {Reason}.", row.TenantId, revalidation.Reason);
                 continue;
             }
-            var sender = senders.SingleOrDefault(x => x.Channel == row.Channel);
-            var result = sender is null
-                ? new ReviewOutreachSendResult(ReviewOutreachSendDisposition.PermanentFailure, "sender_missing")
-                : await sender.SendAsync(new(revalidation.Patient!.Email!, revalidation.Settings!.SenderName,
-                    new Uri(revalidation.Settings.ReviewLandingPageUrl!)), cancellationToken);
+            var matchingSenders = senders.Where(x => x.Channel == row.Channel).Take(2).ToArray();
+            var request = new ReviewOutreachSendRequest(revalidation.Patient!.Email!, revalidation.Settings!.SenderName,
+                new Uri(revalidation.Settings.ReviewLandingPageUrl!));
+            var result = matchingSenders.Length switch
+            {
+                0 => new(ReviewOutreachSendDisposition.PermanentFailure, "sender_missing"),
+                > 1 => new(ReviewOutreachSendDisposition.PermanentFailure, "multiple_senders_configured"),
+                _ => await SendSafelyAsync(matchingSenders[0], request, row.TenantId, cancellationToken)
+            };
             if (result.Disposition == ReviewOutreachSendDisposition.Sent)
             {
                 await db.ReviewOutreaches.IgnoreQueryFilters().Where(x => x.Id == id && x.LockId == lockId).ExecuteUpdateAsync(s => s
@@ -229,6 +233,26 @@ public sealed class ReviewOutreachDispatcher(CloudDentalDbContext db, IReviewOut
             .SetProperty(x => x.Status, status).SetProperty(x => x.FailureReason, SafeReason(reason))
             .SetProperty(x => x.LockId, (Guid?)null).SetProperty(x => x.LockedUntil, (DateTime?)null)
             .SetProperty(x => x.UpdatedAt, now), ct);
+
+    private async Task<ReviewOutreachSendResult> SendSafelyAsync(IReviewOutreachSender sender,
+        ReviewOutreachSendRequest request, string tenantId, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await sender.SendAsync(request, cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Review outreach sender threw for tenant {TenantId}, channel {Channel}.",
+                tenantId, sender.Channel);
+            return new(ReviewOutreachSendDisposition.TransientFailure, $"sender_exception_{ex.GetType().Name}");
+        }
+    }
+
     private static string SafeReason(string? value) => string.IsNullOrWhiteSpace(value) ? "delivery_failed" : value[..Math.Min(128, value.Length)];
 }
 
@@ -246,7 +270,7 @@ public sealed class ReviewOutreachWorker(IServiceProvider services, IOptions<Rev
                 await scope.ServiceProvider.GetRequiredService<IReviewOutreachDispatcher>().DispatchBatchAsync(stoppingToken);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { return; }
-            catch (Exception ex) { logger.LogError("Review outreach dispatch failed with {FailureKind}.", ex.GetType().Name); }
+            catch (Exception ex) { logger.LogError(ex, "Review outreach dispatch failed with {FailureKind}.", ex.GetType().Name); }
         } while (await timer.WaitForNextTickAsync(stoppingToken));
     }
 }

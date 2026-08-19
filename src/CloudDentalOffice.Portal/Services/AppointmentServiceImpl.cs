@@ -138,15 +138,19 @@ public class AppointmentServiceImpl : IAppointmentService
             existingAppointment.ReasonForVisit = appointment.ReasonForVisit;
             existingAppointment.ModifiedDate = DateTime.UtcNow;
 
-            await using var transaction = _context.Database.IsRelational()
-                ? await _context.Database.BeginTransactionAsync()
-                : null;
-            await _context.SaveChangesAsync();
-
-            if (completedNow && _reviewOutreachScheduler is not null)
+            if (completedNow && _reviewOutreachScheduler is not null && _context.Database.IsRelational())
+            {
+                await using var transaction = await _context.Database.BeginTransactionAsync();
+                await _context.SaveChangesAsync();
                 await _reviewOutreachScheduler.ScheduleAsync(tenantId, existingAppointment.AppointmentId);
-            if (transaction is not null)
                 await transaction.CommitAsync();
+            }
+            else
+            {
+                await _context.SaveChangesAsync();
+                if (completedNow && _reviewOutreachScheduler is not null)
+                    await _reviewOutreachScheduler.ScheduleAsync(tenantId, existingAppointment.AppointmentId);
+            }
 
             // Reload with navigation properties
             return await GetAppointmentByIdAsync(appointment.AppointmentId.ToString()) 

@@ -160,9 +160,37 @@ public sealed class ReviewOutreachTests : IDisposable
         Assert.Equal(ReviewOutreachStatus.Failed, _db.ReviewOutreaches.IgnoreQueryFilters().Single().Status);
     }
 
+    [Fact]
+    public async Task Unexpected_sender_exception_releases_lease_for_retry()
+    {
+        await SeedAsync("Completed", delayMinutes: 0);
+        await Scheduler().ScheduleAsync("tenant-a", 10);
+
+        await Dispatcher(new ThrowingSender()).DispatchBatchAsync();
+
+        var row = _db.ReviewOutreaches.IgnoreQueryFilters().Single();
+        Assert.Equal(ReviewOutreachStatus.Scheduled, row.Status);
+        Assert.Null(row.LockId);
+        Assert.Null(row.LockedUntil);
+        Assert.Equal("sender_exception_InvalidOperationException", row.FailureReason);
+    }
+
+    [Fact]
+    public async Task Multiple_senders_for_channel_fail_safely_without_throwing()
+    {
+        await SeedAsync("Completed", delayMinutes: 0);
+        await Scheduler().ScheduleAsync("tenant-a", 10);
+
+        await Dispatcher(new RecordingSender(), new RecordingSender()).DispatchBatchAsync();
+
+        var row = _db.ReviewOutreaches.IgnoreQueryFilters().Single();
+        Assert.Equal(ReviewOutreachStatus.Failed, row.Status);
+        Assert.Equal("multiple_senders_configured", row.FailureReason);
+    }
+
     private IReviewOutreachEligibilityService Eligibility() => new ReviewOutreachEligibilityService(_db);
     private IReviewOutreachScheduler Scheduler() => new ReviewOutreachScheduler(_db, Eligibility(), _clock, NullLogger<ReviewOutreachScheduler>.Instance);
-    private IReviewOutreachDispatcher Dispatcher(IReviewOutreachSender sender) => new ReviewOutreachDispatcher(_db, Eligibility(), [sender],
+    private IReviewOutreachDispatcher Dispatcher(params IReviewOutreachSender[] senders) => new ReviewOutreachDispatcher(_db, Eligibility(), senders,
         Options.Create(new ReviewOutreachWorkerOptions { InitialRetrySeconds = 60, MaximumRetrySeconds = 60 }), _clock,
         NullLogger<ReviewOutreachDispatcher>.Instance);
 
@@ -201,5 +229,11 @@ public sealed class ReviewOutreachTests : IDisposable
             var result = results.Length == 0 ? ReviewOutreachSendDisposition.Sent : results[Math.Min(_attempt++, results.Length - 1)];
             return Task.FromResult(new ReviewOutreachSendResult(result, result == ReviewOutreachSendDisposition.Sent ? null : "test_failure"));
         }
+    }
+    private sealed class ThrowingSender : IReviewOutreachSender
+    {
+        public ReviewOutreachChannel Channel => ReviewOutreachChannel.Email;
+        public Task<ReviewOutreachSendResult> SendAsync(ReviewOutreachSendRequest request, CancellationToken cancellationToken) =>
+            throw new InvalidOperationException("test sender failure");
     }
 }
