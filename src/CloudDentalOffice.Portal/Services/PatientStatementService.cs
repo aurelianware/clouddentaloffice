@@ -181,8 +181,8 @@ public sealed class PatientStatementService(CloudDentalDbContext db, ITenantProv
         };
         db.PatientStatements.Add(statement);
         await db.SaveChangesAsync(cancellationToken);
-        logger.LogInformation("Patient statement {StatementId} created for tenant {TenantId} with status {Status}.",
-            statement.StatementId, tenantId, statement.Status);
+        logger.LogInformation("Patient statement {StatementId} created with status {Status}.",
+            statement.StatementId, statement.Status);
         return statement;
     }
 
