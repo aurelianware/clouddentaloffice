@@ -138,7 +138,10 @@
     }
 
     private Task PayStatement(Guid statementId) => StartCheckout(PatientPaymentSelection.StatementBalance, statementId, null);
-    private Task LaunchCheckout() => StartCheckout(_selection, null, _customAmount);
+    private Task LaunchCheckout() => StartCheckout(
+        _selection,
+        null,
+        _selection == PatientPaymentSelection.Partial ? _customAmount : null);
     private async Task StartCheckout(PatientPaymentSelection selection, Guid? statementId, decimal? amount)
     {
         try
@@ -150,6 +153,8 @@
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or PaymentProcessorUnavailableException)
         { Snackbar.Add(ex.Message, Severity.Error); }
+        catch (UnauthorizedAccessException)
+        { Snackbar.Add("Your access to this billing account is no longer available. Please sign in again.", Severity.Error); }
         finally { _launching = false; }
     }
     private static string Money(decimal amount, string currency) => $"{amount:N2} {currency}";
