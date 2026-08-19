@@ -396,6 +396,11 @@ builder.Services.AddScoped<IBillingService, BillingService>();
 builder.Services.AddScoped<IPatientAccountService, PatientAccountService>();
 builder.Services.AddScoped<IPatientResponsibilityService, PatientResponsibilityService>();
 builder.Services.AddScoped<IPatientStatementService, PatientStatementService>();
+builder.Services.AddScoped<IPaymentProcessorResolver, PaymentProcessorResolver>();
+builder.Services.AddScoped<IPaymentCheckoutService, PaymentCheckoutService>();
+builder.Services.AddScoped<IPaymentRefundService, PaymentRefundService>();
+builder.Services.AddScoped<IPaymentReconciliationService, PaymentReconciliationService>();
+builder.Services.AddScoped<IPaymentAllocationService, PaymentAllocationService>();
 builder.Services.AddScoped<IInsurancePlanService, InsurancePlanService>();
 builder.Services.AddScoped<IClinicalChartService, ClinicalChartService>();
 

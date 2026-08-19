@@ -12,6 +12,28 @@ Patient Financial Events
  Statements / Payments
 ```
 
+## Payment processing boundary
+
+Patient payments use a vendor-neutral boundary:
+
+```text
+Patient Billing
+      ↓
+Payment Gateway
+      ↓
+Stripe / future processors
+```
+
+`IPaymentProcessor` is the adapter contract. `IPaymentCheckoutService`, `IPaymentRefundService`, `IPaymentReconciliationService`, and `IPaymentAllocationService` orchestrate canonical CDO models without exposing processor DTOs. No production patient-payment processor is registered yet, so checkout resolution fails closed. The pre-existing `IStripeService` supports organization subscription provisioning and is not part of the patient-payment boundary.
+
+`PaymentProcessorConfiguration` is tenant-scoped and stores only provider, enabled state, sandbox/production environment, an opaque credential reference, and an optional connected-merchant reference. It never stores credentials. Exactly one enabled configuration is required at resolution time; missing, disabled, ambiguous, or unregistered configurations are rejected before any processor call.
+
+`PatientPayment` is the CDO-owned payment record. It stores amount, ISO currency, method category, processor name, bounded external identifiers, internal reference, status, and timestamps—never card numbers, bank account details, CVC, routing data, or processor payloads. A successful canonical reconciliation event posts one `PatientPayment` ledger entry, so the patient ledger remains the balance source of truth.
+
+Processor event idempotency uses the unique tuple `(TenantId, Processor, ExternalEventId)`. Patient payment identity also protects `(TenantId, InternalPaymentReference)` and non-null `(TenantId, Processor, ExternalPaymentId)`. Duplicate delivery returns the previously reconciled result and does not post another ledger entry.
+
+`PatientPaymentAllocation` links a succeeded payment to one or more charge/debit ledger entries. Allocations may be partial and cannot exceed the payment. The unallocated remainder is explicit unapplied cash; an overpayment does not require inventing a charge or forcing immediate allocation. Allocation records are append-only.
+
 ## Account and ledger ownership
 
 A `PatientAccount` is created lazily with the first posted financial transaction. It is unique by tenant and patient. `PatientId` is never sufficient to retrieve an account: every operation requires the authenticated tenant and every relationship and index retains `TenantId`.
@@ -93,7 +115,7 @@ Tenant identity comes from authenticated claims and is not accepted as a query, 
 ## Follow-up work
 
 - post procedure charges and adjudicated ERA/835 payments and adjustments through the application service
-- introduce patient payment and refund commands with payment allocations
+- add authenticated staff payment/allocation APIs and durable refund records
 - replace the placeholder Billing page with the authenticated statement APIs and add aging buckets
 - render/print statements and add controlled delivery tracking
 - add account-to-account transfer orchestration
