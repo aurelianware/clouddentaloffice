@@ -23,7 +23,7 @@ curl -sS -o /dev/null -w 'custom : HTTP %{http_code}\n' https://portal.3rdsetsmi
 # Container App default hostname (get the current value from Azure)
 default_fqdn=$(az containerapp show --name portal --resource-group "$RESOURCE_GROUP" \
   --query properties.configuration.ingress.fqdn -o tsv)
-curl -sS -o /dev/null -w "default: HTTP %%{http_code}  ($default_fqdn)\n" "https://$default_fqdn/"
+curl -sS -o /dev/null -w "default: HTTP %{http_code}  ($default_fqdn)\n" "https://$default_fqdn/"
 ```
 
 Interpret the pair:

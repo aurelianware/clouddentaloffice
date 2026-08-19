@@ -91,8 +91,12 @@ public sealed class StaffAccessMiddleware(RequestDelegate next, IConfiguration c
         // Platform health probes reach the container directly, without the
         // Container Apps EasyAuth principal header. They must never be gated by
         // the staff allowlist, or every readiness/liveness probe would 403 and
-        // the platform would take the replica out of service.
-        if (context.Request.Path.StartsWithSegments("/health"))
+        // the platform would take the replica out of service. Only bypass for the
+        // headerless probe case — a request that DOES carry an EasyAuth principal
+        // (an authenticated browser session) still goes through the allowlist, so
+        // an authenticated-but-unauthorized account cannot reach /health.
+        if (context.Request.Path.StartsWithSegments("/health") &&
+            string.IsNullOrWhiteSpace(context.Request.Headers[ContainerAppsStaffIdentity.PrincipalHeader]))
         {
             await next(context);
             return;

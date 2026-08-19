@@ -468,13 +468,27 @@ using (var scope = app.Services.CreateScope())
         logger.LogError(ex, "Error during database initialization: {Message}", ex.Message);
         logger.LogError("Stack trace: {StackTrace}", ex.StackTrace);
 
-        // In development, fail fast so the problem is obvious. In production,
-        // keep the process alive rather than crash-looping the whole portal on a
-        // transient database outage: the readiness probe (/health/ready) reports
-        // unhealthy while the database is unreachable, so the ingress holds
-        // traffic away from this replica until the database recovers, and the
-        // process retries connectivity without a platform restart cycle.
+        // In development, always fail fast so the problem is obvious.
         if (app.Environment.IsDevelopment()) throw;
+
+        // In production, distinguish the two failure modes:
+        //  - Database unreachable (a transient connectivity outage): keep the
+        //    process alive. /health/ready reports unhealthy while the database is
+        //    down, so the ingress holds traffic away from this replica until it
+        //    recovers, without a crash-loop.
+        //  - Database reachable but initialization still failed (a schema, migration,
+        //    or bootstrap bug): fail fast. Staying alive would let the replica report
+        //    ready — /health/ready only checks connectivity — and serve a
+        //    half-initialized app, which is worse than restarting.
+        var databaseReachable = false;
+        try { databaseReachable = await dbContext.Database.CanConnectAsync(); }
+        catch (Exception connectivityCheck)
+        {
+            logger.LogError(connectivityCheck, "Database connectivity check after an initialization failure also failed.");
+        }
+        if (databaseReachable) throw;
+
+        logger.LogWarning("Database is unreachable at startup; continuing so readiness can gate traffic until it recovers.");
     }
 }
 
