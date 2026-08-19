@@ -386,14 +386,16 @@ resource intakeService 'Microsoft.App/containerApps@2023-05-01' = {
     configuration: {
       registries: registry
       ingress: { external: true, targetPort: 5109, transport: 'http', allowInsecure: false }
-      secrets: [
+      secrets: concat([
         { name: 'conn-intake', value: connIntake }
         { name: 'servicebus-send', value: serviceBusSendConnection }
         { name: 'booking-key', value: publicBookingApiKey }
-        { name: 'zocdoc-webhook-secret', value: zocdocWebhookSecret }
-        { name: 'inbox-admin-key', value: integrationInboxAdminApiKey }
         { name: 'scheduling-service-api-key', value: publicSchedulingServiceApiKey }
-      ]
+      ], empty(zocdocWebhookIntegrationId) || empty(zocdocWebhookSecret) ? [] : [
+        { name: 'zocdoc-webhook-secret', value: zocdocWebhookSecret }
+      ], empty(integrationInboxAdminApiKey) ? [] : [
+        { name: 'inbox-admin-key', value: integrationInboxAdminApiKey }
+      ])
     }
     template: {
       containers: [
@@ -401,7 +403,7 @@ resource intakeService 'Microsoft.App/containerApps@2023-05-01' = {
           name: 'intake-service'
           image: '${acrLoginServer}/intake-service:${imageTag}'
           resources: { cpu: json('0.25'), memory: '0.5Gi' }
-          env: [
+          env: concat([
             { name: 'ASPNETCORE_ENVIRONMENT', value: 'Production' }
             { name: 'DatabaseProvider', value: 'PostgreSQL' }
             { name: 'ConnectionStrings__IntakeDb', secretRef: 'conn-intake' }
@@ -414,13 +416,15 @@ resource intakeService 'Microsoft.App/containerApps@2023-05-01' = {
             { name: 'Services__SchedulingService', value: 'http://scheduling-service' }
             { name: 'Services__SchedulingServiceClients__0__TenantId', value: initialTenantId }
             { name: 'Services__SchedulingServiceClients__0__ApiKey', secretRef: 'scheduling-service-api-key' }
+          ], empty(zocdocWebhookIntegrationId) || empty(zocdocWebhookSecret) ? [] : [
             { name: 'ZocdocWebhooks__Integrations__0__IntegrationId', value: zocdocWebhookIntegrationId }
             { name: 'ZocdocWebhooks__Integrations__0__TenantId', value: initialTenantId }
             { name: 'ZocdocWebhooks__Integrations__0__WebhookSecret', secretRef: 'zocdoc-webhook-secret' }
             { name: 'ZocdocWebhooks__Integrations__0__Enabled', value: 'true' }
+          ], empty(integrationInboxAdminApiKey) ? [] : [
             { name: 'IntegrationInbox__AdminClients__0__TenantId', value: initialTenantId }
             { name: 'IntegrationInbox__AdminClients__0__ApiKey', secretRef: 'inbox-admin-key' }
-          ]
+          ])
           probes: [
             // Liveness has no database dependency, so a transient database outage
             // does not cause the platform to restart an otherwise-healthy process.
