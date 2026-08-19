@@ -46,6 +46,30 @@ The unique key `(TenantId, SourceType, SourceId, EntryType)` prevents a procedur
 
 Posting currently supports `Procedure`, `Encounter`, `Claim`, `Era`, `StaffAdjustment`, `PatientPayment`, `Refund`, `Transfer`, and `SystemReversal` sources. Integration from those producer workflows is deliberately follow-up work; this PR establishes the accounting system of record without silently changing existing claim/ERA behavior.
 
+## Patient responsibility
+
+Responsibility has an explicit provenance:
+
+- `Estimated` responsibility is calculated from prospective charge, expected insurance payment, and expected adjustment inputs. It is advisory and does not post ledger entries or become collectible debt.
+- `Finalized` responsibility is derived only from the immutable patient ledger after trusted financial events have been posted.
+
+For example, an $850 charge, $422.60 finalized insurance payment, and $100 contractual adjustment produce $327.40 finalized patient responsibility. Existing claim and 835 models contain responsibility-related fields, but their current processing does not yet provide a complete adjudication-to-ledger pipeline. Those fields are therefore not silently promoted to authoritative patient debt. The treatment-plan estimate UI remains explicitly estimated.
+
+## Statement snapshots
+
+`PatientStatement` and its patient-safe detail lines are immutable financial snapshots. Statement selection uses ledger `CreatedAt` as its cutoff rather than service/effective date, ensuring a backdated entry posted after a prior statement appears on the next statement. Lines retain the ledger identifier and a controlled description such as “Dental services” or “Insurance payment”; claim narratives, procedure details, and source identifiers are not copied into patient-facing descriptions.
+
+The distinction between balance and statement is intentional:
+
+```text
+Patient Account Balance       = current immutable-ledger state
+Patient Statement Amount Due  = historical snapshot at statement creation
+```
+
+They may differ after later payments, reversals, or adjustments. Later ledger activity never rewrites a statement. A subsequent statement starts from the most recent active statement's `AmountDue` as balance forward, then snapshots ledger postings after that statement's cutoff. Corrections to a statement use `Voided` or `Superseded`; records and lines are not deleted.
+
+Supported lifecycle states are `Draft`, `Ready`, `Sent`, `PartiallyPaid`, `Paid`, `Superseded`, and `Voided`. Status changes follow a narrow state machine. `PartiallyPaid` and `Paid` require posted ledger activity after the snapshot cutoff that reduces or satisfies the statement balance; a UI status change alone cannot claim that money was received. This is deliberately conservative until explicit payment allocations are implemented, and it never mutates statement amounts.
+
 ## Staff APIs
 
 The Portal exposes authenticated staff-only reads:
@@ -53,13 +77,25 @@ The Portal exposes authenticated staff-only reads:
 - `GET /api/patient-accounts/patients/{patientId}/summary`
 - `GET /api/patient-accounts/patients/{patientId}/ledger`
 
-Tenant identity comes from authenticated claims and is not accepted as a query, route, or request-header parameter. There are no public patient portal or payment-processor endpoints in this foundation.
+It also exposes authenticated statement administration:
+
+- `POST /api/patient-statements/preview`
+- `POST /api/patient-statements`
+- `GET /api/patient-statements?patientId={id}`
+- `GET /api/patient-statements/{statementId}`
+- `POST /api/patient-statements/{statementId}/finalize`
+- `POST /api/patient-statements/{statementId}/status`
+- `POST /api/patient-statements/{statementId}/void`
+- `POST /api/patient-statements/{statementId}/supersede`
+
+Tenant identity comes from authenticated claims and is not accepted as a query, route, or request-header parameter. `patientId` is only a filter within that trusted tenant. There are no anonymous statement URLs, patient portal, or payment-processor endpoints in this foundation. The existing `/billing` page still uses placeholder invoice data and is not presented as an authoritative statement UI.
 
 ## Follow-up work
 
 - post procedure charges and adjudicated ERA/835 payments and adjustments through the application service
 - introduce patient payment and refund commands with payment allocations
-- generate immutable statement snapshots and aging buckets
+- replace the placeholder Billing page with the authenticated statement APIs and add aging buckets
+- render/print statements and add controlled delivery tracking
 - add account-to-account transfer orchestration
 - connect a processor adapter such as Stripe without delegating ledger ownership
 - baseline provider-specific PostgreSQL migrations as described by the Portal database bootstrap policy

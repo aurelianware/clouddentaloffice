@@ -394,6 +394,8 @@ builder.Services.AddScoped<IProviderService, ProviderServiceImpl>();
 builder.Services.AddScoped<IProcedureCodeService, ProcedureCodeServiceImpl>();
 builder.Services.AddScoped<IBillingService, BillingService>();
 builder.Services.AddScoped<IPatientAccountService, PatientAccountService>();
+builder.Services.AddScoped<IPatientResponsibilityService, PatientResponsibilityService>();
+builder.Services.AddScoped<IPatientStatementService, PatientStatementService>();
 builder.Services.AddScoped<IInsurancePlanService, InsurancePlanService>();
 builder.Services.AddScoped<IClinicalChartService, ClinicalChartService>();
 
@@ -520,6 +522,7 @@ app.MapHealthChecks("/health/ready", new HealthCheckOptions
 });
 
 app.MapPatientAccountApi();
+app.MapPatientStatementApi();
 
 app.MapBlazorHub();
 app.MapFallbackToPage("/_Host");
