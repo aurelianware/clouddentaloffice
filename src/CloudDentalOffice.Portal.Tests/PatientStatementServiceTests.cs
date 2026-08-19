@@ -48,6 +48,20 @@ public sealed class PatientStatementServiceTests : IDisposable
         Assert.Equal(327.40m, finalized.PatientDue);
     }
 
+    [Theory]
+    [InlineData("charges")]
+    [InlineData("estimatedInsurancePayment")]
+    [InlineData("estimatedAdjustment")]
+    public void Negative_estimate_reports_the_actual_invalid_parameter(string parameter)
+    {
+        var charges = new Money(parameter == "charges" ? -1m : 100m);
+        var insurance = new Money(parameter == "estimatedInsurancePayment" ? -1m : 50m);
+        var adjustment = new Money(parameter == "estimatedAdjustment" ? -1m : 10m);
+        var exception = Assert.Throws<ArgumentOutOfRangeException>(() =>
+            _responsibility.CalculateEstimate(charges, insurance, adjustment, Now));
+        Assert.Equal(parameter, exception.ParamName);
+    }
+
     [Fact]
     public async Task Statement_generation_snapshots_ledger_totals_and_safe_lines()
     {
@@ -93,6 +107,7 @@ public sealed class PatientStatementServiceTests : IDisposable
         await _statements.TransitionAsync("tenant-a", statement.StatementId, PatientStatementStatus.PartiallyPaid);
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
             _statements.TransitionAsync("tenant-a", statement.StatementId, PatientStatementStatus.Paid));
+        await Post(PatientLedgerEntryType.Charge, 75m, "procedure-2", PatientLedgerSourceType.Procedure);
         await Post(PatientLedgerEntryType.PatientPayment, 60m, "payment-2", PatientLedgerSourceType.PatientPayment);
         var paid = await _statements.TransitionAsync("tenant-a", statement.StatementId, PatientStatementStatus.Paid);
         Assert.Equal(PatientStatementStatus.Paid, paid.Status);
@@ -135,8 +150,8 @@ public sealed class PatientStatementServiceTests : IDisposable
     {
         await Post(PatientLedgerEntryType.Charge, 200m, "procedure-1", PatientLedgerSourceType.Procedure);
         var original = await Create(finalize: true);
-        _clock.Advance(TimeSpan.FromMinutes(1));
         var replacement = await Create(finalize: true);
+        Assert.Equal(original.CreatedAt, replacement.CreatedAt);
         var result = await _statements.SupersedeAsync("tenant-a", original.StatementId, replacement.StatementId);
         Assert.Equal(PatientStatementStatus.Superseded, result.Status);
         Assert.Equal(replacement.StatementId, result.SupersededByStatementId);

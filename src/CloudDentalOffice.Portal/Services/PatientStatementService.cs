@@ -31,8 +31,12 @@ public sealed class PatientResponsibilityService(IPatientAccountService accounts
         Money estimatedAdjustment, DateTime calculatedAt)
     {
         EnsureSameCurrency(charges, estimatedInsurancePayment, estimatedAdjustment);
-        if (charges.Amount < 0 || estimatedInsurancePayment.Amount < 0 || estimatedAdjustment.Amount < 0)
+        if (charges.Amount < 0)
             throw new ArgumentOutOfRangeException(nameof(charges), "Estimated responsibility inputs cannot be negative.");
+        if (estimatedInsurancePayment.Amount < 0)
+            throw new ArgumentOutOfRangeException(nameof(estimatedInsurancePayment), "Estimated responsibility inputs cannot be negative.");
+        if (estimatedAdjustment.Amount < 0)
+            throw new ArgumentOutOfRangeException(nameof(estimatedAdjustment), "Estimated responsibility inputs cannot be negative.");
         return new(PatientResponsibilityKind.Estimated, charges.Amount, estimatedInsurancePayment.Amount,
             estimatedAdjustment.Amount, 0m,
             charges.Amount - estimatedInsurancePayment.Amount - estimatedAdjustment.Amount,
@@ -213,7 +217,11 @@ public sealed class PatientStatementService(CloudDentalDbContext db, ITenantProv
             var laterEntries = await db.PatientLedgerEntries.IgnoreQueryFilters().AsNoTracking().Where(x =>
                 x.TenantId == tenantId && x.PatientAccountId == statement.PatientAccountId &&
                 x.CreatedAt > statement.LedgerThroughDate).ToListAsync(cancellationToken);
-            var remaining = statement.AmountDue + laterEntries.Sum(Impact);
+            // New charges, refunds, debits, and transfers create separate debt and do not undo
+            // settlement of this historical snapshot. Until explicit allocations exist, count
+            // only balance-reducing financial activity posted after the statement cutoff.
+            var settled = laterEntries.Sum(SettlementAmount);
+            var remaining = statement.AmountDue - settled;
             if (status == PatientStatementStatus.PartiallyPaid &&
                 (statement.AmountDue <= 0 || remaining <= 0 || remaining >= statement.AmountDue))
                 throw new InvalidOperationException("A partial payment status requires posted ledger activity that reduces the statement balance.");
@@ -269,7 +277,7 @@ public sealed class PatientStatementService(CloudDentalDbContext db, ITenantProv
         if (statementId == replacementStatementId) throw new ArgumentException("A statement cannot supersede itself.");
         var original = await Required(tenantId, statementId, false, cancellationToken);
         var replacement = await Required(tenantId, replacementStatementId, false, cancellationToken);
-        if (original.PatientAccountId != replacement.PatientAccountId || replacement.CreatedAt <= original.CreatedAt)
+        if (original.PatientAccountId != replacement.PatientAccountId || replacement.CreatedAt < original.CreatedAt)
             throw new InvalidOperationException("Replacement must be a newer statement for the same account.");
         if (original.Status is PatientStatementStatus.Paid or PatientStatementStatus.Superseded or PatientStatementStatus.Voided ||
             replacement.Status is PatientStatementStatus.Voided or PatientStatementStatus.Superseded)
@@ -316,6 +324,14 @@ public sealed class PatientStatementService(CloudDentalDbContext db, ITenantProv
         PatientLedgerEntryType.Charge or PatientLedgerEntryType.Refund or
         PatientLedgerEntryType.DebitAdjustment or PatientLedgerEntryType.Transfer => entry.Amount,
         _ => -entry.Amount
+    };
+
+    private static decimal SettlementAmount(PatientLedgerEntry entry) => entry.EntryType switch
+    {
+        PatientLedgerEntryType.InsurancePayment or PatientLedgerEntryType.PatientPayment or
+        PatientLedgerEntryType.ContractualAdjustment or PatientLedgerEntryType.WriteOff or
+        PatientLedgerEntryType.Credit => entry.Amount,
+        _ => 0m
     };
 
     private void EnsureTenant(string tenantId)

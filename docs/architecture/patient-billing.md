@@ -68,7 +68,7 @@ Patient Statement Amount Due  = historical snapshot at statement creation
 
 They may differ after later payments, reversals, or adjustments. Later ledger activity never rewrites a statement. A subsequent statement starts from the most recent active statement's `AmountDue` as balance forward, then snapshots ledger postings after that statement's cutoff. Corrections to a statement use `Voided` or `Superseded`; records and lines are not deleted.
 
-Supported lifecycle states are `Draft`, `Ready`, `Sent`, `PartiallyPaid`, `Paid`, `Superseded`, and `Voided`. Status changes follow a narrow state machine. `PartiallyPaid` and `Paid` require posted ledger activity after the snapshot cutoff that reduces or satisfies the statement balance; a UI status change alone cannot claim that money was received. This is deliberately conservative until explicit payment allocations are implemented, and it never mutates statement amounts.
+Supported lifecycle states are `Draft`, `Ready`, `Sent`, `PartiallyPaid`, `Paid`, `Superseded`, and `Voided`. Status changes follow a narrow state machine. `PartiallyPaid` and `Paid` require balance-reducing ledger activity after the snapshot cutoff that reduces or satisfies the statement balance; a UI status change alone cannot claim that money was received. Later charges, refunds, debits, and transfers are new account activity and do not prevent a prior snapshot from being marked paid. Explicit payment allocations remain follow-up work, and status transitions never mutate statement amounts.
 
 ## Staff APIs
 
