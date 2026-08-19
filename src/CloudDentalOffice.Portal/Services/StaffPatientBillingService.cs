@@ -58,7 +58,8 @@ public interface IStaffPatientBillingService
 public sealed class StaffPatientBillingService(CloudDentalDbContext db, IPatientAccountService accounts,
     IPatientStatementService statements, IPaymentAllocationService allocations, ITenantProvider tenantProvider,
     TimeProvider clock, IPaymentRefundService? refunds = null,
-    IStripePaymentReconciliationService? stripeReconciliation = null) : IStaffPatientBillingService
+    IStripePaymentReconciliationService? stripeReconciliation = null,
+    IPatientBillingNotificationService? billingNotifications = null) : IStaffPatientBillingService
 {
     public async Task<StaffBillingDashboard> GetDashboardAsync(ClaimsPrincipal user, DateTime date,
         CancellationToken cancellationToken = default)
@@ -262,6 +263,10 @@ public sealed class StaffPatientBillingService(CloudDentalDbContext db, IPatient
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
         var statement = await statements.TransitionAsync(context.Tenant, statementId, PatientStatementStatus.Sent, cancellationToken);
         Audit(context, "StatementSent", "PatientStatement", statementId.ToString("N"));
+        if (billingNotifications is not null)
+            await billingNotifications.EnqueueAsync(context.Tenant, statement.PatientAccountId,
+                PatientBillingNotificationType.NewStatement, "statement", statement.StatementId.ToString("N"),
+                cancellationToken);
         await db.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         return statement;

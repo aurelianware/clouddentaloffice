@@ -403,6 +403,11 @@ builder.Services.AddScoped<IPaymentCheckoutService, PaymentCheckoutService>();
 builder.Services.AddScoped<IPaymentRefundService, PaymentRefundService>();
 builder.Services.AddScoped<IPaymentReconciliationService, PaymentReconciliationService>();
 builder.Services.AddScoped<IStripePaymentReconciliationService, StripePaymentReconciliationService>();
+builder.Services.Configure<StripeReadinessOptions>(
+    builder.Configuration.GetSection(StripeReadinessOptions.SectionName));
+builder.Services.AddHttpClient<IStripeInboxStatusClient, StripeInboxStatusClient>(client =>
+    client.Timeout = TimeSpan.FromSeconds(10));
+builder.Services.AddScoped<IStripeProductionReadinessService, StripeProductionReadinessService>();
 builder.Services.AddScoped<IPaymentAllocationService, PaymentAllocationService>();
 builder.Services.AddScoped<IStripePaymentWebhookProcessor, StripePaymentWebhookProcessor>();
 builder.Services.AddScoped<IStripeRefundWebhookProcessor, StripeRefundWebhookProcessor>();
@@ -414,6 +419,12 @@ builder.Services.Configure<PatientCheckoutOptions>(builder.Configuration.GetSect
 builder.Services.AddScoped<IPatientBalanceCheckoutService, PatientBalanceCheckoutService>();
 builder.Services.AddScoped<IPatientBillingPortalService, PatientBillingPortalService>();
 builder.Services.AddScoped<IStaffPatientBillingService, StaffPatientBillingService>();
+builder.Services.Configure<PatientBillingNotificationOptions>(
+    builder.Configuration.GetSection(PatientBillingNotificationOptions.SectionName));
+builder.Services.AddScoped<IPatientBillingNotificationService, PatientBillingNotificationService>();
+builder.Services.AddScoped<IPatientBillingNotificationSender, EmailPatientBillingNotificationSender>();
+builder.Services.AddScoped<IPatientBillingNotificationDispatcher, PatientBillingNotificationDispatcher>();
+builder.Services.AddHostedService<PatientBillingNotificationWorker>();
 builder.Services.AddScoped<IStripeCredentialProvider, ConfigurationStripeCredentialProvider>();
 builder.Services.AddHttpClient<IStripeApiClient, StripeApiClient>(client =>
 {

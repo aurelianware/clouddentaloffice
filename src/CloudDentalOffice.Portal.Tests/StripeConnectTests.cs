@@ -111,6 +111,15 @@ public sealed class StripeConnectTests : IDisposable
     }
 
     [Fact]
+    public void Credential_provider_accepts_environment_matched_restricted_keys()
+    {
+        var values = new Dictionary<string, string?> { ["Secrets:StripeTest"] = "rk_test_not-a-real-secret" };
+        var provider = new ConfigurationStripeCredentialProvider(new ConfigurationBuilder()
+            .AddInMemoryCollection(values).Build());
+        Assert.Equal(values["Secrets:StripeTest"], provider.GetSecret(Configuration()));
+    }
+
+    [Fact]
     public async Task Api_client_uses_Accounts_v2_without_exposing_secret_in_payload()
     {
         var handler = new RecordingHandler("""

@@ -291,11 +291,11 @@ app.MapStripeWebhook();
 
 app.MapGet("/api/internal/integration-inbox/status", async (
     HttpContext http, IConfiguration configuration, IIntegrationInbox inbox,
-    CancellationToken cancellationToken) =>
+    string? channel, CancellationToken cancellationToken) =>
 {
     var tenantId = IntegrationInboxAdminAuth.ResolveTenant(http, configuration);
     return tenantId is null ? Results.Unauthorized() : Results.Ok(
-        await inbox.GetStatusAsync(tenantId, cancellationToken));
+        await inbox.GetStatusAsync(tenantId, channel, cancellationToken));
 }).RequireRateLimiting("integration-inbox-admin").WithTags("IntegrationInbox");
 
 app.MapPost("/api/internal/integration-inbox/{id:guid}/retry", async (

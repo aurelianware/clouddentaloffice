@@ -27,6 +27,7 @@ public sealed class StripePaymentWebhookTests : IDisposable
         _db.Database.EnsureCreated();
         var now = DateTime.UtcNow;
         _db.Patients.Add(new Patient { PatientId = 101, TenantId = "tenant-a", FirstName = "Test", LastName = "Patient",
+            Email = "patient@example.test",
             DateOfBirth = new(1980, 1, 1), Gender = "U", Status = "Active" });
         _db.PatientAccounts.Add(new PatientAccount { Id = _accountId, TenantId = "tenant-a", PatientId = 101,
             Status = PatientAccountStatus.Active, CreatedAt = now, UpdatedAt = now });
@@ -172,13 +173,48 @@ public sealed class StripePaymentWebhookTests : IDisposable
         Assert.Empty(await _db.PatientLedgerEntries.IgnoreQueryFilters().ToListAsync());
     }
 
+    [Fact]
+    public async Task Sandbox_event_cannot_post_without_explicit_test_tenant_allowlist()
+    {
+        var service = new StripePaymentWebhookProcessor(_db, TimeProvider.System, _metrics,
+            Options.Create(new StripePaymentPostingOptions()),
+            NullLogger<StripePaymentWebhookProcessor>.Instance);
+        var error = await Assert.ThrowsAsync<StripeWebhookPermanentException>(() =>
+            service.ProcessAsync(Event()));
+        Assert.Contains("Sandbox ledger posting is not enabled", error.Message);
+        Assert.Empty(await _db.PatientLedgerEntries.IgnoreQueryFilters().ToListAsync());
+    }
+
+    [Theory]
+    [InlineData("checkout.session.completed", "paid", PatientBillingNotificationType.PaymentReceived)]
+    [InlineData("checkout.session.async_payment_failed", "unpaid", PatientBillingNotificationType.PaymentFailed)]
+    public async Task Payment_outcome_queues_privacy_safe_notification(string eventType, string paymentStatus,
+        PatientBillingNotificationType expected)
+    {
+        var notifications = new CaptureNotifications();
+        var service = new StripePaymentWebhookProcessor(_db, TimeProvider.System, _metrics,
+            Options.Create(new StripePaymentPostingOptions { AllowedSandboxTenantIds = ["tenant-a"] }),
+            NullLogger<StripePaymentWebhookProcessor>.Instance, notifications);
+        await service.ProcessAsync(Event() with { EventType = eventType, PaymentStatus = paymentStatus });
+        Assert.Equal(expected, Assert.Single(notifications.Types));
+    }
+
     private StripePaymentWebhookProcessor Service() => new(_db, TimeProvider.System, _metrics,
-        Options.Create(new StripePaymentPostingOptions()),
+        Options.Create(new StripePaymentPostingOptions { AllowedSandboxTenantIds = ["tenant-a"] }),
         NullLogger<StripePaymentWebhookProcessor>.Instance);
     private static StripePaymentWebhookEvent Event(string id = "evt_paid") => new("tenant-a", id,
         "checkout.session.completed", "acct_practice", "cs_test", "pi_test",
         "pay_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", 5000, "USD", "paid", false)
         { OccurredAt = DateTime.UtcNow };
+
+    private sealed class CaptureNotifications : IPatientBillingNotificationService
+    {
+        public List<PatientBillingNotificationType> Types { get; } = [];
+        public Task<bool> EnqueueAsync(string tenantId, Guid patientAccountId,
+            PatientBillingNotificationType type, string sourceType, string sourceId,
+            CancellationToken cancellationToken = default)
+        { Types.Add(type); return Task.FromResult(true); }
+    }
 
     public void Dispose() { _metrics.Dispose(); _db.Dispose(); _connection.Dispose(); }
 }

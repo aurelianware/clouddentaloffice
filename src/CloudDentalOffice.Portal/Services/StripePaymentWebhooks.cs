@@ -43,11 +43,13 @@ public sealed class StripePaymentPostingOptions
 {
     public const string SectionName = "Payments:StripePosting";
     public bool AllocateStatementPayments { get; set; } = true;
+    public string[] AllowedSandboxTenantIds { get; set; } = [];
 }
 
 public sealed class StripePaymentWebhookProcessor(CloudDentalDbContext db, TimeProvider clock,
     StripePaymentMetrics metrics, IOptions<StripePaymentPostingOptions> options,
-    ILogger<StripePaymentWebhookProcessor> logger) : IStripePaymentWebhookProcessor
+    ILogger<StripePaymentWebhookProcessor> logger,
+    IPatientBillingNotificationService? billingNotifications = null) : IStripePaymentWebhookProcessor
 {
     public async Task ProcessAsync(StripePaymentWebhookEvent webhook, CancellationToken cancellationToken = default)
     {
@@ -81,6 +83,9 @@ public sealed class StripePaymentWebhookProcessor(CloudDentalDbContext db, TimeP
         if (configuration is null || configuration.ConnectedMerchantReference != webhook.ConnectedAccountId ||
             (configuration.Environment == PaymentProcessorEnvironment.Production) != webhook.LiveMode)
             throw new StripeWebhookPermanentException("Connected Stripe account mapping is invalid or disabled.");
+        if (!webhook.LiveMode && !options.Value.AllowedSandboxTenantIds.Contains(webhook.TenantId,
+                StringComparer.Ordinal))
+            throw new StripeWebhookPermanentException("Sandbox ledger posting is not enabled for this tenant.");
 
         var attempt = await db.PatientPaymentAttempts.IgnoreQueryFilters().SingleOrDefaultAsync(x =>
             x.TenantId == webhook.TenantId && x.PaymentReference == webhook.PaymentReference, cancellationToken)
@@ -125,6 +130,10 @@ public sealed class StripePaymentWebhookProcessor(CloudDentalDbContext db, TimeP
             attempt.UpdatedAt = now;
             processorEvent.Status = PaymentProcessorEventStatus.Processed;
             processorEvent.ProcessedAt = now;
+            if (billingNotifications is not null)
+                await billingNotifications.EnqueueAsync(payment.TenantId, payment.PatientAccountId,
+                    PatientBillingNotificationType.PaymentFailed, "payment", payment.PaymentId.ToString("N"),
+                    cancellationToken);
             await db.SaveChangesAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);
             metrics.Failed.Add(1);
@@ -172,6 +181,10 @@ public sealed class StripePaymentWebhookProcessor(CloudDentalDbContext db, TimeP
         await UpdateStatementAsync(payment, now, cancellationToken);
         processorEvent.Status = PaymentProcessorEventStatus.Processed;
         processorEvent.ProcessedAt = now;
+        if (billingNotifications is not null)
+            await billingNotifications.EnqueueAsync(payment.TenantId, payment.PatientAccountId,
+                PatientBillingNotificationType.PaymentReceived, "payment", payment.PaymentId.ToString("N"),
+                cancellationToken);
         await db.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         metrics.Succeeded.Add(1);

@@ -1,0 +1,83 @@
+name: Stripe Pilot Validation
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+
+jobs:
+  stripe-pilot:
+    name: Stripe Sandbox End-to-End
+    runs-on: ubuntu-latest
+    environment: stripe-sandbox
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 8 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+          cache: true
+          cache-dependency-path: src/CloudDentalOffice.Portal.Tests/CloudDentalOffice.Portal.Tests.csproj
+
+      - name: Require protected sandbox configuration
+        env:
+          STRIPE_TEST_SECRET_KEY: ${{ secrets.STRIPE_TEST_SECRET_KEY }}
+          STRIPE_CONNECTED_ACCOUNT_ID: ${{ secrets.STRIPE_CONNECTED_ACCOUNT_ID }}
+          STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
+          STRIPE_TEST_TENANT_ID: ${{ secrets.STRIPE_TEST_TENANT_ID }}
+        shell: bash
+        run: |
+          for name in STRIPE_TEST_SECRET_KEY STRIPE_CONNECTED_ACCOUNT_ID STRIPE_WEBHOOK_SECRET STRIPE_TEST_TENANT_ID; do
+            if [[ -z "${!name}" ]]; then
+              echo "$name is not configured in the protected stripe-sandbox environment." >&2
+              exit 1
+            fi
+          done
+          [[ "$STRIPE_TEST_SECRET_KEY" == sk_test_* || "$STRIPE_TEST_SECRET_KEY" == rk_test_* ]] || exit 1
+          [[ "$STRIPE_WEBHOOK_SECRET" == whsec_* ]] || exit 1
+          [[ "$STRIPE_CONNECTED_ACCOUNT_ID" == acct_* ]] || exit 1
+
+      - name: Verify connected sandbox account
+        env:
+          STRIPE_TEST_SECRET_KEY: ${{ secrets.STRIPE_TEST_SECRET_KEY }}
+          STRIPE_CONNECTED_ACCOUNT_ID: ${{ secrets.STRIPE_CONNECTED_ACCOUNT_ID }}
+        shell: bash
+        run: >-
+          curl --fail-with-body --silent --show-error
+          --max-time 30
+          --request GET
+          --user "$STRIPE_TEST_SECRET_KEY:"
+          "https://api.stripe.com/v1/accounts/$STRIPE_CONNECTED_ACCOUNT_ID"
+          --output /dev/null
+
+      - name: Restore
+        run: dotnet restore src/CloudDentalOffice.Portal.Tests/CloudDentalOffice.Portal.Tests.csproj
+
+      - name: Build
+        run: >-
+          dotnet build src/CloudDentalOffice.Portal.Tests/CloudDentalOffice.Portal.Tests.csproj
+          --configuration Release --no-restore
+
+      - name: Run payment lifecycle scenario tests
+        run: >-
+          dotnet test src/CloudDentalOffice.Portal.Tests/CloudDentalOffice.Portal.Tests.csproj
+          --configuration Release --no-restore --no-build
+          --filter "FullyQualifiedName~StripeConnectTests|FullyQualifiedName~PatientBalanceCheckoutTests|FullyQualifiedName~StripePaymentWebhookTests|FullyQualifiedName~StripeRefundWebhookTests|FullyQualifiedName~StripePaymentReconciliationTests|FullyQualifiedName~PatientBillingPortalTests"
+          --logger "trx;LogFilePrefix=stripe-pilot"
+          --results-directory "${{ github.workspace }}/TestResults"
+
+      - name: Upload test results
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: stripe-pilot-${{ github.run_id }}-${{ github.run_attempt }}
+          path: TestResults/**/*.trx
+          if-no-files-found: warn
+          retention-days: 14
