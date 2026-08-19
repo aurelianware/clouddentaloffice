@@ -9,18 +9,37 @@ using Microsoft.Extensions.Options;
 namespace CloudDentalOffice.Portal.Services;
 
 public sealed record ReviewOutreachEligibilityResult(bool Eligible, string Reason,
-    Appointment? Appointment = null, Patient? Patient = null, ReviewOutreachSettings? Settings = null);
+    ReviewOutreachSettings? Settings = null);
 
 public interface IReviewOutreachEligibilityService
 {
-    Task<ReviewOutreachEligibilityResult> EvaluateAsync(string tenantId, int appointmentId,
-        bool checkExisting = true, CancellationToken cancellationToken = default);
+    // Schedule-time contact eligibility. Appointment completion is decided by the
+    // caller (the appointment update path in the portal), so this evaluates only the
+    // tenant configuration and the recipient — no local appointment/patient tables,
+    // which no longer hold microservice-owned records.
+    Task<ReviewOutreachEligibilityResult> EvaluateContactAsync(string tenantId, string? patientStatus,
+        string? patientEmail, CancellationToken cancellationToken = default);
+
+    // Send-time gate for the background dispatcher: confirms the tenant is still
+    // enabled and configured, returning the active settings.
+    Task<ReviewOutreachEligibilityResult> EvaluateTenantAsync(string tenantId, CancellationToken cancellationToken = default);
 }
 
 public sealed class ReviewOutreachEligibilityService(CloudDentalDbContext db) : IReviewOutreachEligibilityService
 {
-    public async Task<ReviewOutreachEligibilityResult> EvaluateAsync(string tenantId, int appointmentId,
-        bool checkExisting = true, CancellationToken cancellationToken = default)
+    public async Task<ReviewOutreachEligibilityResult> EvaluateContactAsync(string tenantId, string? patientStatus,
+        string? patientEmail, CancellationToken cancellationToken = default)
+    {
+        var tenant = await EvaluateTenantAsync(tenantId, cancellationToken);
+        if (!tenant.Eligible) return tenant;
+        if (!string.Equals(patientStatus, "Active", StringComparison.OrdinalIgnoreCase))
+            return new(false, "patient_inactive");
+        if (string.IsNullOrWhiteSpace(patientEmail) || !new EmailAddressAttribute().IsValid(patientEmail))
+            return new(false, "email_missing_or_invalid");
+        return new(true, "eligible", tenant.Settings);
+    }
+
+    public async Task<ReviewOutreachEligibilityResult> EvaluateTenantAsync(string tenantId, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(tenantId)) return new(false, "invalid_tenant");
         var settings = await db.ReviewOutreachSettings.IgnoreQueryFilters().AsNoTracking()
@@ -28,24 +47,7 @@ public sealed class ReviewOutreachEligibilityService(CloudDentalDbContext db) : 
         if (settings is null || !settings.Enabled) return new(false, "disabled");
         if (!TryPublicHttpUrl(settings.ReviewLandingPageUrl) || !TryPublicHttpUrl(settings.GoogleReviewUrl))
             return new(false, "invalid_configuration");
-
-        var appointment = await db.Appointments.IgnoreQueryFilters().AsNoTracking()
-            .SingleOrDefaultAsync(x => x.TenantId == tenantId && x.AppointmentId == appointmentId, cancellationToken);
-        if (appointment is null) return new(false, "appointment_missing");
-        if (!string.Equals(appointment.Status, "Completed", StringComparison.OrdinalIgnoreCase))
-            return new(false, "appointment_not_completed");
-
-        var patient = await db.Patients.IgnoreQueryFilters().AsNoTracking()
-            .SingleOrDefaultAsync(x => x.TenantId == tenantId && x.PatientId == appointment.PatientId, cancellationToken);
-        if (patient is null) return new(false, "patient_missing");
-        if (!string.Equals(patient.Status, "Active", StringComparison.OrdinalIgnoreCase))
-            return new(false, "patient_inactive");
-        if (string.IsNullOrWhiteSpace(patient.Email) || !new EmailAddressAttribute().IsValid(patient.Email))
-            return new(false, "email_missing_or_invalid");
-        if (checkExisting && await db.ReviewOutreaches.IgnoreQueryFilters().AsNoTracking().AnyAsync(x =>
-                x.TenantId == tenantId && x.AppointmentId == appointmentId && x.Campaign == "google-review", cancellationToken))
-            return new(false, "duplicate");
-        return new(true, "eligible", appointment, patient, settings);
+        return new(true, "eligible", settings);
     }
 
     private static bool TryPublicHttpUrl(string? value) => Uri.TryCreate(value, UriKind.Absolute, out var uri) &&
@@ -54,24 +56,29 @@ public sealed class ReviewOutreachEligibilityService(CloudDentalDbContext db) : 
 
 public interface IReviewOutreachScheduler
 {
-    Task<bool> ScheduleAsync(string tenantId, int appointmentId, CancellationToken cancellationToken = default);
+    Task<bool> ScheduleAsync(string tenantId, Guid appointmentId, int patientId, string? patientStatus,
+        string? patientEmail, CancellationToken cancellationToken = default);
 }
 
 public sealed class ReviewOutreachScheduler(CloudDentalDbContext db, IReviewOutreachEligibilityService eligibility,
     TimeProvider timeProvider, ILogger<ReviewOutreachScheduler> logger) : IReviewOutreachScheduler
 {
-    public async Task<bool> ScheduleAsync(string tenantId, int appointmentId, CancellationToken cancellationToken = default)
+    public async Task<bool> ScheduleAsync(string tenantId, Guid appointmentId, int patientId, string? patientStatus,
+        string? patientEmail, CancellationToken cancellationToken = default)
     {
-        var result = await eligibility.EvaluateAsync(tenantId, appointmentId, true, cancellationToken);
+        var result = await eligibility.EvaluateContactAsync(tenantId, patientStatus, patientEmail, cancellationToken);
         if (!result.Eligible)
         {
             logger.LogInformation("Review outreach was not scheduled for tenant {TenantId}: {Reason}.", tenantId, result.Reason);
             return false;
         }
+        if (await db.ReviewOutreaches.IgnoreQueryFilters().AsNoTracking().AnyAsync(x => x.TenantId == tenantId &&
+                x.AppointmentId == appointmentId && x.Campaign == "google-review", cancellationToken))
+            return false;
         var now = timeProvider.GetUtcNow().UtcDateTime;
         db.ReviewOutreaches.Add(new ReviewOutreach
         {
-            TenantId = tenantId, AppointmentId = appointmentId, PatientId = result.Appointment!.PatientId,
+            TenantId = tenantId, AppointmentId = appointmentId, PatientId = patientId, RecipientEmail = patientEmail!,
             ScheduledAt = now.AddMinutes(result.Settings!.DelayMinutes), CreatedAt = now, UpdatedAt = now
         });
         try { await db.SaveChangesAsync(cancellationToken); }
@@ -183,15 +190,18 @@ public sealed class ReviewOutreachDispatcher(CloudDentalDbContext db, IReviewOut
                     .SetProperty(x => x.UpdatedAt, now), cancellationToken);
             if (claimed != 1) continue;
             var row = await db.ReviewOutreaches.IgnoreQueryFilters().AsNoTracking().SingleAsync(x => x.Id == id && x.LockId == lockId, cancellationToken);
-            var revalidation = await eligibility.EvaluateAsync(row.TenantId, row.AppointmentId, false, cancellationToken);
-            if (!revalidation.Eligible)
+            // Re-confirm the tenant is still enabled and configured; the recipient was
+            // snapshotted at schedule time (the worker has no context to re-fetch it).
+            var revalidation = await eligibility.EvaluateTenantAsync(row.TenantId, cancellationToken);
+            if (!revalidation.Eligible || string.IsNullOrWhiteSpace(row.RecipientEmail))
             {
-                await Finish(id, lockId, ReviewOutreachStatus.Suppressed, now, revalidation.Reason, cancellationToken);
-                logger.LogInformation("Review outreach suppressed for tenant {TenantId}: {Reason}.", row.TenantId, revalidation.Reason);
+                var reason = revalidation.Eligible ? "email_missing_or_invalid" : revalidation.Reason;
+                await Finish(id, lockId, ReviewOutreachStatus.Suppressed, now, reason, cancellationToken);
+                logger.LogInformation("Review outreach suppressed for tenant {TenantId}: {Reason}.", row.TenantId, reason);
                 continue;
             }
             var matchingSenders = senders.Where(x => x.Channel == row.Channel).Take(2).ToArray();
-            var request = new ReviewOutreachSendRequest(revalidation.Patient!.Email!, revalidation.Settings!.SenderName,
+            var request = new ReviewOutreachSendRequest(row.RecipientEmail, revalidation.Settings!.SenderName,
                 new Uri(revalidation.Settings.ReviewLandingPageUrl!));
             var result = matchingSenders.Length switch
             {

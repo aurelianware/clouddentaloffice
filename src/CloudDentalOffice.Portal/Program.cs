@@ -15,6 +15,7 @@ using CloudDentalOffice.Portal.Models;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Web;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using MudBlazor;
 using MudBlazor.Services;
 
@@ -288,6 +289,15 @@ builder.Services.AddDbContext<CloudDentalDbContext>(options =>
     }
 });
 
+// Health endpoints back the Container App liveness/readiness probes.
+//   /health/live  — process is up. Runs no checks, so a transient database
+//                   outage never trips liveness and restarts a healthy replica.
+//   /health/ready — database is reachable. The ingress uses this to hold traffic
+//                   away from a replica that cannot yet serve requests, instead
+//                   of surfacing 5xx errors to end users.
+builder.Services.AddHealthChecks()
+    .AddCheck<DatabaseReadinessHealthCheck>("database", tags: new[] { "ready" });
+
 
 // Configure Azure Key Vault for secrets management (cloud-ready)
 if (!builder.Environment.IsDevelopment())
@@ -361,7 +371,15 @@ builder.Services.AddHttpClient<IPatientAcquisitionClient, PatientAcquisitionClie
 // Remaining services still use monolith mode (migrate one at a time)
 builder.Services.AddScoped<IClaimService, ClaimServiceImpl>();
 builder.Services.AddScoped<PatientContextService>();
-builder.Services.AddScoped<IAppointmentService, AppointmentServiceImpl>();
+// Appointments are owned by the SchedulingService (same store the booking-request
+// approval workflow writes to), reached through the API gateway with a scheduling
+// tenant token — so approved and online-booked appointments show on the calendar.
+builder.Services.AddHttpClient<IAppointmentService, AppointmentServiceHttpClient>(client =>
+{
+    client.BaseAddress = new Uri(visionGatewayUrl);
+    client.DefaultRequestHeaders.Add("Accept", "application/json");
+    client.Timeout = TimeSpan.FromSeconds(30);
+}).AddHttpMessageHandler<SchedulingTenantAuthorizationHandler>();
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.Configure<ReviewEmailOptions>(builder.Configuration.GetSection(ReviewEmailOptions.SectionName));
 builder.Services.Configure<ReviewOutreachWorkerOptions>(builder.Configuration.GetSection(ReviewOutreachWorkerOptions.SectionName));
@@ -449,8 +467,28 @@ using (var scope = app.Services.CreateScope())
     {
         logger.LogError(ex, "Error during database initialization: {Message}", ex.Message);
         logger.LogError("Stack trace: {StackTrace}", ex.StackTrace);
-        
-        if (!app.Environment.IsDevelopment()) throw;
+
+        // In development, always fail fast so the problem is obvious.
+        if (app.Environment.IsDevelopment()) throw;
+
+        // In production, distinguish the two failure modes:
+        //  - Database unreachable (a transient connectivity outage): keep the
+        //    process alive. /health/ready reports unhealthy while the database is
+        //    down, so the ingress holds traffic away from this replica until it
+        //    recovers, without a crash-loop.
+        //  - Database reachable but initialization still failed (a schema, migration,
+        //    or bootstrap bug): fail fast. Staying alive would let the replica report
+        //    ready — /health/ready only checks connectivity — and serve a
+        //    half-initialized app, which is worse than restarting.
+        var databaseReachable = false;
+        try { databaseReachable = await dbContext.Database.CanConnectAsync(); }
+        catch (Exception connectivityCheck)
+        {
+            logger.LogError(connectivityCheck, "Database connectivity check after an initialization failure also failed.");
+        }
+        if (databaseReachable) throw;
+
+        logger.LogWarning("Database is unreachable at startup; continuing so readiness can gate traffic until it recovers.");
     }
 }
 
@@ -468,6 +506,17 @@ app.UseRouting();
 app.UseAuthentication();
 app.UseMiddleware<StaffAccessMiddleware>();
 app.UseAuthorization();
+
+// Probe endpoints are anonymous and bypass StaffAccessMiddleware (see below),
+// so the Container App platform can reach them without a Google staff identity.
+app.MapHealthChecks("/health/live", new HealthCheckOptions
+{
+    Predicate = _ => false
+});
+app.MapHealthChecks("/health/ready", new HealthCheckOptions
+{
+    Predicate = check => check.Tags.Contains("ready")
+});
 
 app.MapBlazorHub();
 app.MapFallbackToPage("/_Host");

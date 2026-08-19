@@ -307,16 +307,17 @@
 
     private async Task DeleteAppointment(Appointment appointment)
     {
+        var patientName = GetPatientName(appointment.PatientId);
         var result = await DialogService.ShowMessageBox(
             "Delete Appointment",
-            $"Are you sure you want to delete appointment #{appointment.AppointmentId}?",
+            $"Are you sure you want to delete the {appointment.AppointmentDateTime.ToLocalTime():g} appointment for {patientName}?",
             yesText: "Delete", cancelText: "Cancel");
 
         if (result == true)
         {
             try
             {
-                await AppointmentService.DeleteAppointmentAsync(appointment.AppointmentId.ToString());
+                await AppointmentService.DeleteAppointmentAsync(appointment.ExternalId ?? appointment.AppointmentId.ToString());
                 Snackbar.Add("Appointment deleted successfully", Severity.Success);
                 await LoadAppointments();
             }

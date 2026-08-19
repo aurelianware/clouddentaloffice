@@ -12,8 +12,13 @@ public sealed class ReviewOutreach : ITenantEntity
 {
     public Guid Id { get; set; } = Guid.NewGuid();
     [MaxLength(64)] public string TenantId { get; set; } = string.Empty;
-    public int AppointmentId { get; set; }
+    // Identifier of the completed appointment in the SchedulingService (source of truth).
+    public Guid AppointmentId { get; set; }
     public int PatientId { get; set; }
+    // Recipient contact captured at schedule time. The background dispatcher has no
+    // authenticated context to re-fetch the patient from the PatientService, so the
+    // address is snapshotted when outreach is scheduled.
+    [MaxLength(320)] public string RecipientEmail { get; set; } = string.Empty;
     [MaxLength(40)] public string Campaign { get; set; } = "google-review";
     public ReviewOutreachChannel Channel { get; set; } = ReviewOutreachChannel.Email;
     public ReviewOutreachStatus Status { get; set; } = ReviewOutreachStatus.Scheduled;
