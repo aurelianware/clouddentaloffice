@@ -2,11 +2,12 @@ using Microsoft.EntityFrameworkCore;
 
 public static class PatientAcquisitionSchema
 {
-    public static async Task EnsureAsync(SchedulingDbContext db)
+    public static async Task EnsureAsync(SchedulingDbContext db, CancellationToken cancellationToken = default)
     {
         var provider = db.Database.ProviderName ?? "";
-        var sql = provider.Contains("Npgsql") ? Postgres : provider.Contains("SqlServer") ? SqlServer : Sqlite;
-        await db.Database.ExecuteSqlRawAsync(sql);
+        var sql = provider.Contains("Npgsql", StringComparison.Ordinal) ? Postgres
+            : provider.Contains("SqlServer", StringComparison.Ordinal) ? SqlServer : Sqlite;
+        await db.Database.ExecuteSqlRawAsync(sql, cancellationToken);
     }
 
     private const string Sqlite = """

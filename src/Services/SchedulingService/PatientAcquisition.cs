@@ -121,7 +121,8 @@ public sealed class PatientAcquisitionService(SchedulingDbContext db, TimeProvid
     {
         if (await db.PatientAcquisitionEvents.AnyAsync(x => x.TenantId == item.TenantId && x.EventId == item.EventId, cancellationToken)) return;
         db.PatientAcquisitionEvents.Add(item);
-        await db.SaveChangesAsync(cancellationToken);
+        try { await db.SaveChangesAsync(cancellationToken); }
+        catch (DbUpdateException) { db.ChangeTracker.Clear(); }
     }
 
     public async Task<PatientAcquisitionDashboard> GetDashboardAsync(string tenantId, PatientAcquisitionQuery query, CancellationToken cancellationToken = default)
@@ -135,7 +136,9 @@ public sealed class PatientAcquisitionService(SchedulingDbContext db, TimeProvid
         if (query.ProviderId.HasValue) filtered = filtered.Where(x => x.ProviderId == query.ProviderId);
         var events = await filtered.Select(x => new ReportEvent(x.SessionId, x.EventType, x.Source, x.AppointmentIntent, x.LandingPage, x.OccurredAt)).ToListAsync(cancellationToken);
         long Unique(AcquisitionEventType type) => events.Where(x => x.EventType == type).Select(x => x.SessionId).Distinct().LongCount();
-        var upstreamMeasured = events.Any(x => x.EventType <= AcquisitionEventType.AvailabilityViewed);
+        var upstreamMeasured = events.Any(x => x.EventType is AcquisitionEventType.LandingPageViewed
+            or AcquisitionEventType.BookingCtaClicked or AcquisitionEventType.BookingStarted
+            or AcquisitionEventType.AvailabilityViewed);
         long? visits = upstreamMeasured ? Unique(AcquisitionEventType.LandingPageViewed) : null;
         long? ctas = upstreamMeasured ? Unique(AcquisitionEventType.BookingCtaClicked) : null;
         long? starts = upstreamMeasured ? Unique(AcquisitionEventType.BookingStarted) : null;

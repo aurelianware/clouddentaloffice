@@ -304,14 +304,14 @@ app.MapPost("/api/public/v1/acquisition-events", async (
     if (!section.GetValue("Enabled", false)) return Results.NotFound();
     var tenantId = IntakeAuth.ResolveTenant(http, section);
     if (tenantId is null) return Results.Unauthorized();
-    if (http.Request.ContentLength is > 4096) return Results.StatusCode(StatusCodes.Status413PayloadTooLarge);
     try
     {
         var accepted = await scheduling.RecordAcquisitionAsync(tenantId, input, http.RequestAborted);
         return accepted ? Results.Accepted() : Results.Ok(new { accepted = false });
     }
     catch (HttpRequestException) { return Results.Problem(title: "Acquisition measurement is temporarily unavailable.", statusCode: 503); }
-}).RequireRateLimiting("public-acquisition").WithTags("PatientAcquisition");
+}).WithMetadata(new Microsoft.AspNetCore.Mvc.RequestSizeLimitAttribute(4096))
+  .RequireRateLimiting("public-acquisition").WithTags("PatientAcquisition");
 
 app.MapPost("/api/public/booking-requests", async (
     PublicBookingRequest request,
