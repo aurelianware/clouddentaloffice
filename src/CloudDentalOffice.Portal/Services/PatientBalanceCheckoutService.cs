@@ -36,6 +36,7 @@ public sealed class PatientBalanceCheckoutService(CloudDentalDbContext db, IPaym
         CancellationToken cancellationToken = default)
     {
         PaymentTenantGuard.Ensure(tenantProvider, request.TenantId);
+        ValidateSelectionFields(request);
         var settings = options.Value;
         if (settings.MaximumAmount <= 0) throw new InvalidOperationException("Payment maximum is not configured.");
         var account = await db.PatientAccounts.IgnoreQueryFilters().AsNoTracking().SingleOrDefaultAsync(x =>
@@ -105,6 +106,16 @@ public sealed class PatientBalanceCheckoutService(CloudDentalDbContext db, IPaym
             attempt.UpdatedAt = clock.GetUtcNow().UtcDateTime; await db.SaveChangesAsync(CancellationToken.None);
             throw;
         }
+    }
+
+    private static void ValidateSelectionFields(PatientBalanceCheckoutRequest request)
+    {
+        if (request.Selection != PatientPaymentSelection.StatementBalance && request.StatementId.HasValue)
+            throw new ArgumentException("A statement may only be supplied for a statement balance payment.",
+                nameof(request.StatementId));
+        if (request.Selection != PatientPaymentSelection.Partial && request.CustomAmount.HasValue)
+            throw new ArgumentException("A custom amount may only be supplied for a partial payment.",
+                nameof(request.CustomAmount));
     }
 
     private async Task<Money> StatementAmount(PatientBalanceCheckoutRequest request, Guid accountId,

@@ -87,6 +87,24 @@ public sealed class PatientBalanceCheckoutTests : IDisposable
     }
 
     [Theory]
+    [InlineData(PatientPaymentSelection.FullBalance, true, false)]
+    [InlineData(PatientPaymentSelection.FullBalance, false, true)]
+    [InlineData(PatientPaymentSelection.StatementBalance, false, true)]
+    [InlineData(PatientPaymentSelection.Partial, true, true)]
+    public async Task Selection_rejects_fields_that_do_not_apply(PatientPaymentSelection selection,
+        bool includeStatement, bool includeCustomAmount)
+    {
+        await SeedBalance(100m);
+        var request = Request(selection, includeStatement ? Guid.NewGuid() : null,
+            includeCustomAmount ? new Money(25m) : null);
+
+        await Assert.ThrowsAsync<ArgumentException>(() => Service().CreateAsync(request));
+
+        Assert.Empty(_db.PatientPaymentAttempts);
+        Assert.Equal(0, _checkout.Calls);
+    }
+
+    [Theory]
     [InlineData(false, true, true)]
     [InlineData(true, false, true)]
     [InlineData(true, true, false)]
