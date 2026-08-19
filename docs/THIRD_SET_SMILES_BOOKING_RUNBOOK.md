@@ -111,6 +111,11 @@ The deployment workflow requires two independent 32+ character GitHub secrets:
 and `PUBLIC_AVAILABILITY_SLOT_KEY` for authenticated encryption. Do not reuse the website's
 `PUBLIC_BOOKING_API_KEY` for either purpose.
 
+It also requires an independent `PATIENT_SERVICE_API_KEY` for the private
+SchedulingService→PatientService tenant boundary. The Azure templates make this
+parameter mandatory so a deployment fails before creating an unusable empty
+Container Apps secret.
+
 An administrator can enable the channel using
 `PUT /api/scheduling-integrations/PublicWebsite/configuration`, then manage the
 public aliases with the existing authenticated

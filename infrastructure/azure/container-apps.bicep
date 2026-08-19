@@ -39,7 +39,7 @@ param serviceBusListenConnection string
 @secure()
 param publicBookingApiKey string
 @secure()
-param patientServiceApiKey string = ''
+param patientServiceApiKey string
 @secure()
 param publicSchedulingServiceApiKey string
 @secure()
