@@ -43,6 +43,8 @@ public class CloudDentalDbContext : DbContext
     public DbSet<ProcedureCode> ProcedureCodes => Set<ProcedureCode>();
     public DbSet<Procedure> Procedures => Set<Procedure>();
     public DbSet<ClinicalNote> ClinicalNotes => Set<ClinicalNote>();
+    public DbSet<PatientAccount> PatientAccounts => Set<PatientAccount>();
+    public DbSet<PatientLedgerEntry> PatientLedgerEntries => Set<PatientLedgerEntry>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -59,6 +61,33 @@ public class CloudDentalDbContext : DbContext
         ConfigureTenantEntity<PlannedProcedure>(modelBuilder);
         ConfigureTenantEntity<Claim>(modelBuilder);
         ConfigureTenantEntity<ClaimProcedure>(modelBuilder);
+        ConfigureTenantEntity<PatientAccount>(modelBuilder);
+        ConfigureTenantEntity<PatientLedgerEntry>(modelBuilder);
+
+        modelBuilder.Entity<PatientAccount>(entity =>
+        {
+            entity.Property(x => x.Status).HasConversion<string>().HasMaxLength(20);
+            entity.HasIndex(x => new { x.TenantId, x.PatientId }).IsUnique();
+            entity.HasAlternateKey(x => new { x.TenantId, x.Id });
+            entity.HasQueryFilter(x => x.TenantId == CurrentTenantId);
+        });
+
+        modelBuilder.Entity<PatientLedgerEntry>(entity =>
+        {
+            entity.Property(x => x.Amount).HasPrecision(18, 2);
+            entity.Property(x => x.EntryType).HasConversion<string>().HasMaxLength(32);
+            entity.Property(x => x.SourceType).HasConversion<string>().HasMaxLength(32);
+            entity.HasOne(x => x.PatientAccount).WithMany(x => x.LedgerEntries)
+                .HasForeignKey(x => new { x.TenantId, x.PatientAccountId })
+                .HasPrincipalKey(x => new { x.TenantId, x.Id }).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(x => x.ReversalOfEntry).WithMany().HasForeignKey(x => x.ReversalOfEntryId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasIndex(x => new { x.TenantId, x.SourceType, x.SourceId, x.EntryType }).IsUnique();
+            entity.HasIndex(x => new { x.TenantId, x.ReversalOfEntryId }).IsUnique()
+                .HasFilter("\"ReversalOfEntryId\" IS NOT NULL");
+            entity.HasIndex(x => new { x.TenantId, x.PatientAccountId, x.EffectiveDate });
+            entity.HasQueryFilter(x => x.TenantId == CurrentTenantId);
+        });
 
         // Patient configuration
         modelBuilder.Entity<Patient>(entity =>
@@ -363,6 +392,7 @@ public class CloudDentalDbContext : DbContext
 
     public override int SaveChanges()
     {
+        EnforceImmutableLedger();
         ApplyTenantId();
         NormalizeDateTimesToUtc();
         return base.SaveChanges();
@@ -370,9 +400,16 @@ public class CloudDentalDbContext : DbContext
 
     public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {
+        EnforceImmutableLedger();
         ApplyTenantId();
         NormalizeDateTimesToUtc();
         return base.SaveChangesAsync(cancellationToken);
+    }
+
+    private void EnforceImmutableLedger()
+    {
+        if (ChangeTracker.Entries<PatientLedgerEntry>().Any(x => x.State is EntityState.Modified or EntityState.Deleted))
+            throw new InvalidOperationException("Posted patient ledger entries are immutable; post a reversal or adjustment instead.");
     }
 
     /// <summary>
