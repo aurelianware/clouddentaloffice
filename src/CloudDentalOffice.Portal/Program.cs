@@ -401,6 +401,8 @@ builder.Services.AddScoped<IPaymentCheckoutService, PaymentCheckoutService>();
 builder.Services.AddScoped<IPaymentRefundService, PaymentRefundService>();
 builder.Services.AddScoped<IPaymentReconciliationService, PaymentReconciliationService>();
 builder.Services.AddScoped<IPaymentAllocationService, PaymentAllocationService>();
+builder.Services.Configure<PatientCheckoutOptions>(builder.Configuration.GetSection(PatientCheckoutOptions.SectionName));
+builder.Services.AddScoped<IPatientBalanceCheckoutService, PatientBalanceCheckoutService>();
 builder.Services.AddScoped<IStripeCredentialProvider, ConfigurationStripeCredentialProvider>();
 builder.Services.AddHttpClient<IStripeApiClient, StripeApiClient>(client =>
 {

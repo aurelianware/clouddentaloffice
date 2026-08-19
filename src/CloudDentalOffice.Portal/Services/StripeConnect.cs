@@ -31,10 +31,14 @@ public interface IStripeApiClient
         string accountId, CancellationToken cancellationToken = default);
     Task<StripeOnboardingLink> CreateAccountLinkAsync(PaymentProcessorConfiguration configuration,
         string accountId, Uri refreshUrl, Uri returnUrl, CancellationToken cancellationToken = default);
+    Task<StripeCheckoutSessionSnapshot> CreateCheckoutSessionAsync(PaymentProcessorConfiguration configuration,
+        string connectedAccountId, PaymentRequest request, CancellationToken cancellationToken = default);
 }
 
 public sealed record StripeAccountSnapshot(string Id, bool ChargesEnabled, bool PayoutsEnabled,
     bool DetailsSubmitted, string? RequirementsStatus);
+public sealed record StripeCheckoutSessionSnapshot(string Id, string? PaymentIntentId, Uri CheckoutUrl,
+    DateTime ExpiresAt);
 
 public interface IStripeCredentialProvider
 {
@@ -124,6 +128,48 @@ public sealed class StripeApiClient(HttpClient httpClient, IStripeCredentialProv
         return new(url, ParseTimestamp(dto.ExpiresAt));
     }
 
+    public async Task<StripeCheckoutSessionSnapshot> CreateCheckoutSessionAsync(PaymentProcessorConfiguration config,
+        string connectedAccountId, PaymentRequest request, CancellationToken cancellationToken = default)
+    {
+        ValidateAccountId(connectedAccountId);
+        PaymentCheckoutService.ValidateReference(request.InternalPaymentReference, nameof(request.InternalPaymentReference));
+        if (request.InternalPaymentReference.Length != 36 ||
+            !request.InternalPaymentReference.StartsWith("pay_", StringComparison.Ordinal) ||
+            !request.InternalPaymentReference[4..].All(Uri.IsHexDigit))
+            throw new ArgumentException("Stripe Checkout requires a server-generated opaque payment reference.",
+                nameof(request.InternalPaymentReference));
+        if (request.Amount.Amount <= 0) throw new ArgumentOutOfRangeException(nameof(request.Amount));
+        ValidateCheckoutUrl(request.SuccessUrl, config.Environment, nameof(request.SuccessUrl));
+        ValidateCheckoutUrl(request.CancelUrl, config.Environment, nameof(request.CancelUrl));
+        var cents = checked((long)(request.Amount.Amount * 100m));
+        var fields = new Dictionary<string, string>
+        {
+            ["mode"] = "payment",
+            ["success_url"] = request.SuccessUrl!,
+            ["cancel_url"] = request.CancelUrl!,
+            ["line_items[0][price_data][currency]"] = request.Amount.Currency.ToLowerInvariant(),
+            ["line_items[0][price_data][unit_amount]"] = cents.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            ["line_items[0][price_data][product_data][name]"] = "Account payment",
+            ["line_items[0][quantity]"] = "1",
+            ["metadata[payment_reference]"] = request.InternalPaymentReference,
+            ["payment_intent_data[metadata][payment_reference]"] = request.InternalPaymentReference
+        };
+        using var message = new HttpRequestMessage(HttpMethod.Post, "/v1/checkout/sessions");
+        message.Headers.Authorization = new AuthenticationHeaderValue("Bearer", credentials.GetSecret(config));
+        message.Headers.Add("Stripe-Account", connectedAccountId);
+        message.Headers.Add("Idempotency-Key", request.InternalPaymentReference);
+        message.Headers.Add("Stripe-Version", configuration["Stripe:Checkout:ApiVersion"] ?? "2026-07-29.dahlia");
+        message.Content = new FormUrlEncodedContent(fields);
+        using var response = await httpClient.SendAsync(message, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+        if (!response.IsSuccessStatusCode)
+            throw new StripeConnectException($"Stripe Checkout request failed with HTTP {(int)response.StatusCode}.");
+        var dto = await ReadAsync<StripeCheckoutSessionDto>(response, cancellationToken);
+        if (!dto.Id.StartsWith("cs_", StringComparison.Ordinal) ||
+            !Uri.TryCreate(dto.Url, UriKind.Absolute, out var checkoutUrl) || checkoutUrl.Scheme != Uri.UriSchemeHttps)
+            throw new StripeConnectException("Stripe returned an invalid Checkout Session.");
+        return new(dto.Id, dto.PaymentIntentId, checkoutUrl, ParseTimestamp(dto.ExpiresAt));
+    }
+
     private async Task<HttpResponseMessage> SendAsync(PaymentProcessorConfiguration config, HttpMethod method,
         string path, object? body, string apiVersion, CancellationToken cancellationToken)
     {
@@ -157,6 +203,13 @@ public sealed class StripeApiClient(HttpClient httpClient, IStripeCredentialProv
     {
         if (!value.IsAbsoluteUri || (environment == PaymentProcessorEnvironment.Production && value.Scheme != Uri.UriSchemeHttps))
             throw new ArgumentException("Stripe production onboarding redirect URLs must use HTTPS.");
+    }
+    private static void ValidateCheckoutUrl(string? value, PaymentProcessorEnvironment environment, string parameter)
+    {
+        if (string.IsNullOrWhiteSpace(value) || !Uri.TryCreate(value.Replace("{CHECKOUT_SESSION_ID}", "session", StringComparison.Ordinal),
+                UriKind.Absolute, out var uri) ||
+            (environment == PaymentProcessorEnvironment.Production && uri.Scheme != Uri.UriSchemeHttps))
+            throw new ArgumentException("Stripe Checkout redirect URLs must be safe absolute application URLs.", parameter);
     }
     private static DateTime ParseTimestamp(JsonElement value)
     {
@@ -268,14 +321,28 @@ internal sealed record StripeDeadlineDto([property: JsonPropertyName("status")] 
 internal sealed record StripeAccountLinkDto(
     [property: JsonPropertyName("url")] string Url,
     [property: JsonPropertyName("expires_at")] JsonElement ExpiresAt);
+internal sealed record StripeCheckoutSessionDto(
+    [property: JsonPropertyName("id")] string Id,
+    [property: JsonPropertyName("payment_intent")] string? PaymentIntentId,
+    [property: JsonPropertyName("url")] string Url,
+    [property: JsonPropertyName("expires_at")] JsonElement ExpiresAt);
 
 // Patient checkout/refund support is intentionally separate from Connect onboarding in this PR.
-public sealed class StripePaymentProcessor : IPaymentProcessor
+public sealed class StripePaymentProcessor(IStripeApiClient api) : IPaymentProcessor
 {
     public PaymentProcessorProvider Provider => PaymentProcessorProvider.Stripe;
-    public Task<PaymentSession> CreateSessionAsync(PaymentProcessorConfiguration configuration, PaymentRequest request,
-        CancellationToken cancellationToken = default) => throw new PaymentProcessorUnavailableException(
-        "Stripe patient checkout is not enabled; Connect onboarding alone does not activate payment collection.");
+    public async Task<PaymentSession> CreateSessionAsync(PaymentProcessorConfiguration configuration, PaymentRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        if (!configuration.Enabled || configuration.OnboardingStatus != PaymentProcessorOnboardingStatus.Enabled ||
+            !configuration.ChargesEnabled || !configuration.PayoutsEnabled ||
+            string.IsNullOrWhiteSpace(configuration.ConnectedMerchantReference))
+            throw new PaymentProcessorUnavailableException("The practice Stripe account is not ready to accept payments.");
+        var session = await api.CreateCheckoutSessionAsync(configuration, configuration.ConnectedMerchantReference,
+            request, cancellationToken);
+        return new(request.InternalPaymentReference, session.Id, session.PaymentIntentId, session.CheckoutUrl, null,
+            session.ExpiresAt, PaymentStatus.Pending);
+    }
     public Task<PaymentRefundResult> RefundAsync(PaymentProcessorConfiguration configuration, PaymentRefundRequest request,
         string externalPaymentId, CancellationToken cancellationToken = default) => throw new PaymentProcessorUnavailableException(
         "Stripe patient refunds are not enabled; Connect onboarding alone does not activate payment collection.");
