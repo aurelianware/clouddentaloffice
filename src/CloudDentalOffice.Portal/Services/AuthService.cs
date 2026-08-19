@@ -53,7 +53,7 @@ public class AuthService : IAuthService
         }
 
         // Generate token
-        return _tokenService.GenerateToken(user.Id.ToString(), user.Email, user.TenantId);
+        return _tokenService.GenerateToken(user.Id.ToString(), user.Email, user.TenantId, user.Role);
     }
 
     public async Task<bool> RegisterAsync(RegistrationRequest request)

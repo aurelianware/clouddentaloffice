@@ -34,6 +34,11 @@
             <MudText Typo="Typo.h6" Style="color: #00ffff; font-weight: bold;">The Sentinel</MudText>
         </MudDrawerHeader>
         <MudNavMenu>
+            <AuthorizeView Roles="Patient">
+                <MudNavGroup Title="Patient Portal" Icon="@Icons.Material.Filled.AccountCircle" Expanded="true">
+                    <MudNavLink Href="/patient/billing" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.ReceiptLong">Billing</MudNavLink>
+                </MudNavGroup>
+            </AuthorizeView>
             <!-- Dashboard -->
             <MudNavLink Href="/" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.Dashboard"
                         Style="border-left: 3px solid transparent; transition: all 0.3s ease;">

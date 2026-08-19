@@ -7,7 +7,7 @@ namespace CloudDentalOffice.Portal.Services;
 
 public interface ITokenService
 {
-    string GenerateToken(string userId, string email, string tenantId);
+    string GenerateToken(string userId, string email, string tenantId, string role);
 }
 
 public class TokenService : ITokenService
@@ -19,7 +19,7 @@ public class TokenService : ITokenService
         _configuration = configuration;
     }
 
-    public string GenerateToken(string userId, string email, string tenantId)
+    public string GenerateToken(string userId, string email, string tenantId, string role)
     {
         var key = _configuration["Jwt:Key"] ?? "ThisIsASecretKeyForDevelopmentOnly_DoNotUseInProduction_MakeItLonger";
         var issuer = _configuration["Jwt:Issuer"] ?? "CloudDentalOffice";
@@ -33,6 +33,7 @@ public class TokenService : ITokenService
             new Claim(JwtRegisteredClaimNames.Sub, userId),
             new Claim(JwtRegisteredClaimNames.Email, email),
             new Claim("tenant_id", tenantId),
+            new Claim(ClaimTypes.Role, role),
             new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
         };
 

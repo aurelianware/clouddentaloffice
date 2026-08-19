@@ -410,6 +410,7 @@ builder.Services.AddSingleton<StripePaymentMetrics>();
 builder.Services.AddHostedService<StripePaymentWebhookConsumer>();
 builder.Services.Configure<PatientCheckoutOptions>(builder.Configuration.GetSection(PatientCheckoutOptions.SectionName));
 builder.Services.AddScoped<IPatientBalanceCheckoutService, PatientBalanceCheckoutService>();
+builder.Services.AddScoped<IPatientBillingPortalService, PatientBillingPortalService>();
 builder.Services.AddScoped<IStripeCredentialProvider, ConfigurationStripeCredentialProvider>();
 builder.Services.AddHttpClient<IStripeApiClient, StripeApiClient>(client =>
 {

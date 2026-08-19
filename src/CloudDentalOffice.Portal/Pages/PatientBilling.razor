@@ -1,0 +1,156 @@
+@page "/patient/billing"
+@page "/patient/billing/payment-return"
+@attribute [Authorize(Roles = "Patient")]
+@using CloudDentalOffice.Portal.Models
+@inject IPatientBillingPortalService BillingPortal
+@inject AuthenticationStateProvider AuthenticationState
+@inject NavigationManager Navigation
+@inject ISnackbar Snackbar
+
+<PageTitle>Patient Billing - Cloud Dental Office</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Large" Class="mt-4">
+    <h1 class="mud-typography mud-typography-h3">Billing</h1>
+    <MudText Typo="Typo.body1" Class="mb-4">View your Cloud Dental Office statements and account payments.</MudText>
+
+    @if (_returning)
+    {
+        <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Class="mb-4" role="status">
+            <MudText Typo="Typo.h6">Payment processing</MudText>
+            <MudText>We are waiting for secure confirmation from the payment processor. This page does not mark a payment successful from the browser redirect.</MudText>
+        </MudAlert>
+    }
+    @if (_loading)
+    {
+        <MudProgressLinear Indeterminate="true" aria-label="Loading billing information" />
+    }
+    else if (_error is not null)
+    {
+        <MudAlert Severity="Severity.Error" role="alert">@_error</MudAlert>
+    }
+    else if (_model is not null)
+    {
+        <MudGrid>
+            <MudItem xs="12" sm="6" md="3"><SummaryCard Label="Current balance" Value="@Money(_model.CurrentBalance, _model.Currency)" /></MudItem>
+            <MudItem xs="12" sm="6" md="3"><SummaryCard Label="Credits" Value="@Money(_model.Credits, _model.Currency)" /></MudItem>
+            <MudItem xs="12" sm="6" md="3"><SummaryCard Label="Insurance payments" Value="@Money(_model.InsurancePayments, _model.Currency)" /></MudItem>
+            <MudItem xs="12" sm="6" md="3"><SummaryCard Label="Latest payment status" Value="@(_model.LatestAttemptStatus?.ToString() ?? "No payments")" /></MudItem>
+        </MudGrid>
+
+        <MudPaper Class="pa-4 mt-4" Outlined="true">
+            <h2 class="mud-typography mud-typography-h5">Pay now</h2>
+            @if (!_model.StripeAvailable || _model.CurrentBalance <= 0)
+            {
+                <MudText>No online payment is currently available.</MudText>
+            }
+            else
+            {
+                <MudRadioGroup T="PatientPaymentSelection" @bind-Value="_selection" aria-label="Payment amount selection">
+                    <MudRadio Value="PatientPaymentSelection.FullBalance">Full current balance (@Money(_model.CurrentBalance, _model.Currency))</MudRadio>
+                    @if (_model.PartialPaymentsAllowed)
+                    {
+                        <MudRadio Value="PatientPaymentSelection.Partial">Custom partial amount</MudRadio>
+                    }
+                </MudRadioGroup>
+                @if (_selection == PatientPaymentSelection.Partial)
+                {
+                    <MudNumericField T="decimal?" @bind-Value="_customAmount" Label="Partial payment amount"
+                                     Min="0.01m" Variant="Variant.Outlined" Class="mt-2" />
+                }
+                <MudButton Color="Color.Primary" Variant="Variant.Filled" Disabled="_launching"
+                           OnClick="LaunchCheckout" Class="mt-3" aria-label="Continue to secure payment">
+                    @(_launching ? "Opening secure payment…" : "Continue to secure payment")
+                </MudButton>
+            }
+        </MudPaper>
+
+        <MudPaper Class="pa-4 mt-4" Outlined="true">
+            <h2 class="mud-typography mud-typography-h5">Statements</h2>
+            @foreach (var statement in _model.Statements)
+            {
+                <MudExpansionPanel Text="@($"{statement.StatementDate:d} — {Money(statement.RemainingDue, statement.Currency)} due")">
+                    <MudSimpleTable Dense="true" Hover="true">
+                        <tbody>
+                            <tr><th scope="row">Previous balance</th><td>@Money(statement.PreviousBalance, statement.Currency)</td></tr>
+                            <tr><th scope="row">Services and charges</th><td>@Money(statement.Charges, statement.Currency)</td></tr>
+                            <tr><th scope="row">Insurance payments</th><td>-@Money(statement.InsurancePayments, statement.Currency)</td></tr>
+                            <tr><th scope="row">Contractual adjustments</th><td>-@Money(statement.Adjustments, statement.Currency)</td></tr>
+                            <tr><th scope="row">Patient payments</th><td>-@Money(statement.PatientPayments, statement.Currency)</td></tr>
+                            <tr><th scope="row">Amount due</th><td><strong>@Money(statement.RemainingDue, statement.Currency)</strong></td></tr>
+                        </tbody>
+                    </MudSimpleTable>
+                    @if (statement.Lines.Count > 0)
+                    {
+                        <MudTable Items="statement.Lines" Dense="true" Class="mt-3">
+                            <HeaderContent><MudTh>Date</MudTh><MudTh>Description</MudTh><MudTh>Amount</MudTh></HeaderContent>
+                            <RowTemplate>
+                                <MudTd DataLabel="Date">@context.Date.ToString("d")</MudTd>
+                                <MudTd DataLabel="Description">@context.Description</MudTd>
+                                <MudTd DataLabel="Amount">@Money(context.Amount, context.Currency)</MudTd>
+                            </RowTemplate>
+                        </MudTable>
+                    }
+                    @if (statement.RemainingDue > 0 && _model.StripeAvailable)
+                    {
+                        <MudButton Variant="Variant.Outlined" Color="Color.Primary" Class="mt-3"
+                                   OnClick="@(() => PayStatement(statement.StatementId))">
+                            Pay this statement
+                        </MudButton>
+                    }
+                </MudExpansionPanel>
+            }
+            @if (_model.Statements.Count == 0) { <MudText>No statements are available.</MudText> }
+        </MudPaper>
+
+        <MudPaper Class="pa-4 mt-4" Outlined="true">
+            <h2 class="mud-typography mud-typography-h5">Recent payments</h2>
+            <MudTable Items="_model.Payments" Dense="true" Breakpoint="Breakpoint.Sm">
+                <HeaderContent><MudTh>Date</MudTh><MudTh>Amount</MudTh><MudTh>Status</MudTh><MudTh>Method</MudTh><MudTh>Reference</MudTh></HeaderContent>
+                <RowTemplate>
+                    <MudTd DataLabel="Date">@context.Date.ToString("d")</MudTd>
+                    <MudTd DataLabel="Amount">@Money(context.Amount, context.Currency)</MudTd>
+                    <MudTd DataLabel="Status">@context.Status</MudTd>
+                    <MudTd DataLabel="Method">@context.Method</MudTd>
+                    <MudTd DataLabel="Reference">@context.Reference</MudTd>
+                </RowTemplate>
+                <NoRecordsContent><MudText>No payments are available.</MudText></NoRecordsContent>
+            </MudTable>
+        </MudPaper>
+    }
+</MudContainer>
+
+@code {
+    private PatientBillingSnapshot? _model;
+    private bool _loading = true;
+    private bool _launching;
+    private bool _returning;
+    private string? _error;
+    private decimal? _customAmount;
+    private PatientPaymentSelection _selection = PatientPaymentSelection.FullBalance;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _returning = new Uri(Navigation.Uri).AbsolutePath.EndsWith("payment-return", StringComparison.OrdinalIgnoreCase);
+        try { _model = await BillingPortal.GetAsync((await AuthenticationState.GetAuthenticationStateAsync()).User); }
+        catch (UnauthorizedAccessException) { _error = "Your login is not linked to a patient billing account."; }
+        catch { _error = "Billing information is temporarily unavailable."; }
+        finally { _loading = false; }
+    }
+
+    private Task PayStatement(Guid statementId) => StartCheckout(PatientPaymentSelection.StatementBalance, statementId, null);
+    private Task LaunchCheckout() => StartCheckout(_selection, null, _customAmount);
+    private async Task StartCheckout(PatientPaymentSelection selection, Guid? statementId, decimal? amount)
+    {
+        try
+        {
+            _launching = true;
+            var result = await BillingPortal.CreateCheckoutAsync((await AuthenticationState.GetAuthenticationStateAsync()).User,
+                selection, statementId, amount);
+            Navigation.NavigateTo(result.CheckoutUrl.AbsoluteUri, true);
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or PaymentProcessorUnavailableException)
+        { Snackbar.Add(ex.Message, Severity.Error); }
+        finally { _launching = false; }
+    }
+    private static string Money(decimal amount, string currency) => $"{amount:N2} {currency}";
+}

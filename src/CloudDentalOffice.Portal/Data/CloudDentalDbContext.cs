@@ -52,6 +52,7 @@ public class CloudDentalDbContext : DbContext
     public DbSet<PaymentProcessorConfiguration> PaymentProcessorConfigurations => Set<PaymentProcessorConfiguration>();
     public DbSet<PaymentProcessorEvent> PaymentProcessorEvents => Set<PaymentProcessorEvent>();
     public DbSet<PatientPaymentAttempt> PatientPaymentAttempts => Set<PatientPaymentAttempt>();
+    public DbSet<PatientPortalIdentity> PatientPortalIdentities => Set<PatientPortalIdentity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -77,6 +78,16 @@ public class CloudDentalDbContext : DbContext
         ConfigureTenantEntity<PaymentProcessorConfiguration>(modelBuilder);
         ConfigureTenantEntity<PaymentProcessorEvent>(modelBuilder);
         ConfigureTenantEntity<PatientPaymentAttempt>(modelBuilder);
+        ConfigureTenantEntity<PatientPortalIdentity>(modelBuilder);
+
+        modelBuilder.Entity<PatientPortalIdentity>(entity =>
+        {
+            entity.HasOne<Patient>().WithMany().HasForeignKey(x => new { x.TenantId, x.PatientId })
+                .HasPrincipalKey(x => new { x.TenantId, x.PatientId }).OnDelete(DeleteBehavior.Restrict);
+            entity.HasIndex(x => new { x.TenantId, x.Issuer, x.Subject }).IsUnique();
+            entity.HasIndex(x => new { x.TenantId, x.PatientId, x.IsActive });
+            entity.HasQueryFilter(x => x.TenantId == CurrentTenantId);
+        });
 
         modelBuilder.Entity<PatientAccount>(entity =>
         {
