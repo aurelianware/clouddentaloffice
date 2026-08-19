@@ -1,0 +1,77 @@
+@page "/settings/payments/stripe"
+@attribute [Authorize(Roles = "Admin")]
+@using CloudDentalOffice.Portal.Models
+@using CloudDentalOffice.Portal.Services.Tenancy
+@inject IStripeConnectService StripeConnect
+@inject ITenantProvider TenantProvider
+@inject AuthenticationStateProvider AuthenticationState
+@inject NavigationManager Navigation
+@inject ISnackbar Snackbar
+
+<PageTitle>Stripe Payments</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Medium" Class="mt-4 mb-8">
+    <MudText Typo="Typo.h4">Stripe Payments</MudText>
+    <MudText Color="Color.Secondary" Class="mb-5">Connect the practice directly to Stripe for patient payment settlement.</MudText>
+    <MudPaper Class="pa-5" Elevation="2">
+        @if (_loading) { <MudProgressLinear Indeterminate="true" /> }
+        else if (_status is null) { <MudAlert Severity="Severity.Warning">Stripe is not configured for this practice.</MudAlert> }
+        else
+        {
+            <div class="d-flex justify-space-between align-center mb-4">
+                <MudText Typo="Typo.h5">Stripe Connect</MudText>
+                <MudChip T="string" Color="@StatusColor()">@_status.Status</MudChip>
+            </div>
+            <MudText>Environment: @_status.Environment</MudText>
+            <MudText>Charges enabled: @YesNo(_status.ChargesEnabled)</MudText>
+            <MudText>Payouts enabled: @YesNo(_status.PayoutsEnabled)</MudText>
+            <MudText>Details submitted: @YesNo(_status.DetailsSubmitted)</MudText>
+            <MudAlert Severity="Severity.Info" Dense="true" Class="my-4">
+                Business, identity, tax, and bank information is entered directly on Stripe's hosted onboarding pages. CloudDentalOffice never receives bank or identity documents.
+            </MudAlert>
+            <MudButton Color="Color.Primary" Variant="Variant.Filled" Disabled="_busy" OnClick="Connect">
+                @(_status.ConnectedAccountId is null ? "Connect Stripe" : "Continue Stripe onboarding")
+            </MudButton>
+            <MudButton Variant="Variant.Outlined" Class="ml-2" Disabled="_busy" OnClick="RefreshStatus">Refresh status</MudButton>
+            @if (_status.Enabled)
+            {
+                <MudButton Color="Color.Error" Variant="Variant.Text" Class="ml-2" Disabled="_busy" OnClick="Disable">Disable locally</MudButton>
+            }
+        }
+    </MudPaper>
+</MudContainer>
+
+@code {
+    private StripeConnectStatus? _status; private bool _loading = true, _busy;
+    protected override async Task OnInitializedAsync() { await Load(); _loading = false; }
+    private async Task Load()
+    {
+        _status = null;
+        try { _status = await StripeConnect.RefreshStatusAsync(TenantProvider.TenantId); }
+        catch (PaymentProcessorUnavailableException ex) { Snackbar.Add(ex.Message, Severity.Warning); }
+        catch (Exception) { Snackbar.Add("Stripe status could not be refreshed.", Severity.Error); }
+    }
+    private async Task Connect()
+    {
+        await Run(async () =>
+        {
+            var auth = await AuthenticationState.GetAuthenticationStateAsync();
+            var email = auth.User.FindFirst(System.Security.Claims.ClaimTypes.Email)?.Value
+                ?? auth.User.Identity?.Name ?? throw new InvalidOperationException("Administrator email is unavailable.");
+            var link = await StripeConnect.CreateOnboardingLinkAsync(TenantProvider.TenantId, email,
+                PageUri("refresh"), PageUri("return"));
+            Navigation.NavigateTo(link.Url.AbsoluteUri, forceLoad: true);
+        });
+    }
+    private Task RefreshStatus() => Run(Load);
+    private Task Disable() => Run(async () => { await StripeConnect.DisableAsync(TenantProvider.TenantId); await Load(); });
+    private async Task Run(Func<Task> action)
+    {
+        _busy = true; try { await action(); }
+        catch (Exception ex) { Snackbar.Add(ex is StripeConnectException ? "Stripe could not complete the request." : ex.Message, Severity.Error); }
+        finally { _busy = false; }
+    }
+    private Uri PageUri(string flow) => new(Navigation.ToAbsoluteUri($"/settings/payments/stripe?flow={flow}").AbsoluteUri);
+    private Color StatusColor() => _status?.Status == PaymentProcessorOnboardingStatus.Enabled ? Color.Success : Color.Warning;
+    private static string YesNo(bool value) => value ? "Yes" : "No";
+}

@@ -177,6 +177,7 @@ public class CloudDentalDbContext : DbContext
         {
             entity.Property(x => x.Provider).HasConversion<string>().HasMaxLength(32);
             entity.Property(x => x.Environment).HasConversion<string>().HasMaxLength(24);
+            entity.Property(x => x.OnboardingStatus).HasConversion<string>().HasMaxLength(24);
             entity.HasIndex(x => new { x.TenantId, x.Provider }).IsUnique();
             entity.HasQueryFilter(x => x.TenantId == CurrentTenantId);
         });
