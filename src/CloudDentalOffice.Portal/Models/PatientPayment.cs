@@ -8,6 +8,7 @@ public enum PaymentProcessorEnvironment { Sandbox, Production }
 public enum PaymentStatus { Pending, Succeeded, Failed, Cancelled }
 public enum PatientPaymentMethod { Card, BankAccount, DigitalWallet, Other }
 public enum PaymentProcessorEventStatus { Received, Processed, Failed }
+public enum PaymentProcessorOnboardingStatus { NotStarted, Pending, Enabled, Restricted, Disabled }
 
 [Table("PatientPayments")]
 public sealed class PatientPayment : ITenantEntity
@@ -55,6 +56,11 @@ public sealed class PaymentProcessorConfiguration : ITenantEntity
     public PaymentProcessorEnvironment Environment { get; set; }
     [MaxLength(256)] public string? CredentialReference { get; set; }
     [MaxLength(128)] public string? ConnectedMerchantReference { get; set; }
+    public PaymentProcessorOnboardingStatus OnboardingStatus { get; set; }
+    public bool ChargesEnabled { get; set; }
+    public bool PayoutsEnabled { get; set; }
+    public bool DetailsSubmitted { get; set; }
+    [MaxLength(128)] public string? LastStatusCode { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
 }

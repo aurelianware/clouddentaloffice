@@ -401,6 +401,15 @@ builder.Services.AddScoped<IPaymentCheckoutService, PaymentCheckoutService>();
 builder.Services.AddScoped<IPaymentRefundService, PaymentRefundService>();
 builder.Services.AddScoped<IPaymentReconciliationService, PaymentReconciliationService>();
 builder.Services.AddScoped<IPaymentAllocationService, PaymentAllocationService>();
+builder.Services.AddScoped<IStripeCredentialProvider, ConfigurationStripeCredentialProvider>();
+builder.Services.AddHttpClient<IStripeApiClient, StripeApiClient>(client =>
+{
+    client.BaseAddress = new Uri("https://api.stripe.com");
+    client.Timeout = TimeSpan.FromSeconds(30);
+    client.DefaultRequestHeaders.Add("Accept", "application/json");
+});
+builder.Services.AddScoped<IStripeConnectService, StripeConnectService>();
+builder.Services.AddScoped<IPaymentProcessor, StripePaymentProcessor>();
 builder.Services.AddScoped<IInsurancePlanService, InsurancePlanService>();
 builder.Services.AddScoped<IClinicalChartService, ClinicalChartService>();
 
