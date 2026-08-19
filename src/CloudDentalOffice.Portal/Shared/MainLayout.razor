@@ -114,11 +114,10 @@
                 </MudNavLink>
             </MudNavGroup>
             
-            <!-- Billing -->
-            <MudNavLink Href="/billing" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Receipt"
-                        Style="border-left: 3px solid transparent; transition: all 0.3s ease;">
-                Billing
-            </MudNavLink>
+            <AuthorizeView Roles="Admin,BillingAdmin,BillingStaff">
+                <MudNavLink Href="/billing" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Receipt"
+                            Style="border-left: 3px solid transparent; transition: all 0.3s ease;">Billing & Payments</MudNavLink>
+            </AuthorizeView>
             
             <!-- Reports -->
             <MudNavLink Href="/reports" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.BarChart"

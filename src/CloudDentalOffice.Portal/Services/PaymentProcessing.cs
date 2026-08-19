@@ -320,12 +320,12 @@ public sealed class PaymentAllocationService(CloudDentalDbContext db, ITenantPro
                 allocatableTypes.Contains(x.EntryType), cancellationToken);
         if (ledgerEntry is null || ledgerEntry.Amount <= 0)
             throw new KeyNotFoundException("Allocatable ledger entry was not found for the patient account.");
-        var allocated = payment.Allocations.Sum(x => x.Amount);
+        var allocated = payment.Allocations.Where(x => !x.UnappliedAt.HasValue).Sum(x => x.Amount);
         if (allocated + amount.Amount > payment.Amount) throw new InvalidOperationException("Allocations cannot exceed the payment amount.");
-        if (payment.Allocations.Any(x => x.LedgerEntryId == ledgerEntryId))
-            throw new InvalidOperationException("Use one allocation per payment and ledger entry.");
+        if (payment.Allocations.Any(x => x.LedgerEntryId == ledgerEntryId && !x.UnappliedAt.HasValue))
+            throw new InvalidOperationException("Use one active allocation per payment and ledger entry.");
         var targetAllocationAmounts = await db.PatientPaymentAllocations.IgnoreQueryFilters().Where(x =>
-            x.TenantId == tenantId && x.LedgerEntryId == ledgerEntryId).Select(x => x.Amount).ToListAsync(cancellationToken);
+            x.TenantId == tenantId && x.LedgerEntryId == ledgerEntryId && !x.UnappliedAt.HasValue).Select(x => x.Amount).ToListAsync(cancellationToken);
         if (targetAllocationAmounts.Sum() + amount.Amount > ledgerEntry.Amount)
             throw new InvalidOperationException("Allocations cannot exceed the target ledger amount.");
         db.PatientPaymentAllocations.Add(new PatientPaymentAllocation
@@ -333,6 +333,11 @@ public sealed class PaymentAllocationService(CloudDentalDbContext db, ITenantPro
             PaymentAllocationId = Guid.NewGuid(), TenantId = tenantId, PaymentId = paymentId,
             LedgerEntryId = ledgerEntryId, Amount = amount.Amount, CreatedAt = clock.GetUtcNow().UtcDateTime,
             CreatedBy = createdBy.Trim()
+        });
+        db.FinancialAuditEvents.Add(new FinancialAuditEvent
+        {
+            Id = Guid.NewGuid(), TenantId = tenantId, Action = "PaymentAllocated", EntityType = "PatientPayment",
+            EntityId = paymentId.ToString("N"), Actor = createdBy.Trim(), CreatedAt = clock.GetUtcNow().UtcDateTime
         });
         try
         {
@@ -357,7 +362,7 @@ public sealed class PaymentAllocationService(CloudDentalDbContext db, ITenantPro
             x.TenantId == tenantId && x.PaymentId == paymentId, cancellationToken)
             ?? throw new KeyNotFoundException("Payment was not found for the tenant.");
         var allocationAmounts = await db.PatientPaymentAllocations.IgnoreQueryFilters().Where(x =>
-            x.TenantId == tenantId && x.PaymentId == paymentId).Select(x => x.Amount).ToListAsync(cancellationToken);
+            x.TenantId == tenantId && x.PaymentId == paymentId && !x.UnappliedAt.HasValue).Select(x => x.Amount).ToListAsync(cancellationToken);
         var allocated = allocationAmounts.Sum();
         return new(payment.PaymentId, payment.Amount, allocated, payment.Amount - allocated, payment.Currency);
     }

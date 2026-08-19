@@ -32,7 +32,7 @@ Stripe / future processors
 
 Processor event idempotency uses the unique tuple `(TenantId, Processor, ExternalEventId)`. Patient payment identity also protects `(TenantId, InternalPaymentReference)` and non-null `(TenantId, Processor, ExternalPaymentId)`. Duplicate delivery returns the previously reconciled result and does not post another ledger entry.
 
-`PatientPaymentAllocation` links a succeeded payment to one or more charge/debit ledger entries. Allocations may be partial and cannot exceed the payment. The unallocated remainder is explicit unapplied cash; an overpayment does not require inventing a charge or forcing immediate allocation. Allocation records are append-only.
+`PatientPaymentAllocation` links a succeeded payment to one or more charge/debit ledger entries. Allocations may be partial and cannot exceed either the payment's unapplied amount or the target's outstanding amount. The unallocated remainder is explicit unapplied cash. Allocation financial identity is immutable; unapplying stamps the original row with time, actor, and reason rather than deleting it.
 
 ## Account and ledger ownership
 
@@ -112,6 +112,36 @@ It also exposes authenticated statement administration:
 
 Tenant identity comes from authenticated claims and is not accepted as a query, route, or request-header parameter. `patientId` is only a filter within that trusted tenant. There are no anonymous statement URLs.
 
+## Staff billing administration
+
+The `/billing` experience is available only to `Admin`, `BillingAdmin`, and
+`BillingStaff`. Ordinary `Staff` and clinical roles receive no billing permission
+by default. The application recognizes explicit permission claims named
+`Billing.View`, `Billing.PostPayment`, `Billing.Adjust`, `Billing.Refund`, and
+`Billing.ConfigurePayments`. `BillingStaff` receives only view and payment-posting
+capabilities; `BillingAdmin` and `Admin` receive the complete billing permission
+set. Service-layer checks are authoritative even if navigation is hidden.
+
+The account screen shows the ledger, immutable statements, online and office
+payments, active/unapplied allocation totals, and insurance payment/adjustment
+activity. The dashboard totals successful collections, Stripe payments, office
+payments, failed online attempts, and refunds for the authenticated tenant and
+selected UTC business date.
+
+Cash, check, and externally collected payments become canonical `PatientPayment`
+records and immutable `PatientPayment` ledger entries. Stripe remains identified
+as the processor only for online payments. Manual payment corrections create a
+ledger reversal and retain the cancelled payment record; they never delete the
+payment. Active allocations must be unapplied before reversal. Online payments
+must use the processor refund workflow rather than masquerading as a manual
+reversal.
+
+Every staff mutation records the authenticated actor on the financial record and
+adds a tenant-scoped `FinancialAuditEvent` for statement generation/sending,
+payment posting/reversal, adjustments, allocation, and unapplication. Audit rows
+contain bounded operational identifiers and reason codes, not card credentials or
+clinical narratives.
+
 ## Authenticated patient Billing
 
 The patient-facing route is `/patient/billing` and requires the `Patient` role. A
@@ -141,7 +171,7 @@ verified Stripe webhook pipeline marks a payment succeeded and posts the ledger.
 ## Follow-up work
 
 - post procedure charges and adjudicated ERA/835 payments and adjustments through the application service
-- add authenticated staff payment/allocation APIs and durable refund records
+- add durable refund records and delivery-provider tracking for sent statements
 - add aging buckets to staff billing administration
 - render/print statements and add controlled delivery tracking
 - add account-to-account transfer orchestration
