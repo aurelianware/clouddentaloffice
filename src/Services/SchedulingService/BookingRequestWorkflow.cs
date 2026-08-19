@@ -4,8 +4,15 @@ using Microsoft.EntityFrameworkCore;
 using System.Data;
 using System.Text.Json;
 
-public sealed class BookingRequestWorkflow(SchedulingDbContext db)
+public sealed class BookingRequestWorkflow
 {
+    private readonly SchedulingDbContext db;
+    private readonly IPatientAcquisitionService acquisition;
+    public BookingRequestWorkflow(SchedulingDbContext db, IPatientAcquisitionService? acquisition = null)
+    {
+        this.db = db;
+        this.acquisition = acquisition ?? new PatientAcquisitionService(db, TimeProvider.System);
+    }
     public async Task<BookingRequest> MatchPatientAsync(Guid id, string tenantId, MatchBookingPatientRequest match, CancellationToken cancellationToken = default)
     {
         if (match.PatientId <= 0) throw new ArgumentException("A real patient is required.");
@@ -65,7 +72,13 @@ public sealed class BookingRequestWorkflow(SchedulingDbContext db)
             RequestedAppointmentTypeId = TrimTo(evt.RequestedAppointmentTypeId, 128),
             SubmittedAtUtc = SchedulingTime.NormalizeUtc(evt.SubmittedAtUtc ?? evt.OccurredAt)
         });
-        try { await db.SaveChangesAsync(cancellationToken); return true; }
+        try
+        {
+            await db.SaveChangesAsync(cancellationToken);
+            var request = await db.BookingRequests.SingleAsync(r => r.TenantId == evt.TenantId && r.EventId == evt.EventId, cancellationToken);
+            await acquisition.RecordBookingRequestAsync(request, cancellationToken);
+            return true;
+        }
         catch (DbUpdateException)
         {
             db.ChangeTracker.Clear();
@@ -140,6 +153,7 @@ public sealed class BookingRequestWorkflow(SchedulingDbContext db)
         request.ApprovedBy = approval.ApprovedBy;
         request.UpdatedAt = DateTime.UtcNow;
         await db.SaveChangesAsync(cancellationToken);
+        await acquisition.RecordScheduledAsync(request, appointment, cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         return (request, appointment, true);
     }

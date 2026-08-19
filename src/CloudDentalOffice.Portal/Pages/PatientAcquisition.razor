@@ -1,0 +1,47 @@
+@page "/analytics/patient-acquisition"
+@attribute [Authorize(Roles = "Admin")]
+@using CloudDentalOffice.Contracts.Scheduling
+@using CloudDentalOffice.Portal.Services
+@inject IPatientAcquisitionClient Client
+
+<PageTitle>Patient Acquisition</PageTitle>
+<MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-4 mb-8">
+    <MudText Typo="Typo.h4">Patient Acquisition</MudText>
+    <MudText Color="Color.Secondary">Privacy-safe marketing → booking request → scheduled appointment reporting.</MudText>
+    <MudSelect T="int" Label="Date range" Value="_days" ValueChanged="LoadDays" Class="mt-4" Style="max-width:220px">
+        <MudSelectItem Value="7">Last 7 days</MudSelectItem><MudSelectItem Value="30">Last 30 days</MudSelectItem><MudSelectItem Value="90">Last 90 days</MudSelectItem>
+    </MudSelect>
+    @if (_loading) { <MudProgressLinear Indeterminate="true" Class="mt-4" /> }
+    else if (_report is null) { <MudAlert Severity="Severity.Error" Class="mt-4">The acquisition report could not be loaded.</MudAlert> }
+    else if (_report.BookingRequests == 0 && _report.ScheduledAppointments == 0 && _report.LandingVisits is null or 0)
+    { <MudAlert Severity="Severity.Info" Class="mt-4">No patient-acquisition data is available for this period yet. Website events will appear here as patients move through online booking.</MudAlert> }
+    else
+    {
+        <MudGrid Class="mt-4">
+            @foreach (var metric in Metrics()) { <MudItem xs="6" md="3"><MudPaper Class="pa-4"><MudText Typo="Typo.caption">@metric.Name</MudText><MudText Typo="Typo.h5">@metric.Value</MudText></MudPaper></MudItem> }
+        </MudGrid>
+        <MudText Typo="Typo.h5" Class="mt-6">Funnel and drop-off</MudText>
+        @foreach (var step in _report.Funnel) { <MudPaper Class="pa-3 mt-2"><MudText><b>@step.Name</b>: @(step.Count?.ToString("N0") ?? "Not measured") @if(step.DropOffPercent.HasValue){<span> · @step.DropOffPercent% drop-off</span>}</MudText></MudPaper> }
+        @Table("By source", _report.BySource)
+        @Table("By service intent", _report.ByIntent)
+        @Table("Landing-page performance", _report.ByLandingPage)
+        <MudText Typo="Typo.h5" Class="mt-6">Daily requests and scheduled appointments</MudText>
+        <MudTable Items="_report.Daily" Dense="true"><HeaderContent><MudTh>Date</MudTh><MudTh>Starts</MudTh><MudTh>Requests</MudTh><MudTh>Scheduled</MudTh></HeaderContent><RowTemplate><MudTd>@context.Date</MudTd><MudTd>@context.Starts</MudTd><MudTd>@context.Requests</MudTd><MudTd>@context.Scheduled</MudTd></RowTemplate></MudTable>
+    }
+</MudContainer>
+
+@code {
+    private PatientAcquisitionDashboard? _report; private bool _loading = true; private int _days = 30;
+    protected override async Task OnInitializedAsync() => await LoadDays(30);
+    private async Task LoadDays(int days) { _days = days; _loading = true; try { var to = DateTimeOffset.UtcNow; var from = to.AddDays(-days); _report = await Client.GetAsync(from, to); } finally { _loading = false; } }
+    private IEnumerable<(string Name,string Value)> Metrics()
+    {
+        yield return ("Landing visits", _report!.LandingVisits?.ToString("N0") ?? "Not measured");
+        yield return ("Booking starts", _report.BookingStarts?.ToString("N0") ?? "Not measured");
+        yield return ("Availability views", _report.AvailabilityViews?.ToString("N0") ?? "Not measured");
+        yield return ("Booking requests", _report.BookingRequests.ToString("N0")); yield return ("Scheduled appointments", _report.ScheduledAppointments.ToString("N0"));
+        yield return ("Booking conversion", _report.BookingConversionRate.HasValue ? $"{_report.BookingConversionRate}%" : "N/A");
+        yield return ("Schedule conversion", _report.ScheduleConversionRate.HasValue ? $"{_report.ScheduleConversionRate}%" : "N/A");
+    }
+    private RenderFragment Table(string title, IReadOnlyList<AcquisitionBreakdown> rows) => @<div><MudText Typo="Typo.h5" Class="mt-6">@title</MudText><MudTable Items="rows" Dense="true" Hover="true"><HeaderContent><MudTh>Name</MudTh><MudTh>Visits</MudTh><MudTh>Starts</MudTh><MudTh>Availability</MudTh><MudTh>Requests</MudTh><MudTh>Scheduled</MudTh><MudTh>Request %</MudTh><MudTh>Schedule %</MudTh></HeaderContent><RowTemplate><MudTd>@context.Name</MudTd><MudTd>@(context.Visits?.ToString() ?? "—")</MudTd><MudTd>@(context.Starts?.ToString() ?? "—")</MudTd><MudTd>@(context.AvailabilityViews?.ToString() ?? "—")</MudTd><MudTd>@context.Requests</MudTd><MudTd>@context.Scheduled</MudTd><MudTd>@(context.RequestConversionPercent?.ToString() ?? "—")</MudTd><MudTd>@(context.ScheduleConversionPercent?.ToString() ?? "—")</MudTd></RowTemplate></MudTable></div>;
+}

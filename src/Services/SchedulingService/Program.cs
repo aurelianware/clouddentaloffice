@@ -30,6 +30,8 @@ builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c => c.SwaggerDoc("v1", new() { Title = "Scheduling Service", Version = "v1" }));
 builder.Services.AddHealthChecks();
 builder.Services.AddSchedulingIntegrations();
+builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.AddScoped<IPatientAcquisitionService, PatientAcquisitionService>();
 builder.Services.AddEventPublishing(builder.Configuration);
 
 // When configured, administrative scheduling-integration routes accept the
@@ -118,6 +120,26 @@ app.MapPost("/api/internal/public-scheduling/validate", async (
     var selection = await service.ValidateAsync(tenantId, request.AvailabilityToken, request.PatientRelationship, cancellationToken);
     return selection is null ? Results.Conflict(new { message = "That time is no longer available." }) : Results.Ok(selection);
 }).WithTags("InternalPublicScheduling");
+
+app.MapPost("/api/internal/acquisition-events", async (
+    PublicAcquisitionEvent input, HttpContext http, IConfiguration configuration,
+    IPatientAcquisitionService service, CancellationToken cancellationToken) =>
+{
+    var tenantId = SchedulingInternalAuth.ResolveTenant(http, configuration);
+    if (tenantId is null) return Results.Unauthorized();
+    try { return Results.Ok(new { accepted = await service.RecordWebsiteAsync(tenantId, input, cancellationToken) }); }
+    catch (ArgumentException ex) { return Results.ValidationProblem(new Dictionary<string, string[]> { ["event"] = [ex.Message] }); }
+}).WithTags("InternalAcquisition");
+
+app.MapGet("/api/reports/patient-acquisition", async (
+    DateTimeOffset from, DateTimeOffset to, string? source, string? appointmentIntent, string? landingPage,
+    Guid? locationId, int? providerId, ClaimsPrincipal user, IPatientAcquisitionService service,
+    CancellationToken cancellationToken) =>
+{
+    var tenantId = SchedulingIntegrationAdminApi.TenantId(user)!;
+    try { return Results.Ok(await service.GetDashboardAsync(tenantId, new(from, to, source, appointmentIntent, landingPage, locationId, providerId), cancellationToken)); }
+    catch (ArgumentException ex) { return Results.ValidationProblem(new Dictionary<string, string[]> { ["range"] = [ex.Message] }); }
+}).RequireAuthorization("SchedulingIntegrationAdmin").WithTags("Reports");
 
 // Staff appointment APIs contain PHI and always require a signed bearer token.
 // Tenant context comes from the validated token, never request input or network location.
@@ -250,6 +272,7 @@ using (var scope = app.Services.CreateScope())
     await BookingRequestSchema.EnsureAsync(db);
     await SchedulingIntegrationSchema.EnsureAsync(db);
     await SchedulingAvailabilitySchema.EnsureAsync(db);
+    await PatientAcquisitionSchema.EnsureAsync(db);
 }
 
 app.Run();
@@ -287,4 +310,5 @@ public class SchedulingDbContext(DbContextOptions<SchedulingDbContext> options) 
     public DbSet<ExternalAppointmentReference> ExternalAppointmentReferences => Set<ExternalAppointmentReference>();
     public DbSet<SchedulingIntegrationEvent> SchedulingIntegrationEvents => Set<SchedulingIntegrationEvent>();
     public DbSet<SchedulingAvailabilitySyncState> SchedulingAvailabilitySyncStates => Set<SchedulingAvailabilitySyncState>();
+    public DbSet<PatientAcquisitionEvent> PatientAcquisitionEvents => Set<PatientAcquisitionEvent>();
 }

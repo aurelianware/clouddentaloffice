@@ -120,6 +120,9 @@
                         Style="border-left: 3px solid transparent; transition: all 0.3s ease;">
                 Reports
             </MudNavLink>
+            <AuthorizeView Roles="Admin">
+                <MudNavLink Href="/analytics/patient-acquisition" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Insights">Patient Acquisition</MudNavLink>
+            </AuthorizeView>
             
             <!-- Providers -->
             <MudNavLink Href="/providers" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.MedicalServices"
