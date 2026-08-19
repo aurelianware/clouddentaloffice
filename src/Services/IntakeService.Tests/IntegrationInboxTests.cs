@@ -37,6 +37,27 @@ public sealed class IntegrationInboxTests : IDisposable
     }
 
     [Fact]
+    public async Task Stripe_event_uses_same_durable_duplicate_and_dispatch_path()
+    {
+        await using var db = CreateDb();
+        var inbox = new IntegrationInbox(db, _clock);
+        var stripe = new StripePaymentWebhookEvent("tenant-a", "evt_stripe", "checkout.session.completed",
+            "acct_practice", "cs_test", "pi_test", "pay_opaque", 5000, "USD", "paid", false);
+
+        var first = await inbox.PersistAsync("tenant-a", "Stripe", "evt_stripe",
+            nameof(StripePaymentWebhookEvent), stripe);
+        var replay = await inbox.PersistAsync("tenant-a", "Stripe", "evt_stripe",
+            nameof(StripePaymentWebhookEvent), stripe);
+        var publisher = new RecordingPublisher();
+
+        Assert.True(first.Created);
+        Assert.False(replay.Created);
+        Assert.Equal(1, await Dispatcher(db, publisher,
+            new ServiceBusOptions { ConnectionString = "configured" }).DispatchBatchAsync());
+        Assert.IsType<StripePaymentWebhookEvent>(Assert.Single(publisher.Events));
+    }
+
+    [Fact]
     public async Task Database_constraint_prevents_duplicate_logical_event()
     {
         await using var db = CreateDb();

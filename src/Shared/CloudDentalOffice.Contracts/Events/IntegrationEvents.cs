@@ -88,6 +88,20 @@ public record AppointmentLifecycleChangedEvent(
     string Source,
     DateTime? StartUtc = null) : IntegrationEvent;
 
+/// <summary>Verified, PHI-free Stripe Connect payment event accepted by IntakeService.</summary>
+public record StripePaymentWebhookEvent(
+    string TenantId,
+    string ExternalEventId,
+    string EventType,
+    string ConnectedAccountId,
+    string CheckoutSessionId,
+    string? PaymentIntentId,
+    string PaymentReference,
+    long AmountMinor,
+    string Currency,
+    string PaymentStatus,
+    bool LiveMode) : IntegrationEvent;
+
 // ── Claims Events ──
 public record ClaimCreatedEvent(Guid ClaimId, Guid PatientId, decimal TotalCharge) : IntegrationEvent;
 public record ClaimSubmittedEvent(Guid ClaimId, string? ClaimControlNumber, string SubmissionMethod) : IntegrationEvent;

@@ -18,6 +18,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using MudBlazor;
 using MudBlazor.Services;
+using CloudDentalOffice.Messaging;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -381,6 +382,7 @@ builder.Services.AddHttpClient<IAppointmentService, AppointmentServiceHttpClient
     client.Timeout = TimeSpan.FromSeconds(30);
 }).AddHttpMessageHandler<SchedulingTenantAuthorizationHandler>();
 builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.AddEventPublishing(builder.Configuration);
 builder.Services.Configure<ReviewEmailOptions>(builder.Configuration.GetSection(ReviewEmailOptions.SectionName));
 builder.Services.Configure<ReviewOutreachWorkerOptions>(builder.Configuration.GetSection(ReviewOutreachWorkerOptions.SectionName));
 builder.Services.AddScoped<IReviewOutreachEligibilityService, ReviewOutreachEligibilityService>();
@@ -401,6 +403,11 @@ builder.Services.AddScoped<IPaymentCheckoutService, PaymentCheckoutService>();
 builder.Services.AddScoped<IPaymentRefundService, PaymentRefundService>();
 builder.Services.AddScoped<IPaymentReconciliationService, PaymentReconciliationService>();
 builder.Services.AddScoped<IPaymentAllocationService, PaymentAllocationService>();
+builder.Services.AddScoped<IStripePaymentWebhookProcessor, StripePaymentWebhookProcessor>();
+builder.Services.Configure<StripePaymentPostingOptions>(
+    builder.Configuration.GetSection(StripePaymentPostingOptions.SectionName));
+builder.Services.AddSingleton<StripePaymentMetrics>();
+builder.Services.AddHostedService<StripePaymentWebhookConsumer>();
 builder.Services.Configure<PatientCheckoutOptions>(builder.Configuration.GetSection(PatientCheckoutOptions.SectionName));
 builder.Services.AddScoped<IPatientBalanceCheckoutService, PatientBalanceCheckoutService>();
 builder.Services.AddScoped<IStripeCredentialProvider, ConfigurationStripeCredentialProvider>();
