@@ -58,6 +58,20 @@ public sealed class IntegrationInboxTests : IDisposable
     }
 
     [Fact]
+    public async Task Stripe_refund_event_uses_the_durable_dispatch_path()
+    {
+        await using var db = CreateDb();
+        var inbox = new IntegrationInbox(db, _clock);
+        var stripe = new StripeRefundWebhookEvent("tenant-a", "evt_refund", "refund.updated",
+            "acct_practice", "re_test", "pi_test", "refund_opaque", 2500, "USD", "succeeded", false);
+        await inbox.PersistAsync("tenant-a", "Stripe", "evt_refund", nameof(StripeRefundWebhookEvent), stripe);
+        var publisher = new RecordingPublisher();
+        Assert.Equal(1, await Dispatcher(db, publisher,
+            new ServiceBusOptions { ConnectionString = "configured" }).DispatchBatchAsync());
+        Assert.IsType<StripeRefundWebhookEvent>(Assert.Single(publisher.Events));
+    }
+
+    [Fact]
     public async Task Database_constraint_prevents_duplicate_logical_event()
     {
         await using var db = CreateDb();

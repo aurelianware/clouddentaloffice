@@ -402,8 +402,10 @@ builder.Services.AddScoped<IPaymentProcessorResolver, PaymentProcessorResolver>(
 builder.Services.AddScoped<IPaymentCheckoutService, PaymentCheckoutService>();
 builder.Services.AddScoped<IPaymentRefundService, PaymentRefundService>();
 builder.Services.AddScoped<IPaymentReconciliationService, PaymentReconciliationService>();
+builder.Services.AddScoped<IStripePaymentReconciliationService, StripePaymentReconciliationService>();
 builder.Services.AddScoped<IPaymentAllocationService, PaymentAllocationService>();
 builder.Services.AddScoped<IStripePaymentWebhookProcessor, StripePaymentWebhookProcessor>();
+builder.Services.AddScoped<IStripeRefundWebhookProcessor, StripeRefundWebhookProcessor>();
 builder.Services.Configure<StripePaymentPostingOptions>(
     builder.Configuration.GetSection(StripePaymentPostingOptions.SectionName));
 builder.Services.AddSingleton<StripePaymentMetrics>();

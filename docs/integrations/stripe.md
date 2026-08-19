@@ -73,7 +73,8 @@ POST https://<public-intake-host>/api/integrations/stripe/webhooks
 
 Subscribe only to `checkout.session.completed`,
 `checkout.session.async_payment_succeeded`, and
-`checkout.session.async_payment_failed`. A completed session is posted only when
+`checkout.session.async_payment_failed`, plus `refund.created`, `refund.updated`,
+and `refund.failed`. A completed session is posted only when
 `payment_status=paid`; delayed methods wait for the async success event.
 
 IntakeService verifies `Stripe-Signature` against the unmodified body using the
@@ -125,3 +126,46 @@ For signature failures, verify the endpoint-specific secret, system clock, and
 tolerance without logging the request body. For `ReviewRequired`, compare only
 opaque CDO and Stripe identifiers. After correcting a permanent configuration or
 reference error, use the established inbox/dead-letter recovery procedure.
+
+## Refunds and reconciliation runbook
+
+An authorized payment administrator can request a full or partial refund from
+the staff Billing screen. CDO writes a durable `PatientRefund` intent before it
+calls Stripe, scopes the request to the practice's connected account, and uses
+the opaque refund reference as its idempotency key. Pending and completed refund
+amounts reserve refundable value, so cumulative refunds cannot exceed the
+settled payment. A failed request with no Stripe refund ID may be retried safely.
+
+Synchronous Stripe acceptance does **not** change the patient ledger. Only a
+verified `refund.*` webhook with `status=succeeded`, matching connected account,
+PaymentIntent, amount, currency, and opaque reference posts the immutable Refund
+ledger entry. The original payment remains intact. Active allocations are
+unapplied or replaced with a reduced active allocation so their complete history
+is retained. Failed refunds create no refund ledger entry. Mismatches are marked
+`ReviewRequired`.
+
+Use **Billing → Stripe reconciliation → Run 30-day reconciliation** to compare
+CDO payments/refunds with Stripe direct-charge objects. It reports missing or
+unknown payments, amount/currency mismatches, payments pending over 24 hours,
+refund mismatches, and disconnected accounts. The view contains only sanitized
+opaque reference suffixes. Reconciliation never repairs or posts financial
+records automatically; investigate every discrepancy before taking a separate,
+audited action.
+
+Operational response:
+
+1. For `stripe-account-disconnected`, restore the tenant's Connect configuration
+   before retrying remote operations.
+2. For amount/currency/refund mismatches, compare the connected-account Stripe
+   object and the CDO immutable record; do not edit ledger history.
+3. For failed refunds, verify the safe failure code and Stripe balance, then use
+   an authorized retry only when no external refund ID exists.
+4. For dead-lettered refund events, fix configuration/reference mapping and use
+   the existing durable-inbox replay procedure. Never paste webhook bodies,
+   patient details, or card data into logs or support tickets.
+
+Stripe allows multiple partial refunds up to the original charge and may report
+refunds as pending, succeeded, failed, or canceled. Because CDO uses Connect
+direct charges, refund API reads and writes must include the connected-account
+context. See Stripe's [refund guidance](https://docs.stripe.com/refunds) and
+[Connect direct-charge guidance](https://docs.stripe.com/connect/direct-charges).

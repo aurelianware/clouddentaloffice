@@ -170,6 +170,11 @@ public sealed class PaymentProcessingTests : IDisposable
         Assert.Equal(PaymentStatus.Pending, result.Status);
         Assert.Equal("refund-1", result.ExternalRefundId);
         Assert.Equal(1, _processor.RefundCalls);
+        Assert.Equal(PatientRefundStatus.Pending,
+            (await _db.PatientRefunds.IgnoreQueryFilters().SingleAsync()).Status);
+        Assert.DoesNotContain(_db.PatientLedgerEntries, x => x.EntryType == PatientLedgerEntryType.Refund);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => refunds.RefundAsync(new PaymentRefundRequest(
+            "tenant-a", payment.PaymentId, new Money(31m), "refund-2")));
     }
 
     [Fact]

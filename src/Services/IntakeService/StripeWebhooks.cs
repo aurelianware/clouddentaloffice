@@ -72,7 +72,10 @@ public static class StripeWebhookEndpoint
     {
         "checkout.session.completed",
         "checkout.session.async_payment_succeeded",
-        "checkout.session.async_payment_failed"
+        "checkout.session.async_payment_failed",
+        "refund.created",
+        "refund.updated",
+        "refund.failed"
     };
 
     public static void MapStripeWebhook(this WebApplication app) =>
@@ -104,7 +107,10 @@ public static class StripeWebhookEndpoint
             return Results.Unauthorized();
         }
 
-        StripePaymentWebhookEvent? integrationEvent;
+        IntegrationEvent integrationEvent;
+        string tenantId;
+        string externalEventId;
+        string subject;
         try
         {
             using var json = JsonDocument.Parse(body);
@@ -118,17 +124,30 @@ public static class StripeWebhookEndpoint
                 .Select(x => x.Get<StripeWebhookAccountOptions>())
                 .SingleOrDefault(x => x is { Enabled: true } && x.ConnectedAccountId == accountId && x.LiveMode == liveMode);
             if (account is null || string.IsNullOrWhiteSpace(account.TenantId)) return Results.NotFound();
+            tenantId = account.TenantId;
+            externalEventId = eventId;
             var created = DateTimeOffset.FromUnixTimeSeconds(root.GetProperty("created").GetInt64()).UtcDateTime;
             var data = root.GetProperty("data").GetProperty("object");
-            var reference = data.GetProperty("metadata").GetProperty("payment_reference").GetString();
-            var sessionId = RequiredString(data, "id");
-            var amountMinor = data.GetProperty("amount_total").GetInt64();
-            var currency = RequiredString(data, "currency").ToUpperInvariant();
-            var paymentStatus = RequiredString(data, "payment_status");
-            var intentId = OptionalId(data, "payment_intent");
-            if (string.IsNullOrWhiteSpace(reference)) return Invalid(metrics);
-            integrationEvent = new(account.TenantId, eventId, eventType, accountId, sessionId, intentId,
-                reference, amountMinor, currency, paymentStatus, liveMode) { OccurredAt = created };
+            if (eventType.StartsWith("refund.", StringComparison.Ordinal))
+            {
+                var reference = OptionalMetadata(data, "refund_reference");
+                integrationEvent = new StripeRefundWebhookEvent(account.TenantId, eventId, eventType, accountId,
+                    RequiredString(data, "id"), OptionalId(data, "payment_intent"), reference,
+                    data.GetProperty("amount").GetInt64(), RequiredString(data, "currency").ToUpperInvariant(),
+                    RequiredString(data, "status"), liveMode) { OccurredAt = created };
+                subject = nameof(StripeRefundWebhookEvent);
+            }
+            else
+            {
+                var reference = OptionalMetadata(data, "payment_reference");
+                var sessionId = RequiredString(data, "id");
+                if (string.IsNullOrWhiteSpace(reference)) return Invalid(metrics);
+                integrationEvent = new StripePaymentWebhookEvent(account.TenantId, eventId, eventType, accountId,
+                    sessionId, OptionalId(data, "payment_intent"), reference,
+                    data.GetProperty("amount_total").GetInt64(), RequiredString(data, "currency").ToUpperInvariant(),
+                    RequiredString(data, "payment_status"), liveMode) { OccurredAt = created };
+                subject = nameof(StripePaymentWebhookEvent);
+            }
         }
         catch (Exception ex) when (ex is JsonException or KeyNotFoundException or InvalidOperationException or ArgumentOutOfRangeException)
         {
@@ -137,8 +156,7 @@ public static class StripeWebhookEndpoint
 
         try
         {
-            await inbox.PersistAsync(integrationEvent.TenantId, "Stripe", integrationEvent.ExternalEventId,
-                nameof(StripePaymentWebhookEvent), integrationEvent, http.RequestAborted);
+            await inbox.PersistAsync(tenantId, "Stripe", externalEventId, subject, integrationEvent, http.RequestAborted);
             metrics.Persisted.Add(1);
             return Results.Accepted();
         }
@@ -146,7 +164,7 @@ public static class StripeWebhookEndpoint
         {
             http.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger("StripeInbox")
                 .LogError("Could not durably accept Stripe event {ExternalEventId}; failure {FailureKind}.",
-                    integrationEvent.ExternalEventId, ex.GetType().Name);
+                    externalEventId, ex.GetType().Name);
             return Results.StatusCode(StatusCodes.Status503ServiceUnavailable);
         }
     }
@@ -167,4 +185,9 @@ public static class StripeWebhookEndpoint
         if (value.ValueKind == JsonValueKind.String) return value.GetString();
         return value.ValueKind == JsonValueKind.Object && value.TryGetProperty("id", out var id) ? id.GetString() : null;
     }
+
+    private static string? OptionalMetadata(JsonElement element, string property) =>
+        element.TryGetProperty("metadata", out var metadata) && metadata.ValueKind == JsonValueKind.Object &&
+        metadata.TryGetProperty(property, out var value) && value.ValueKind == JsonValueKind.String
+            ? value.GetString() : null;
 }

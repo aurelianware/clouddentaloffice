@@ -33,12 +33,26 @@ public interface IStripeApiClient
         string accountId, Uri refreshUrl, Uri returnUrl, CancellationToken cancellationToken = default);
     Task<StripeCheckoutSessionSnapshot> CreateCheckoutSessionAsync(PaymentProcessorConfiguration configuration,
         string connectedAccountId, PaymentRequest request, CancellationToken cancellationToken = default);
+    Task<StripeRefundSnapshot> CreateRefundAsync(PaymentProcessorConfiguration configuration,
+        string connectedAccountId, PaymentRefundRequest request, string externalPaymentId,
+        CancellationToken cancellationToken = default);
+    Task<StripePaymentSnapshot?> GetPaymentAsync(PaymentProcessorConfiguration configuration,
+        string connectedAccountId, string externalPaymentId, CancellationToken cancellationToken = default);
+    Task<StripeRefundSnapshot?> GetRefundAsync(PaymentProcessorConfiguration configuration,
+        string connectedAccountId, string externalRefundId, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<StripePaymentSnapshot>> ListPaymentsAsync(PaymentProcessorConfiguration configuration,
+        string connectedAccountId, DateTime createdAfter, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<StripeRefundSnapshot>> ListRefundsAsync(PaymentProcessorConfiguration configuration,
+        string connectedAccountId, DateTime createdAfter, CancellationToken cancellationToken = default);
 }
 
 public sealed record StripeAccountSnapshot(string Id, bool ChargesEnabled, bool PayoutsEnabled,
     bool DetailsSubmitted, string? RequirementsStatus);
 public sealed record StripeCheckoutSessionSnapshot(string Id, string? PaymentIntentId, Uri CheckoutUrl,
     DateTime ExpiresAt);
+public sealed record StripePaymentSnapshot(string Id, long AmountReceived, string Currency, string Status);
+public sealed record StripeRefundSnapshot(string Id, string? PaymentIntentId, string? RefundReference,
+    long Amount, string Currency, string Status);
 
 public interface IStripeCredentialProvider
 {
@@ -170,6 +184,92 @@ public sealed class StripeApiClient(HttpClient httpClient, IStripeCredentialProv
         return new(dto.Id, dto.PaymentIntentId, checkoutUrl, ParseTimestamp(dto.ExpiresAt));
     }
 
+    public async Task<StripeRefundSnapshot> CreateRefundAsync(PaymentProcessorConfiguration config,
+        string connectedAccountId, PaymentRefundRequest request, string externalPaymentId,
+        CancellationToken cancellationToken = default)
+    {
+        ValidateAccountId(connectedAccountId);
+        ValidatePaymentIntentId(externalPaymentId);
+        PaymentCheckoutService.ValidateReference(request.InternalRefundReference, nameof(request.InternalRefundReference));
+        var fields = new Dictionary<string, string>
+        {
+            ["payment_intent"] = externalPaymentId,
+            ["amount"] = StripeCurrency.ToMinorUnits(request.Amount).ToString(System.Globalization.CultureInfo.InvariantCulture),
+            ["metadata[refund_reference]"] = request.InternalRefundReference
+        };
+        if (request.Reason is "duplicate" or "fraudulent" or "requested_by_customer") fields["reason"] = request.Reason;
+        using var response = await SendV1Async(config, connectedAccountId, HttpMethod.Post, "/v1/refunds", fields,
+            request.InternalRefundReference, cancellationToken);
+        return MapRefund(await ReadAsync<StripeRefundDto>(response, cancellationToken));
+    }
+
+    public async Task<StripePaymentSnapshot?> GetPaymentAsync(PaymentProcessorConfiguration config,
+        string connectedAccountId, string externalPaymentId, CancellationToken cancellationToken = default)
+    {
+        ValidatePaymentIntentId(externalPaymentId);
+        using var response = await SendV1Async(config, connectedAccountId, HttpMethod.Get,
+            $"/v1/payment_intents/{Uri.EscapeDataString(externalPaymentId)}", null, null, cancellationToken, false);
+        if (response.StatusCode == System.Net.HttpStatusCode.NotFound) return null;
+        EnsureStripeSuccess(response, "payment retrieval");
+        return MapPayment(await ReadAsync<StripePaymentIntentDto>(response, cancellationToken));
+    }
+
+    public async Task<StripeRefundSnapshot?> GetRefundAsync(PaymentProcessorConfiguration config,
+        string connectedAccountId, string externalRefundId, CancellationToken cancellationToken = default)
+    {
+        ValidateRefundId(externalRefundId);
+        using var response = await SendV1Async(config, connectedAccountId, HttpMethod.Get,
+            $"/v1/refunds/{Uri.EscapeDataString(externalRefundId)}", null, null, cancellationToken, false);
+        if (response.StatusCode == System.Net.HttpStatusCode.NotFound) return null;
+        EnsureStripeSuccess(response, "refund retrieval");
+        return MapRefund(await ReadAsync<StripeRefundDto>(response, cancellationToken));
+    }
+
+    public async Task<IReadOnlyList<StripePaymentSnapshot>> ListPaymentsAsync(PaymentProcessorConfiguration config,
+        string connectedAccountId, DateTime createdAfter, CancellationToken cancellationToken = default)
+    {
+        var seconds = new DateTimeOffset(DateTime.SpecifyKind(createdAfter, DateTimeKind.Utc)).ToUnixTimeSeconds();
+        using var response = await SendV1Async(config, connectedAccountId, HttpMethod.Get,
+            $"/v1/payment_intents?limit=100&created[gte]={seconds}", null, null, cancellationToken);
+        return (await ReadAsync<StripeListDto<StripePaymentIntentDto>>(response, cancellationToken)).Data.Select(MapPayment).ToList();
+    }
+
+    public async Task<IReadOnlyList<StripeRefundSnapshot>> ListRefundsAsync(PaymentProcessorConfiguration config,
+        string connectedAccountId, DateTime createdAfter, CancellationToken cancellationToken = default)
+    {
+        var seconds = new DateTimeOffset(DateTime.SpecifyKind(createdAfter, DateTimeKind.Utc)).ToUnixTimeSeconds();
+        using var response = await SendV1Async(config, connectedAccountId, HttpMethod.Get,
+            $"/v1/refunds?limit=100&created[gte]={seconds}", null, null, cancellationToken);
+        return (await ReadAsync<StripeListDto<StripeRefundDto>>(response, cancellationToken)).Data.Select(MapRefund).ToList();
+    }
+
+    private async Task<HttpResponseMessage> SendV1Async(PaymentProcessorConfiguration config, string accountId,
+        HttpMethod method, string path, Dictionary<string, string>? fields, string? idempotencyKey,
+        CancellationToken cancellationToken, bool requireSuccess = true)
+    {
+        ValidateAccountId(accountId);
+        using var request = new HttpRequestMessage(method, path);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", credentials.GetSecret(config));
+        request.Headers.Add("Stripe-Account", accountId);
+        request.Headers.Add("Stripe-Version", configuration["Stripe:Payments:ApiVersion"] ?? "2026-07-29.dahlia");
+        if (idempotencyKey is not null) request.Headers.Add("Idempotency-Key", idempotencyKey);
+        if (fields is not null) request.Content = new FormUrlEncodedContent(fields);
+        var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+        if (requireSuccess) EnsureStripeSuccess(response, "payment operation");
+        return response;
+    }
+
+    private static void EnsureStripeSuccess(HttpResponseMessage response, string operation)
+    {
+        if (!response.IsSuccessStatusCode)
+            throw new StripeConnectException($"Stripe {operation} failed with HTTP {(int)response.StatusCode}.");
+    }
+
+    private static StripePaymentSnapshot MapPayment(StripePaymentIntentDto value) =>
+        new(value.Id, value.AmountReceived, value.Currency.ToUpperInvariant(), value.Status);
+    private static StripeRefundSnapshot MapRefund(StripeRefundDto value) => new(value.Id, value.PaymentIntentId,
+        value.Metadata?.RefundReference, value.Amount, value.Currency.ToUpperInvariant(), value.Status);
+
     private async Task<HttpResponseMessage> SendAsync(PaymentProcessorConfiguration config, HttpMethod method,
         string path, object? body, string apiVersion, CancellationToken cancellationToken)
     {
@@ -198,6 +298,16 @@ public sealed class StripeApiClient(HttpClient httpClient, IStripeCredentialProv
     {
         if (string.IsNullOrWhiteSpace(value) || value.Length > 128 || !value.StartsWith("acct_", StringComparison.Ordinal))
             throw new ArgumentException("A valid Stripe connected-account ID is required.");
+    }
+    private static void ValidatePaymentIntentId(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value) || value.Length > 128 || !value.StartsWith("pi_", StringComparison.Ordinal))
+            throw new ArgumentException("A valid Stripe PaymentIntent ID is required.");
+    }
+    private static void ValidateRefundId(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value) || value.Length > 128 || !value.StartsWith("re_", StringComparison.Ordinal))
+            throw new ArgumentException("A valid Stripe refund ID is required.");
     }
     private static void ValidateRedirect(Uri value, PaymentProcessorEnvironment environment)
     {
@@ -326,6 +436,34 @@ internal sealed record StripeCheckoutSessionDto(
     [property: JsonPropertyName("payment_intent")] string? PaymentIntentId,
     [property: JsonPropertyName("url")] string Url,
     [property: JsonPropertyName("expires_at")] JsonElement ExpiresAt);
+internal sealed record StripePaymentIntentDto(
+    [property: JsonPropertyName("id")] string Id,
+    [property: JsonPropertyName("amount_received")] long AmountReceived,
+    [property: JsonPropertyName("currency")] string Currency,
+    [property: JsonPropertyName("status")] string Status);
+internal sealed record StripeRefundDto(
+    [property: JsonPropertyName("id")] string Id,
+    [property: JsonPropertyName("payment_intent")] string? PaymentIntentId,
+    [property: JsonPropertyName("amount")] long Amount,
+    [property: JsonPropertyName("currency")] string Currency,
+    [property: JsonPropertyName("status")] string Status,
+    [property: JsonPropertyName("metadata")] StripeRefundMetadataDto? Metadata);
+internal sealed record StripeRefundMetadataDto(
+    [property: JsonPropertyName("refund_reference")] string? RefundReference);
+internal sealed record StripeListDto<T>([property: JsonPropertyName("data")] List<T> Data);
+
+internal static class StripeCurrency
+{
+    private static readonly HashSet<string> ZeroDecimal = new(StringComparer.OrdinalIgnoreCase)
+        { "BIF", "CLP", "DJF", "GNF", "JPY", "KMF", "KRW", "MGA", "PYG", "RWF", "UGX", "VND", "VUV", "XAF", "XOF", "XPF" };
+    private static readonly HashSet<string> ThreeDecimal = new(StringComparer.OrdinalIgnoreCase)
+        { "BHD", "JOD", "KWD", "OMR", "TND" };
+    public static long ToMinorUnits(Money value)
+    {
+        var multiplier = ZeroDecimal.Contains(value.Currency) ? 1m : ThreeDecimal.Contains(value.Currency) ? 1_000m : 100m;
+        return decimal.ToInt64(decimal.Round(value.Amount * multiplier, 0, MidpointRounding.AwayFromZero));
+    }
+}
 
 // Patient checkout/refund support is intentionally separate from Connect onboarding in this PR.
 public sealed class StripePaymentProcessor(IStripeApiClient api) : IPaymentProcessor
@@ -343,7 +481,15 @@ public sealed class StripePaymentProcessor(IStripeApiClient api) : IPaymentProce
         return new(request.InternalPaymentReference, session.Id, session.PaymentIntentId, session.CheckoutUrl, null,
             session.ExpiresAt, PaymentStatus.Pending);
     }
-    public Task<PaymentRefundResult> RefundAsync(PaymentProcessorConfiguration configuration, PaymentRefundRequest request,
-        string externalPaymentId, CancellationToken cancellationToken = default) => throw new PaymentProcessorUnavailableException(
-        "Stripe patient refunds are not enabled; Connect onboarding alone does not activate payment collection.");
+    public async Task<PaymentRefundResult> RefundAsync(PaymentProcessorConfiguration configuration, PaymentRefundRequest request,
+        string externalPaymentId, CancellationToken cancellationToken = default)
+    {
+        if (!configuration.Enabled || configuration.OnboardingStatus != PaymentProcessorOnboardingStatus.Enabled ||
+            string.IsNullOrWhiteSpace(configuration.ConnectedMerchantReference))
+            throw new PaymentProcessorUnavailableException("The practice Stripe account is not ready to issue refunds.");
+        var result = await api.CreateRefundAsync(configuration, configuration.ConnectedMerchantReference,
+            request, externalPaymentId, cancellationToken);
+        var status = result.Status == "failed" ? PaymentStatus.Failed : PaymentStatus.Pending;
+        return new(request.InternalRefundReference, result.Id, status);
+    }
 }
