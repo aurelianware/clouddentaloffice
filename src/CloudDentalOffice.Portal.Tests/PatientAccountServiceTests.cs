@@ -120,6 +120,49 @@ public sealed class PatientAccountServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task Authenticated_tenant_claim_allows_access_when_provider_falls_back_to_default_tenant()
+    {
+        using var connection = new SqliteConnection("Data Source=:memory:");
+        connection.Open();
+        var tenant = new FixedTenantProvider("default-tenant", AuthenticatedUser(new System.Security.Claims.Claim("TenantId", "tenant-a")));
+        var options = new DbContextOptionsBuilder<CloudDentalDbContext>().UseSqlite(connection).Options;
+        using var db = new CloudDentalDbContext(options, tenant);
+        db.Database.EnsureCreated();
+        db.Patients.Add(new Patient { TenantId = "tenant-a", PatientId = 101, FirstName = "Test", LastName = "Patient",
+            DateOfBirth = new DateTime(1980, 1, 1), Gender = "U", Status = "Active" });
+        db.SaveChanges();
+
+        var service = new PatientAccountService(db, TimeProvider.System, tenant, NullLogger<PatientAccountService>.Instance);
+        var entry = await service.PostAsync(Command(PatientLedgerEntryType.Charge, 100m, "procedure-claim", PatientLedgerSourceType.Procedure));
+
+        Assert.Equal("tenant-a", entry.TenantId);
+        Assert.Equal(100m, (await service.GetSummaryAsync("tenant-a", 101))!.Balance.AmountDue);
+    }
+
+    [Fact]
+    public async Task Concurrent_reversal_unique_violations_are_translated()
+    {
+        using var connection = new SqliteConnection("Data Source=:memory:");
+        connection.Open();
+        var tenant = new FixedTenantProvider("tenant-a");
+        var options = new DbContextOptionsBuilder<CloudDentalDbContext>().UseSqlite(connection).Options;
+        using var db = new ThrowingCloudDentalDbContext(options, tenant,
+            new SqliteException("SQLite Error 19: 'UNIQUE constraint failed'.", 19, 2067));
+        db.Database.EnsureCreated();
+        db.Patients.Add(new Patient { TenantId = "tenant-a", PatientId = 101, FirstName = "Test", LastName = "Patient",
+            DateOfBirth = new DateTime(1980, 1, 1), Gender = "U", Status = "Active" });
+        db.SaveChanges();
+
+        var service = new PatientAccountService(db, TimeProvider.System, tenant, NullLogger<PatientAccountService>.Instance);
+        var charge = await service.PostAsync(Command(PatientLedgerEntryType.Charge, 125m, "procedure-race", PatientLedgerSourceType.Procedure));
+
+        db.ThrowUniqueViolationOnSave = true;
+        var exception = await Assert.ThrowsAsync<DuplicateLedgerSourceException>(() =>
+            service.ReverseAsync("tenant-a", charge.LedgerEntryId, "correction-race", "staff:42", _effective));
+        Assert.Equal("The ledger entry was concurrently reversed.", exception.Message);
+    }
+
+    [Fact]
     public async Task Posted_history_cannot_be_updated_or_deleted()
     {
         var entry = await Post(PatientLedgerEntryType.Charge, 100m, "procedure-1", PatientLedgerSourceType.Procedure);
@@ -143,6 +186,8 @@ public sealed class PatientAccountServiceTests : IDisposable
     {
         var user = new ClaimsPrincipal(new ClaimsIdentity([new System.Security.Claims.Claim("TenantId", "tenant-a")], "test"));
         Assert.Equal("tenant-a", PatientAccountApi.TrustedTenantId(user));
+        var blank = new ClaimsPrincipal(new ClaimsIdentity([new System.Security.Claims.Claim("TenantId", "   ")], "test"));
+        Assert.Null(PatientAccountApi.TrustedTenantId(blank));
         Assert.Null(PatientAccountApi.TrustedTenantId(new ClaimsPrincipal(new ClaimsIdentity())));
     }
 
@@ -155,9 +200,24 @@ public sealed class PatientAccountServiceTests : IDisposable
 
     public void Dispose() { _db.Dispose(); _connection.Dispose(); }
 
-    private sealed class FixedTenantProvider(string tenantId) : ITenantProvider
+    private static ClaimsPrincipal AuthenticatedUser(params System.Security.Claims.Claim[] claims) => new(new ClaimsIdentity(claims, "test"));
+
+    private sealed class FixedTenantProvider(string tenantId, ClaimsPrincipal? user = null) : ITenantProvider
     {
         public string TenantId => tenantId;
-        public ClaimsPrincipal? User => null;
+        public ClaimsPrincipal? User { get; } = user;
+    }
+
+    private sealed class ThrowingCloudDentalDbContext(
+        DbContextOptions<CloudDentalDbContext> options,
+        ITenantProvider tenantProvider,
+        Exception saveException) : CloudDentalDbContext(options, tenantProvider)
+    {
+        public bool ThrowUniqueViolationOnSave { get; set; }
+
+        public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default) =>
+            ThrowUniqueViolationOnSave
+                ? throw new DbUpdateException("Simulated unique violation.", saveException)
+                : base.SaveChangesAsync(cancellationToken);
     }
 }

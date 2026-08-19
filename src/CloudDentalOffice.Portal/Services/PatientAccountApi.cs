@@ -36,6 +36,9 @@ public static class PatientAccountApi
     }
 
     public static string? TrustedTenantId(ClaimsPrincipal user) =>
-        user.FindFirst("TenantId")?.Value ?? user.FindFirst("tenant_id")?.Value ??
-        user.FindFirst("tenantId")?.Value ?? user.FindFirst("tenant")?.Value;
+        NormalizeTenantId(user.FindFirst("TenantId")?.Value ?? user.FindFirst("tenant_id")?.Value ??
+            user.FindFirst("tenantId")?.Value ?? user.FindFirst("tenant")?.Value);
+
+    private static string? NormalizeTenantId(string? tenantId) =>
+        string.IsNullOrWhiteSpace(tenantId) ? null : tenantId.Trim();
 }

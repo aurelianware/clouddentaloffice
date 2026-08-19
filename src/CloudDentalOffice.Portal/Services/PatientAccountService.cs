@@ -1,7 +1,10 @@
+using System.Security.Claims;
 using CloudDentalOffice.Portal.Data;
 using CloudDentalOffice.Portal.Models;
 using CloudDentalOffice.Portal.Services.Tenancy;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 
 namespace CloudDentalOffice.Portal.Services;
 
@@ -117,7 +120,11 @@ public sealed class PatientAccountService(CloudDentalDbContext db, TimeProvider 
         };
         original.PatientAccount.UpdatedAt = now;
         db.PatientLedgerEntries.Add(reversal);
-        await db.SaveChangesAsync(cancellationToken);
+        try { await db.SaveChangesAsync(cancellationToken); }
+        catch (DbUpdateException ex) when (IsUniqueViolation(ex))
+        {
+            throw new DuplicateLedgerSourceException("The ledger entry was concurrently reversed.");
+        }
         logger.LogInformation("Patient ledger entry {LedgerEntryId} reversed for tenant {TenantId}.", entryId, tenantId);
         return reversal;
     }
@@ -179,13 +186,31 @@ public sealed class PatientAccountService(CloudDentalDbContext db, TimeProvider 
         _ => DateTime.SpecifyKind(value, DateTimeKind.Utc)
     };
 
-    private static bool IsUniqueViolation(DbUpdateException exception) =>
-        exception.InnerException?.Message.Contains("unique", StringComparison.OrdinalIgnoreCase) == true ||
-        exception.InnerException?.Message.Contains("duplicate", StringComparison.OrdinalIgnoreCase) == true;
+    private static bool IsUniqueViolation(DbUpdateException exception)
+    {
+        var databaseException = exception.InnerException ?? exception.GetBaseException();
+        return databaseException switch
+        {
+            PostgresException { SqlState: PostgresErrorCodes.UniqueViolation } => true,
+            SqliteException { SqliteErrorCode: 19, SqliteExtendedErrorCode: 1555 or 2067 } => true,
+            _ => databaseException.Message.Contains("unique", StringComparison.OrdinalIgnoreCase) ||
+                databaseException.Message.Contains("duplicate", StringComparison.OrdinalIgnoreCase)
+        };
+    }
 
     private void EnsureTenant(string tenantId)
     {
-        if (string.IsNullOrWhiteSpace(tenantId) || !string.Equals(tenantProvider.TenantId, tenantId, StringComparison.Ordinal))
+        var authenticatedTenantId = GetAuthenticatedTenantId(tenantProvider.User);
+        var trustedTenantId = authenticatedTenantId ?? tenantProvider.TenantId;
+        if (string.IsNullOrWhiteSpace(tenantId) || !string.Equals(trustedTenantId, tenantId, StringComparison.Ordinal))
             throw new UnauthorizedAccessException("Patient account tenant context does not match the authenticated tenant.");
+    }
+
+    private static string? GetAuthenticatedTenantId(ClaimsPrincipal? user)
+    {
+        if (user?.Identity?.IsAuthenticated != true) return null;
+        var tenantId = user.FindFirst("TenantId")?.Value ?? user.FindFirst("tenant_id")?.Value ??
+            user.FindFirst("tenantId")?.Value ?? user.FindFirst("tenant")?.Value;
+        return string.IsNullOrWhiteSpace(tenantId) ? null : tenantId.Trim();
     }
 }
