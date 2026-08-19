@@ -40,7 +40,7 @@ public sealed record SearchPerformanceSummary(long Clicks, long Impressions, dec
 public sealed record SearchDailyTotal(DateOnly Date, long Clicks, long Impressions);
 public sealed record SearchQueryPerformance(string Query, long Clicks, long Impressions, decimal CtrPercent, decimal AveragePosition);
 public sealed record SearchDevicePerformance(string Device, long Clicks, long Impressions, decimal CtrPercent, decimal AveragePosition);
-public sealed record SearchLandingPagePerformance(string LandingPage, bool IsProduction, long Clicks, long Impressions,
+public sealed record SearchLandingPagePerformance(string LandingPage, long Clicks, long Impressions,
     decimal CtrPercent, decimal AveragePosition, long BookingStarts, long BookingRequests, long ScheduledAppointments,
     decimal? AggregateRequestRatePercent);
 public sealed record SearchQueryPagePerformance(string Query, string LandingPage, long Clicks, long Impressions,

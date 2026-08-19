@@ -32,7 +32,8 @@ builder.Services.AddHealthChecks();
 builder.Services.AddSchedulingIntegrations();
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddScoped<IPatientAcquisitionService, PatientAcquisitionService>();
-builder.Services.Configure<SearchConsoleOptions>(builder.Configuration.GetSection(SearchConsoleOptions.SectionName));
+builder.Services.AddOptions<SearchConsoleOptions>().Bind(builder.Configuration.GetSection(SearchConsoleOptions.SectionName))
+    .ValidateDataAnnotations().ValidateOnStart();
 builder.Services.AddHttpClient<ISearchConsoleClient, GoogleSearchConsoleClient>(client => client.Timeout = TimeSpan.FromSeconds(60));
 builder.Services.AddScoped<ISearchConsoleSyncService, SearchConsoleSyncService>();
 builder.Services.AddScoped<ISearchAcquisitionReportingService, SearchAcquisitionReportingService>();

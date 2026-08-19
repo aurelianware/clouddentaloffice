@@ -59,7 +59,7 @@ public sealed class SearchConsoleOptions
     [Range(1, 480)] public int InitialBackfillDays { get; set; } = 90;
     [Range(100, 25000)] public int PageSize { get; set; } = 25000;
     [Range(100, 250000)] public int MaxRowsPerDay { get; set; } = 50000;
-    [Range(1, 24)] public int SyncHourUtc { get; set; } = 6;
+    [Range(0, 23)] public int SyncHourUtc { get; set; } = 6;
     [Range(1, 20)] public int MaxAttempts { get; set; } = 3;
     [Range(1, 300)] public int PollMinutes { get; set; } = 15;
     [Range(30, 3600)] public int LeaseSeconds { get; set; } = 600;
@@ -326,48 +326,71 @@ public sealed class SearchAcquisitionReportingService(SchedulingDbContext db) : 
     {
         if (to <= from || to - from > TimeSpan.FromDays(366)) throw new ArgumentException("Choose a valid reporting range up to 366 days.");
         var fromDate = DateOnly.FromDateTime(from.UtcDateTime); var toDate = DateOnly.FromDateTime(to.UtcDateTime);
-        var search = await db.SearchPerformanceDaily.AsNoTracking().Where(x => x.TenantId == tenantId && x.IsProduction &&
-            x.Date >= fromDate && x.Date < toDate).ToListAsync(cancellationToken);
+        var search = db.SearchPerformanceDaily.AsNoTracking().Where(x => x.TenantId == tenantId && x.IsProduction &&
+            x.Date >= fromDate && x.Date < toDate);
         var acquisition = await db.PatientAcquisitionEvents.AsNoTracking().Where(x => x.TenantId == tenantId &&
             x.OccurredAt >= from.UtcDateTime && x.OccurredAt < to.UtcDateTime && x.LandingPage != null)
             .Select(x => new { x.LandingPage, x.EventType, x.SessionId }).ToListAsync(cancellationToken);
         var integration = await db.SearchConsoleIntegrations.AsNoTracking().SingleOrDefaultAsync(x => x.TenantId == tenantId, cancellationToken);
-        var summary = Summary(search);
-        var pages = search.GroupBy(x => x.PagePath).Select(g =>
+        var total = await search.GroupBy(_ => 1).Select(g => new
         {
-            var events = acquisition.Where(x => AcquisitionVocabulary.Path(x.LandingPage) == g.Key).ToList();
+            Clicks = g.Sum(x => x.Clicks), Impressions = g.Sum(x => x.Impressions), PositionSum = g.Sum(x => x.PositionSum)
+        }).SingleOrDefaultAsync(cancellationToken);
+        var summary = Metrics(total?.Clicks ?? 0, total?.Impressions ?? 0, total?.PositionSum ?? 0);
+        var pageAggregates = await search.GroupBy(x => x.PagePath).Select(g => new
+        {
+            Page = g.Key, Clicks = g.Sum(x => x.Clicks), Impressions = g.Sum(x => x.Impressions),
+            PositionSum = g.Sum(x => x.PositionSum)
+        }).OrderByDescending(x => x.Clicks).ThenByDescending(x => x.Impressions).ToListAsync(cancellationToken);
+        var pages = pageAggregates.Select(g =>
+        {
+            var events = acquisition.Where(x => AcquisitionVocabulary.Path(x.LandingPage) == g.Page).ToList();
             long Count(AcquisitionEventType type) => events.Where(x => x.EventType == type).Select(x => x.SessionId).Distinct().LongCount();
-            var clicks = g.Sum(x => x.Clicks); var requests = Count(AcquisitionEventType.BookingRequestSubmitted);
-            var metrics = Summary(g);
-            return new SearchLandingPagePerformance(g.Key, true, clicks, metrics.Impressions, metrics.CtrPercent,
+            var requests = Count(AcquisitionEventType.BookingRequestSubmitted);
+            var metrics = Metrics(g.Clicks, g.Impressions, g.PositionSum);
+            return new SearchLandingPagePerformance(g.Page, g.Clicks, metrics.Impressions, metrics.CtrPercent,
                 metrics.AveragePosition, Count(AcquisitionEventType.BookingStarted), requests,
-                Count(AcquisitionEventType.AppointmentScheduled), clicks > 0 ? Math.Round(requests * 100m / clicks, 1) : null);
-        }).OrderByDescending(x => x.Clicks).ThenByDescending(x => x.Impressions).ToArray();
+                Count(AcquisitionEventType.AppointmentScheduled), g.Clicks > 0 ? Math.Round(requests * 100m / g.Clicks, 1) : null);
+        }).ToArray();
+        var dailyAggregates = await search.GroupBy(x => x.Date).Select(g => new
+        {
+            Date = g.Key, Clicks = g.Sum(x => x.Clicks), Impressions = g.Sum(x => x.Impressions)
+        }).OrderBy(x => x.Date).ToListAsync(cancellationToken);
+        var queryAggregates = await search.GroupBy(x => x.Query).Select(g => new
+        {
+            Query = g.Key, Clicks = g.Sum(x => x.Clicks), Impressions = g.Sum(x => x.Impressions), PositionSum = g.Sum(x => x.PositionSum)
+        }).OrderByDescending(x => x.Clicks).ThenByDescending(x => x.Impressions).Take(100).ToListAsync(cancellationToken);
+        var queryPageAggregates = await search.GroupBy(x => new { x.Query, x.PagePath }).Select(g => new
+        {
+            g.Key.Query, g.Key.PagePath, Clicks = g.Sum(x => x.Clicks), Impressions = g.Sum(x => x.Impressions),
+            PositionSum = g.Sum(x => x.PositionSum)
+        }).OrderByDescending(x => x.Clicks).ThenByDescending(x => x.Impressions).Take(200).ToListAsync(cancellationToken);
+        var deviceAggregates = await search.GroupBy(x => x.Device).Select(g => new
+        {
+            Device = g.Key, Clicks = g.Sum(x => x.Clicks), Impressions = g.Sum(x => x.Impressions), PositionSum = g.Sum(x => x.PositionSum)
+        }).OrderByDescending(x => x.Clicks).ToListAsync(cancellationToken);
         return new()
         {
             From = from, To = to, Summary = summary,
-            Daily = search.GroupBy(x => x.Date).OrderBy(x => x.Key).Select(x => new SearchDailyTotal(x.Key, x.Sum(y => y.Clicks), x.Sum(y => y.Impressions))).ToArray(),
-            TopQueries = search.GroupBy(x => x.Query).Select(x => Row(x.Key, x)).OrderByDescending(x => x.Clicks).ThenByDescending(x => x.Impressions).Take(100).ToArray(),
+            Daily = dailyAggregates.Select(x => new SearchDailyTotal(x.Date, x.Clicks, x.Impressions)).ToArray(),
+            TopQueries = queryAggregates.Select(x => Query(x.Query, x.Clicks, x.Impressions, x.PositionSum)).ToArray(),
             LandingPages = pages,
-            QueryPages = search.GroupBy(x => new { x.Query, x.PagePath }).Select(x => QueryPage(x.Key.Query, x.Key.PagePath, x)).OrderByDescending(x => x.Clicks).Take(200).ToArray(),
-            Devices = search.GroupBy(x => x.Device).Select(x => Device(x.Key, x)).OrderByDescending(x => x.Clicks).ToArray(),
+            QueryPages = queryPageAggregates.Select(x => QueryPage(x.Query, x.PagePath, x.Clicks, x.Impressions, x.PositionSum)).ToArray(),
+            Devices = deviceAggregates.Select(x => Device(x.Device, x.Clicks, x.Impressions, x.PositionSum)).ToArray(),
             Status = new(integration is not null, integration?.Enabled ?? false, integration?.PropertyUrl,
                 integration?.SyncStatus.ToString() ?? "NotConfigured", AsOffset(integration?.LastSuccessfulSyncAt),
                 integration?.LatestImportedDate, integration?.LastError)
         };
     }
 
-    private static SearchPerformanceSummary Summary(IEnumerable<SearchPerformanceDaily> rows)
-    {
-        var data = rows.ToArray(); var clicks = data.Sum(x => x.Clicks); var impressions = data.Sum(x => x.Impressions);
-        return new(clicks, impressions, impressions > 0 ? Math.Round(clicks * 100m / impressions, 2) : 0,
-            impressions > 0 ? Math.Round((decimal)(data.Sum(x => x.PositionSum) / impressions), 1) : 0);
-    }
-    private static SearchQueryPerformance Row(string query, IEnumerable<SearchPerformanceDaily> rows)
-    { var m = Summary(rows); return new(query, m.Clicks, m.Impressions, m.CtrPercent, m.AveragePosition); }
-    private static SearchQueryPagePerformance QueryPage(string query, string page, IEnumerable<SearchPerformanceDaily> rows)
-    { var m = Summary(rows); return new(query, page, m.Clicks, m.Impressions, m.CtrPercent, m.AveragePosition); }
-    private static SearchDevicePerformance Device(string device, IEnumerable<SearchPerformanceDaily> rows)
-    { var m = Summary(rows); return new(device, m.Clicks, m.Impressions, m.CtrPercent, m.AveragePosition); }
+    private static SearchPerformanceSummary Metrics(long clicks, long impressions, double positionSum) => new(clicks, impressions,
+        impressions > 0 ? Math.Round(clicks * 100m / impressions, 2) : 0,
+        impressions > 0 ? Math.Round((decimal)(positionSum / impressions), 1) : 0);
+    private static SearchQueryPerformance Query(string query, long clicks, long impressions, double positionSum)
+    { var m = Metrics(clicks, impressions, positionSum); return new(query, clicks, impressions, m.CtrPercent, m.AveragePosition); }
+    private static SearchQueryPagePerformance QueryPage(string query, string page, long clicks, long impressions, double positionSum)
+    { var m = Metrics(clicks, impressions, positionSum); return new(query, page, clicks, impressions, m.CtrPercent, m.AveragePosition); }
+    private static SearchDevicePerformance Device(string device, long clicks, long impressions, double positionSum)
+    { var m = Metrics(clicks, impressions, positionSum); return new(device, clicks, impressions, m.CtrPercent, m.AveragePosition); }
     private static DateTimeOffset? AsOffset(DateTime? value) => value.HasValue ? new DateTimeOffset(DateTime.SpecifyKind(value.Value, DateTimeKind.Utc)) : null;
 }
