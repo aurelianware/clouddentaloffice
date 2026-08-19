@@ -152,6 +152,32 @@ public sealed class StaffPatientBillingTests : IDisposable
         Assert.Equal(20m, dashboard.FailedOnlinePayments);
     }
 
+    [Fact]
+    public async Task Refund_loading_uses_a_server_side_payment_subquery_for_large_accounts()
+    {
+        var now = _clock.GetUtcNow().UtcDateTime;
+        var payments = Enumerable.Range(0, 1_050).Select(index => new PatientPayment
+        {
+            PaymentId = Guid.NewGuid(), TenantId = "tenant-a", PatientAccountId = _charge.PatientAccountId,
+            Amount = 1m, Currency = "USD", PaymentDate = now, Method = PatientPaymentMethod.Card,
+            Processor = PaymentProcessorProvider.Stripe, InternalPaymentReference = $"bulk-{index}",
+            Status = PaymentStatus.Succeeded, CreatedAt = now, UpdatedAt = now
+        }).ToList();
+        _db.PatientPayments.AddRange(payments);
+        _db.PatientRefunds.Add(new PatientRefund
+        {
+            RefundId = Guid.NewGuid(), TenantId = "tenant-a", PaymentId = payments[^1].PaymentId,
+            Amount = 1m, Currency = "USD", Reason = "requested_by_customer",
+            Processor = PaymentProcessorProvider.Stripe, InternalRefundReference = "bulk-refund",
+            Status = PatientRefundStatus.Pending, RequestedBy = "test", RequestedAt = now
+        });
+        await _db.SaveChangesAsync();
+
+        var account = await _service.GetAccountAsync(User("BillingAdmin"), 101);
+        Assert.Equal(1_050, account.Payments.Count);
+        Assert.Contains("Pending", account.Payments.Single(x => x.PaymentId == payments[^1].PaymentId).RefundStatus);
+    }
+
     private RecordManualPayment Payment(PatientPaymentMethod method, string reference) =>
         new(101, new Money(100m), method, reference, _clock.GetUtcNow().UtcDateTime);
     private static Patient Patient(int id, string tenant, string first) => new() { PatientId = id, TenantId = tenant,

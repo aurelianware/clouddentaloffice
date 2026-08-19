@@ -229,18 +229,44 @@ public sealed class StripeApiClient(HttpClient httpClient, IStripeCredentialProv
         string connectedAccountId, DateTime createdAfter, CancellationToken cancellationToken = default)
     {
         var seconds = new DateTimeOffset(DateTime.SpecifyKind(createdAfter, DateTimeKind.Utc)).ToUnixTimeSeconds();
-        using var response = await SendV1Async(config, connectedAccountId, HttpMethod.Get,
-            $"/v1/payment_intents?limit=100&created[gte]={seconds}", null, null, cancellationToken);
-        return (await ReadAsync<StripeListDto<StripePaymentIntentDto>>(response, cancellationToken)).Data.Select(MapPayment).ToList();
+        var values = new List<StripePaymentSnapshot>();
+        string? startingAfter = null;
+        do
+        {
+            var cursor = startingAfter is null ? string.Empty : $"&starting_after={Uri.EscapeDataString(startingAfter)}";
+            using var response = await SendV1Async(config, connectedAccountId, HttpMethod.Get,
+                $"/v1/payment_intents?limit=100&created[gte]={seconds}{cursor}", null, null, cancellationToken);
+            var page = await ReadAsync<StripeListDto<StripePaymentIntentDto>>(response, cancellationToken);
+            values.AddRange(page.Data.Select(MapPayment));
+            startingAfter = NextCursor(page, "PaymentIntent");
+        } while (startingAfter is not null);
+        return values;
     }
 
     public async Task<IReadOnlyList<StripeRefundSnapshot>> ListRefundsAsync(PaymentProcessorConfiguration config,
         string connectedAccountId, DateTime createdAfter, CancellationToken cancellationToken = default)
     {
         var seconds = new DateTimeOffset(DateTime.SpecifyKind(createdAfter, DateTimeKind.Utc)).ToUnixTimeSeconds();
-        using var response = await SendV1Async(config, connectedAccountId, HttpMethod.Get,
-            $"/v1/refunds?limit=100&created[gte]={seconds}", null, null, cancellationToken);
-        return (await ReadAsync<StripeListDto<StripeRefundDto>>(response, cancellationToken)).Data.Select(MapRefund).ToList();
+        var values = new List<StripeRefundSnapshot>();
+        string? startingAfter = null;
+        do
+        {
+            var cursor = startingAfter is null ? string.Empty : $"&starting_after={Uri.EscapeDataString(startingAfter)}";
+            using var response = await SendV1Async(config, connectedAccountId, HttpMethod.Get,
+                $"/v1/refunds?limit=100&created[gte]={seconds}{cursor}", null, null, cancellationToken);
+            var page = await ReadAsync<StripeListDto<StripeRefundDto>>(response, cancellationToken);
+            values.AddRange(page.Data.Select(MapRefund));
+            startingAfter = NextCursor(page, "refund");
+        } while (startingAfter is not null);
+        return values;
+    }
+
+    private static string? NextCursor<T>(StripeListDto<T> page, string resource) where T : IStripeListItem
+    {
+        if (!page.HasMore) return null;
+        var cursor = page.Data.LastOrDefault()?.Id;
+        return !string.IsNullOrWhiteSpace(cursor) ? cursor :
+            throw new StripeConnectException($"Stripe returned an invalid paginated {resource} response.");
     }
 
     private async Task<HttpResponseMessage> SendV1Async(PaymentProcessorConfiguration config, string accountId,
@@ -436,21 +462,23 @@ internal sealed record StripeCheckoutSessionDto(
     [property: JsonPropertyName("payment_intent")] string? PaymentIntentId,
     [property: JsonPropertyName("url")] string Url,
     [property: JsonPropertyName("expires_at")] JsonElement ExpiresAt);
+internal interface IStripeListItem { string Id { get; } }
 internal sealed record StripePaymentIntentDto(
     [property: JsonPropertyName("id")] string Id,
     [property: JsonPropertyName("amount_received")] long AmountReceived,
     [property: JsonPropertyName("currency")] string Currency,
-    [property: JsonPropertyName("status")] string Status);
+    [property: JsonPropertyName("status")] string Status) : IStripeListItem;
 internal sealed record StripeRefundDto(
     [property: JsonPropertyName("id")] string Id,
     [property: JsonPropertyName("payment_intent")] string? PaymentIntentId,
     [property: JsonPropertyName("amount")] long Amount,
     [property: JsonPropertyName("currency")] string Currency,
     [property: JsonPropertyName("status")] string Status,
-    [property: JsonPropertyName("metadata")] StripeRefundMetadataDto? Metadata);
+    [property: JsonPropertyName("metadata")] StripeRefundMetadataDto? Metadata) : IStripeListItem;
 internal sealed record StripeRefundMetadataDto(
     [property: JsonPropertyName("refund_reference")] string? RefundReference);
-internal sealed record StripeListDto<T>([property: JsonPropertyName("data")] List<T> Data);
+internal sealed record StripeListDto<T>([property: JsonPropertyName("data")] List<T> Data,
+    [property: JsonPropertyName("has_more")] bool HasMore);
 
 internal static class StripeCurrency
 {

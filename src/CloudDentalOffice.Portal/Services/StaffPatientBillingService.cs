@@ -93,11 +93,12 @@ public sealed class StaffPatientBillingService(CloudDentalDbContext db, IPatient
             ?? throw new KeyNotFoundException("Patient account was not found for the tenant.");
         var ledger = await accounts.GetLedgerAsync(tenant, patientId, cancellationToken);
         var patientStatements = await statements.ListAsync(tenant, patientId, cancellationToken);
-        var paymentRows = await db.PatientPayments.IgnoreQueryFilters().AsNoTracking().Where(x =>
-                x.TenantId == tenant && x.PatientAccountId == summary.AccountId)
-            .Include(x => x.Allocations).OrderByDescending(x => x.PaymentDate).ToListAsync(cancellationToken);
+        var accountPayments = db.PatientPayments.IgnoreQueryFilters().Where(x =>
+            x.TenantId == tenant && x.PatientAccountId == summary.AccountId);
+        var paymentRows = await accountPayments.AsNoTracking().Include(x => x.Allocations)
+            .OrderByDescending(x => x.PaymentDate).ToListAsync(cancellationToken);
         var refundRows = await db.PatientRefunds.IgnoreQueryFilters().AsNoTracking().Where(x =>
-            x.TenantId == tenant && paymentRows.Select(p => p.PaymentId).Contains(x.PaymentId))
+            x.TenantId == tenant && accountPayments.Select(p => p.PaymentId).Contains(x.PaymentId))
             .ToListAsync(cancellationToken);
         var paymentModels = paymentRows.Select(x =>
         {

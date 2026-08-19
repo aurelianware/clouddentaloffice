@@ -167,6 +167,28 @@ public sealed class StripeConnectTests : IDisposable
     }
 
     [Fact]
+    public async Task Reconciliation_lists_follow_all_Stripe_pages()
+    {
+        var handler = new PagingHandler(
+            """{"data":[{"id":"pi_first","amount_received":100,"currency":"usd","status":"succeeded"}],"has_more":true}""",
+            """{"data":[{"id":"pi_second","amount_received":200,"currency":"usd","status":"succeeded"}],"has_more":false}""",
+            """{"data":[{"id":"re_first","payment_intent":"pi_first","amount":50,"currency":"usd","status":"succeeded","metadata":{}}],"has_more":true}""",
+            """{"data":[{"id":"re_second","payment_intent":"pi_second","amount":75,"currency":"usd","status":"pending","metadata":{}}],"has_more":false}"""
+        );
+        var values = new Dictionary<string, string?> { ["Secrets:StripeTest"] = "sk_test_not-a-real-secret" };
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(values).Build();
+        var client = new StripeApiClient(new HttpClient(handler) { BaseAddress = new Uri("https://api.stripe.com") },
+            new ConfigurationStripeCredentialProvider(configuration), configuration);
+        var payments = await client.ListPaymentsAsync(Configuration(), "acct_test_practice", DateTime.UtcNow.AddDays(-1));
+        var refunds = await client.ListRefundsAsync(Configuration(), "acct_test_practice", DateTime.UtcNow.AddDays(-1));
+        Assert.Equal(["pi_first", "pi_second"], payments.Select(x => x.Id));
+        Assert.Equal(["re_first", "re_second"], refunds.Select(x => x.Id));
+        Assert.Contains("starting_after=pi_first", handler.Requests[1].Query);
+        Assert.Contains("starting_after=re_first", handler.Requests[3].Query);
+        Assert.All(handler.ConnectedAccounts, x => Assert.Equal("acct_test_practice", x));
+    }
+
+    [Fact]
     public async Task Disable_is_local_and_never_deletes_the_connected_account()
     {
         await _service.CreateOnboardingLinkAsync("tenant-a", "admin@example.test", Refresh, Return);
@@ -245,6 +267,21 @@ public sealed class StripeConnectTests : IDisposable
             Body = request.Content is null ? string.Empty : await request.Content.ReadAsStringAsync(cancellationToken);
             return new HttpResponseMessage(HttpStatusCode.OK)
             { Content = new StringContent(responseJson, Encoding.UTF8, "application/json") };
+        }
+    }
+    private sealed class PagingHandler(params string[] responses) : HttpMessageHandler
+    {
+        private readonly Queue<string> _responses = new(responses);
+        public List<Uri> Requests { get; } = [];
+        public List<string?> ConnectedAccounts { get; } = [];
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            Requests.Add(request.RequestUri!);
+            ConnectedAccounts.Add(request.Headers.TryGetValues("Stripe-Account", out var accounts)
+                ? accounts.Single() : null);
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            { Content = new StringContent(_responses.Dequeue(), Encoding.UTF8, "application/json") });
         }
     }
 }

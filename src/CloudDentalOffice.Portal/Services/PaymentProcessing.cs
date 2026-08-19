@@ -284,7 +284,7 @@ public sealed class PaymentRefundService(CloudDentalDbContext db, IPaymentProces
             await db.SaveChangesAsync(cancellationToken);
             return result;
         }
-        catch (Exception ex) when (ex is StripeConnectException or PaymentProcessorUnavailableException)
+        catch (Exception ex) when (ex is StripeConnectException or PaymentProcessorUnavailableException or HttpRequestException)
         {
             refund.Status = PatientRefundStatus.Failed;
             refund.FailureCode = "stripe-refund-request-failed";
