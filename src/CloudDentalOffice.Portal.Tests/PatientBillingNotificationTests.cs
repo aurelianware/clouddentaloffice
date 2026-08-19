@@ -69,6 +69,49 @@ public sealed class PatientBillingNotificationTests : IDisposable
         Assert.Single(await _db.PatientBillingNotifications.IgnoreQueryFilters().ToListAsync());
     }
 
+    [Fact]
+    public async Task Due_balance_queue_skips_already_notified_statements_before_batch_limit()
+    {
+        var now = DateTime.UtcNow;
+        var first = Guid.NewGuid();
+        var second = Guid.NewGuid();
+        _db.PatientStatements.AddRange(
+            new PatientStatement
+            {
+                StatementId = first, TenantId = "tenant-a", PatientAccountId = _accountId,
+                StatementDate = now.AddDays(-7), DueDate = now.AddDays(-1), Status = PatientStatementStatus.Sent,
+                AmountDue = 25m, Currency = "USD", LedgerThroughDate = now.AddDays(-7), CreatedAt = now.AddDays(-7),
+                CreatedBy = "test", StatusUpdatedAt = now.AddDays(-7)
+            },
+            new PatientStatement
+            {
+                StatementId = second, TenantId = "tenant-a", PatientAccountId = _accountId,
+                StatementDate = now.AddDays(-6), DueDate = now, Status = PatientStatementStatus.Sent,
+                AmountDue = 35m, Currency = "USD", LedgerThroughDate = now.AddDays(-6), CreatedAt = now.AddDays(-6),
+                CreatedBy = "test", StatusUpdatedAt = now.AddDays(-6)
+            });
+        _db.PatientBillingNotifications.Add(new PatientBillingNotification
+        {
+            TenantId = "tenant-a", PatientAccountId = _accountId,
+            NotificationType = PatientBillingNotificationType.BalanceDue, SourceType = "statement",
+            SourceId = first.ToString("N"), RecipientEmail = "patient@example.test", PracticeName = "Example Dental",
+            Status = PatientBillingNotificationStatus.Sent, ScheduledAt = now.AddDays(-1), SentAt = now.AddDays(-1),
+            CreatedAt = now.AddDays(-1), UpdatedAt = now.AddDays(-1)
+        });
+        await _db.SaveChangesAsync();
+
+        var options = Options.Create(new PatientBillingNotificationOptions { Enabled = true, BatchSize = 1 });
+        var service = new PatientBillingNotificationService(_db, TimeProvider.System, options);
+        var sender = new CaptureSender();
+        var dispatcher = new PatientBillingNotificationDispatcher(_db, service, sender, options,
+            TimeProvider.System, NullLogger<PatientBillingNotificationDispatcher>.Instance);
+
+        Assert.Equal(1, await dispatcher.DispatchBatchAsync());
+        Assert.Single(sender.Messages);
+        Assert.Contains(await _db.PatientBillingNotifications.IgnoreQueryFilters().ToListAsync(),
+            x => x.SourceId == second.ToString("N") && x.NotificationType == PatientBillingNotificationType.BalanceDue);
+    }
+
     private sealed class CaptureSender : IPatientBillingNotificationSender
     {
         public List<BillingNotificationMessage> Messages { get; } = [];

@@ -196,11 +196,28 @@ public sealed class PatientBillingNotificationDispatcher(CloudDentalDbContext db
         var due = await db.PatientStatements.IgnoreQueryFilters().AsNoTracking().Where(x =>
                 x.DueDate <= now && x.AmountDue > 0 &&
                 (x.Status == PatientStatementStatus.Sent || x.Status == PatientStatementStatus.PartiallyPaid))
-            .Select(x => new { x.TenantId, x.PatientAccountId, x.StatementId }).Take(options.Value.BatchSize)
+            .OrderBy(x => x.DueDate).ThenBy(x => x.StatementId)
+            .Select(x => new { x.TenantId, x.PatientAccountId, x.StatementId })
             .ToListAsync(cancellationToken);
+        var dueIds = due.Select(x => x.StatementId.ToString("N")).Distinct(StringComparer.Ordinal).ToList();
+        var existing = dueIds.Count == 0
+            ? new HashSet<(string TenantId, string SourceId)>()
+            : (await db.PatientBillingNotifications.IgnoreQueryFilters().AsNoTracking().Where(x =>
+                    x.NotificationType == PatientBillingNotificationType.BalanceDue &&
+                    x.SourceType == "statement" && dueIds.Contains(x.SourceId))
+                .Select(x => new { x.TenantId, x.SourceId }).ToListAsync(cancellationToken))
+            .Select(x => (x.TenantId, x.SourceId))
+            .ToHashSet();
+        var queued = 0;
         foreach (var statement in due)
-            await notifications.EnqueueAsync(statement.TenantId, statement.PatientAccountId,
-                PatientBillingNotificationType.BalanceDue, "statement", statement.StatementId.ToString("N"), cancellationToken);
+        {
+            var sourceId = statement.StatementId.ToString("N");
+            if (existing.Contains((statement.TenantId, sourceId))) continue;
+            if (await notifications.EnqueueAsync(statement.TenantId, statement.PatientAccountId,
+                    PatientBillingNotificationType.BalanceDue, "statement", sourceId, cancellationToken))
+                queued++;
+            if (queued >= options.Value.BatchSize) break;
+        }
     }
 
     private static BillingNotificationMessage CreateMessage(PatientBillingNotification row, string? portalBaseUrl)

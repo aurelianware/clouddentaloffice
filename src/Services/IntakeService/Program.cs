@@ -294,8 +294,9 @@ app.MapGet("/api/internal/integration-inbox/status", async (
     string? channel, CancellationToken cancellationToken) =>
 {
     var tenantId = IntegrationInboxAdminAuth.ResolveTenant(http, configuration);
-    return tenantId is null ? Results.Unauthorized() : Results.Ok(
-        await inbox.GetStatusAsync(tenantId, channel, cancellationToken));
+    if (tenantId is null) return Results.Unauthorized();
+    try { return Results.Ok(await inbox.GetStatusAsync(tenantId, channel, cancellationToken)); }
+    catch (ArgumentException) { return Results.BadRequest(); }
 }).RequireRateLimiting("integration-inbox-admin").WithTags("IntegrationInbox");
 
 app.MapPost("/api/internal/integration-inbox/{id:guid}/retry", async (

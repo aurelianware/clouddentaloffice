@@ -88,7 +88,7 @@ public static class StripeWebhookEndpoint
     {
         metrics.Received.Add(1);
         var section = configuration.GetSection("StripeWebhooks");
-        var secret = section["EndpointSecret"];
+        var secret = section["EndpointSecret"]?.Trim();
         if (string.IsNullOrWhiteSpace(secret) || !secret.StartsWith("whsec_", StringComparison.Ordinal))
             return Results.NotFound();
         byte[] body;

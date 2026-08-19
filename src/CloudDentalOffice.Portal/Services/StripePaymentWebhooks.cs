@@ -130,12 +130,10 @@ public sealed class StripePaymentWebhookProcessor(CloudDentalDbContext db, TimeP
             attempt.UpdatedAt = now;
             processorEvent.Status = PaymentProcessorEventStatus.Processed;
             processorEvent.ProcessedAt = now;
-            if (billingNotifications is not null)
-                await billingNotifications.EnqueueAsync(payment.TenantId, payment.PatientAccountId,
-                    PatientBillingNotificationType.PaymentFailed, "payment", payment.PaymentId.ToString("N"),
-                    cancellationToken);
             await db.SaveChangesAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);
+            await TryEnqueueBillingNotificationAsync(payment.TenantId, payment.PatientAccountId,
+                PatientBillingNotificationType.PaymentFailed, payment.PaymentId, cancellationToken);
             metrics.Failed.Add(1);
             return;
         }
@@ -181,16 +179,30 @@ public sealed class StripePaymentWebhookProcessor(CloudDentalDbContext db, TimeP
         await UpdateStatementAsync(payment, now, cancellationToken);
         processorEvent.Status = PaymentProcessorEventStatus.Processed;
         processorEvent.ProcessedAt = now;
-        if (billingNotifications is not null)
-            await billingNotifications.EnqueueAsync(payment.TenantId, payment.PatientAccountId,
-                PatientBillingNotificationType.PaymentReceived, "payment", payment.PaymentId.ToString("N"),
-                cancellationToken);
         await db.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
+        await TryEnqueueBillingNotificationAsync(payment.TenantId, payment.PatientAccountId,
+            PatientBillingNotificationType.PaymentReceived, payment.PaymentId, cancellationToken);
         metrics.Succeeded.Add(1);
         metrics.PostingLatency.Record(Math.Max(0, (now - webhook.OccurredAt).TotalSeconds));
         logger.LogInformation("Stripe event {ExternalEventId} posted payment {PaymentId}.",
             webhook.ExternalEventId, payment.PaymentId);
+    }
+
+    private async Task TryEnqueueBillingNotificationAsync(string tenantId, Guid patientAccountId,
+        PatientBillingNotificationType type, Guid paymentId, CancellationToken cancellationToken)
+    {
+        if (billingNotifications is null) return;
+        try
+        {
+            await billingNotifications.EnqueueAsync(tenantId, patientAccountId, type, "payment",
+                paymentId.ToString("N"), cancellationToken);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning("Patient billing notification enqueue failed for payment {PaymentId} ({FailureKind}).",
+                paymentId, ex.GetType().Name);
+        }
     }
 
     private async Task AllocateStatementAsync(PatientPayment payment, DateTime now, CancellationToken cancellationToken)
