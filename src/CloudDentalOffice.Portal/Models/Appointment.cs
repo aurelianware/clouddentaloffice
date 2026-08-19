@@ -13,6 +13,14 @@ public class Appointment : ITenantEntity
     [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
     public int AppointmentId { get; set; }
 
+    /// <summary>
+    /// Identifier of the appointment in the SchedulingService (a GUID string).
+    /// Appointments are owned by the scheduling microservice; this carries its id
+    /// through the portal UI for edit/delete round-trips. Not persisted locally.
+    /// </summary>
+    [NotMapped]
+    public string? ExternalId { get; set; }
+
     [Required]
     [MaxLength(64)]
     public string TenantId { get; set; } = string.Empty;

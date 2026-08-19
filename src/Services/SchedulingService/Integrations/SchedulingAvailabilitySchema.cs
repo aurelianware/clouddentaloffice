@@ -24,6 +24,8 @@ public static class SchedulingAvailabilitySchema
             "TEXT NOT NULL DEFAULT 'default'", "varchar(64) NOT NULL DEFAULT 'default'", "nvarchar(64) NOT NULL DEFAULT 'default'", cancellationToken);
         await EnsureColumnAsync(db, provider, "Appointments", "AppointmentTypeId",
             "TEXT NULL", "varchar(128) NULL", "nvarchar(128) NULL", cancellationToken);
+        await EnsureColumnAsync(db, provider, "Appointments", "ReasonForVisit",
+            "TEXT NULL", "varchar(200) NULL", "nvarchar(200) NULL", cancellationToken);
         var tenantBackfill = provider.Contains("Npgsql", StringComparison.Ordinal)
             ? "UPDATE \"Appointments\" a SET \"TenantId\" = b.\"TenantId\" FROM \"BookingRequests\" b WHERE b.\"ApprovedAppointmentId\" = a.\"Id\" AND a.\"TenantId\" = 'default';"
             : provider.Contains("SqlServer", StringComparison.Ordinal)

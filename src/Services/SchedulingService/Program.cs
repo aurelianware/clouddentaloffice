@@ -217,6 +217,7 @@ app.MapPost("/api/appointments", async (
         Operatory = request.Operatory,
         LocationId = request.LocationId,
         AppointmentTypeId = request.AppointmentTypeId,
+        ReasonForVisit = request.ReasonForVisit,
         CreatedAt = DateTime.UtcNow
     };
     db.Appointments.Add(apt);
@@ -233,6 +234,68 @@ app.MapPost("/api/appointments", async (
             tenantId, apt.ProviderId);
     }
     return Results.Created($"/api/appointments/{apt.Id}", apt);
+}).RequireAuthorization("SchedulingTenant").WithTags("Appointments");
+
+app.MapPut("/api/appointments/{id:guid}", async (
+    Guid id, UpdateAppointmentRequest request, ClaimsPrincipal user, SchedulingDbContext db,
+    IEventPublisher events, ILogger<Program> logger) =>
+{
+    var tenantId = SchedulingIntegrationAdminApi.TenantId(user);
+    if (string.IsNullOrWhiteSpace(tenantId)) return Results.Unauthorized();
+    var apt = await db.Appointments.FirstOrDefaultAsync(a => a.Id == id && a.TenantId == tenantId);
+    if (apt is null) return Results.NotFound();
+
+    var previousStart = apt.StartTime;
+    var previousEnd = apt.EndTime;
+    apt.PatientId = request.PatientId;
+    apt.ProviderId = request.ProviderId;
+    apt.StartTime = SchedulingTime.NormalizeUtc(request.StartTime);
+    apt.EndTime = SchedulingTime.NormalizeUtc(request.EndTime);
+    apt.Status = request.Status;
+    apt.ProcedureCodes = request.ProcedureCodes;
+    apt.Notes = request.Notes;
+    apt.Operatory = request.Operatory;
+    apt.LocationId = request.LocationId;
+    apt.AppointmentTypeId = request.AppointmentTypeId;
+    apt.ReasonForVisit = request.ReasonForVisit;
+    await db.SaveChangesAsync();
+    try
+    {
+        // Publish for both the freed and the newly occupied window so external availability reconciles.
+        await events.PublishAsync(new SchedulingAvailabilityChangedEvent(
+            tenantId, apt.ProviderId, previousStart, previousEnd, "AppointmentUpdated"));
+        await events.PublishAsync(new SchedulingAvailabilityChangedEvent(
+            tenantId, apt.ProviderId, apt.StartTime, apt.EndTime, "AppointmentUpdated"));
+    }
+    catch (Exception ex)
+    {
+        logger.LogError(ex, "Could not enqueue external availability reconciliation for tenant {TenantId}, provider {ProviderId}",
+            tenantId, apt.ProviderId);
+    }
+    return Results.Ok(apt);
+}).RequireAuthorization("SchedulingTenant").WithTags("Appointments");
+
+app.MapDelete("/api/appointments/{id:guid}", async (
+    Guid id, ClaimsPrincipal user, SchedulingDbContext db,
+    IEventPublisher events, ILogger<Program> logger) =>
+{
+    var tenantId = SchedulingIntegrationAdminApi.TenantId(user);
+    if (string.IsNullOrWhiteSpace(tenantId)) return Results.Unauthorized();
+    var apt = await db.Appointments.FirstOrDefaultAsync(a => a.Id == id && a.TenantId == tenantId);
+    if (apt is null) return Results.NotFound();
+    db.Appointments.Remove(apt);
+    await db.SaveChangesAsync();
+    try
+    {
+        await events.PublishAsync(new SchedulingAvailabilityChangedEvent(
+            tenantId, apt.ProviderId, apt.StartTime, apt.EndTime, "AppointmentCancelled"));
+    }
+    catch (Exception ex)
+    {
+        logger.LogError(ex, "Could not enqueue external availability reconciliation for tenant {TenantId}, provider {ProviderId}",
+            tenantId, apt.ProviderId);
+    }
+    return Results.NoContent();
 }).RequireAuthorization("SchedulingTenant").WithTags("Appointments");
 
 app.MapPut("/api/appointments/{id:guid}/lifecycle", async (
@@ -332,6 +395,7 @@ public class Appointment
     public string? Operatory { get; set; }
     public Guid? LocationId { get; set; }
     public string? AppointmentTypeId { get; set; }
+    public string? ReasonForVisit { get; set; }
     public DateTime CreatedAt { get; set; }
 }
 

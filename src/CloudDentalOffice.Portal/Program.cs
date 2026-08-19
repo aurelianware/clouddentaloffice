@@ -371,7 +371,15 @@ builder.Services.AddHttpClient<IPatientAcquisitionClient, PatientAcquisitionClie
 // Remaining services still use monolith mode (migrate one at a time)
 builder.Services.AddScoped<IClaimService, ClaimServiceImpl>();
 builder.Services.AddScoped<PatientContextService>();
-builder.Services.AddScoped<IAppointmentService, AppointmentServiceImpl>();
+// Appointments are owned by the SchedulingService (same store the booking-request
+// approval workflow writes to), reached through the API gateway with a scheduling
+// tenant token — so approved and online-booked appointments show on the calendar.
+builder.Services.AddHttpClient<IAppointmentService, AppointmentServiceHttpClient>(client =>
+{
+    client.BaseAddress = new Uri(visionGatewayUrl);
+    client.DefaultRequestHeaders.Add("Accept", "application/json");
+    client.Timeout = TimeSpan.FromSeconds(30);
+}).AddHttpMessageHandler<SchedulingTenantAuthorizationHandler>();
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.Configure<ReviewEmailOptions>(builder.Configuration.GetSection(ReviewEmailOptions.SectionName));
 builder.Services.Configure<ReviewOutreachWorkerOptions>(builder.Configuration.GetSection(ReviewOutreachWorkerOptions.SectionName));
