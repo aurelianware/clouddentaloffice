@@ -24,6 +24,7 @@ using Microsoft.EntityFrameworkCore;
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<ZocdocWebhookMetrics>();
+builder.Services.AddSingleton<StripeWebhookMetrics>();
 builder.Services.AddDbContext<IntakeDbContext>(options =>
 {
     if (builder.Configuration.GetValue("DatabaseProvider", "Sqlite") == "PostgreSQL")
@@ -96,6 +97,14 @@ builder.Services.AddRateLimiter(options =>
             PermitLimit = 120,
             Window = TimeSpan.FromMinutes(1),
             QueueLimit = 0
+        });
+    });
+    options.AddPolicy("stripe-webhooks", httpContext =>
+    {
+        var clientKey = httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+        return RateLimitPartition.GetFixedWindowLimiter(clientKey, _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = 240, Window = TimeSpan.FromMinutes(1), QueueLimit = 0
         });
     });
     options.AddPolicy("integration-inbox-admin", httpContext =>
@@ -277,6 +286,8 @@ app.MapPost("/api/integrations/zocdoc/{integrationId}/webhooks", async (
     }
     return Results.Accepted();
 }).RequireRateLimiting("zocdoc-webhooks").WithTags("ZocdocWebhooks");
+
+app.MapStripeWebhook();
 
 app.MapGet("/api/internal/integration-inbox/status", async (
     HttpContext http, IConfiguration configuration, IIntegrationInbox inbox,

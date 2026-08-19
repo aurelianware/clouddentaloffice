@@ -7,10 +7,10 @@ public enum PaymentProcessorProvider { Stripe }
 public enum PaymentProcessorEnvironment { Sandbox, Production }
 public enum PaymentStatus { Pending, Succeeded, Failed, Cancelled }
 public enum PatientPaymentMethod { Card, BankAccount, DigitalWallet, Other }
-public enum PaymentProcessorEventStatus { Received, Processed, Failed }
+public enum PaymentProcessorEventStatus { Received, Processed, Failed, Conflict }
 public enum PaymentProcessorOnboardingStatus { NotStarted, Pending, Enabled, Restricted, Disabled }
 public enum PatientPaymentSelection { FullBalance, StatementBalance, Partial }
-public enum PatientPaymentAttemptStatus { Pending, SessionCreated, Failed, Completed, Cancelled }
+public enum PatientPaymentAttemptStatus { Pending, SessionCreated, Failed, Completed, Cancelled, ReviewRequired }
 
 [Table("PatientPayments")]
 public sealed class PatientPayment : ITenantEntity

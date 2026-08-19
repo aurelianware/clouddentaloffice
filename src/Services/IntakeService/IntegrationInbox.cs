@@ -231,6 +231,9 @@ public sealed class IntegrationInboxDispatcher(
         nameof(ZocdocAppointmentWebhookEvent) =>
             JsonSerializer.Deserialize<ZocdocAppointmentWebhookEvent>(message.Payload, JsonOptions)
             ?? throw new JsonException("Inbox payload is invalid."),
+        nameof(StripePaymentWebhookEvent) =>
+            JsonSerializer.Deserialize<StripePaymentWebhookEvent>(message.Payload, JsonOptions)
+            ?? throw new JsonException("Inbox payload is invalid."),
         _ => throw new JsonException("Inbox event type is unsupported.")
     };
 }
