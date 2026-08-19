@@ -13,7 +13,7 @@
     </MudSelect>
     @if (_loading) { <MudProgressLinear Indeterminate="true" Class="mt-4" /> }
     else if (_report is null) { <MudAlert Severity="Severity.Error" Class="mt-4">The acquisition report could not be loaded.</MudAlert> }
-    else if (_report.BookingRequests == 0 && _report.ScheduledAppointments == 0 && _report.LandingVisits is null or 0)
+    else if (_report.BookingRequests == 0 && _report.ScheduledAppointments == 0 && _report.LandingVisits is null or 0 && (_search?.Summary.Impressions ?? 0) == 0)
     { <MudAlert Severity="Severity.Info" Class="mt-4">No patient-acquisition data is available for this period yet. Website events will appear here as patients move through online booking.</MudAlert> }
     else
     {
@@ -27,13 +27,40 @@
         @Table("Landing-page performance", _report.ByLandingPage)
         <MudText Typo="Typo.h5" Class="mt-6">Daily requests and scheduled appointments</MudText>
         <MudTable Items="_report.Daily" Dense="true"><HeaderContent><MudTh>Date</MudTh><MudTh>Starts</MudTh><MudTh>Requests</MudTh><MudTh>Scheduled</MudTh></HeaderContent><RowTemplate><MudTd>@context.Date</MudTd><MudTd>@context.Starts</MudTd><MudTd>@context.Requests</MudTd><MudTd>@context.Scheduled</MudTd></RowTemplate></MudTable>
+        @if (_search is not null)
+        {
+            <MudText Typo="Typo.h4" Class="mt-8">Google Search Performance</MudText>
+            <MudAlert Severity="Severity.Info" Dense="true" Class="mt-2">@_search.AttributionDisclaimer</MudAlert>
+            @if (!_search.Status.Configured)
+            { <MudAlert Severity="Severity.Warning" Class="mt-2">Google Search Console is not configured for this practice.</MudAlert> }
+            else
+            {
+                <MudText Typo="Typo.caption" Class="mt-2">Search data through: @(_search.Status.LatestImportedDate?.ToString() ?? "No imported data") · Last synchronized: @(_search.Status.LastSuccessfulSyncAt?.ToLocalTime().ToString("g") ?? "Never") · @_search.Status.SyncStatus</MudText>
+                <MudGrid Class="mt-3">
+                    <MudItem xs="6" md="3"><MudPaper Class="pa-4"><MudText Typo="Typo.caption">Impressions</MudText><MudText Typo="Typo.h5">@_search.Summary.Impressions.ToString("N0")</MudText></MudPaper></MudItem>
+                    <MudItem xs="6" md="3"><MudPaper Class="pa-4"><MudText Typo="Typo.caption">Clicks</MudText><MudText Typo="Typo.h5">@_search.Summary.Clicks.ToString("N0")</MudText></MudPaper></MudItem>
+                    <MudItem xs="6" md="3"><MudPaper Class="pa-4"><MudText Typo="Typo.caption">CTR</MudText><MudText Typo="Typo.h5">@_search.Summary.CtrPercent%</MudText></MudPaper></MudItem>
+                    <MudItem xs="6" md="3"><MudPaper Class="pa-4"><MudText Typo="Typo.caption">Average position</MudText><MudText Typo="Typo.h5">@_search.Summary.AveragePosition</MudText></MudPaper></MudItem>
+                </MudGrid>
+                <MudText Typo="Typo.h5" Class="mt-6">Search trend</MudText>
+                <MudTable Items="_search.Daily" Dense="true"><HeaderContent><MudTh>Date</MudTh><MudTh>Clicks</MudTh><MudTh>Impressions</MudTh></HeaderContent><RowTemplate><MudTd>@context.Date</MudTd><MudTd>@context.Clicks</MudTd><MudTd>@context.Impressions</MudTd></RowTemplate></MudTable>
+                <MudText Typo="Typo.h5" Class="mt-6">Top queries</MudText>
+                <MudTable Items="_search.TopQueries" Dense="true" Hover="true" Filter="@(x => string.IsNullOrWhiteSpace(_queryFilter) || x.Query.Contains(_queryFilter, StringComparison.OrdinalIgnoreCase))"><ToolBarContent><MudTextField @bind-Value="_queryFilter" Placeholder="Filter queries" Immediate="true" /></ToolBarContent><HeaderContent><MudTh>Query</MudTh><MudTh>Clicks</MudTh><MudTh>Impressions</MudTh><MudTh>CTR</MudTh><MudTh>Position</MudTh></HeaderContent><RowTemplate><MudTd>@context.Query</MudTd><MudTd>@context.Clicks</MudTd><MudTd>@context.Impressions</MudTd><MudTd>@context.CtrPercent%</MudTd><MudTd>@context.AveragePosition</MudTd></RowTemplate></MudTable>
+                <MudText Typo="Typo.h5" Class="mt-6">Organic landing pages → aggregate bookings</MudText>
+                <MudTable Items="_search.LandingPages" Dense="true" Hover="true"><HeaderContent><MudTh>Page</MudTh><MudTh>Clicks</MudTh><MudTh>Impressions</MudTh><MudTh>CTR</MudTh><MudTh>Position</MudTh><MudTh>Starts</MudTh><MudTh>Requests</MudTh><MudTh>Scheduled</MudTh><MudTh>Requests / click</MudTh></HeaderContent><RowTemplate><MudTd>@context.LandingPage</MudTd><MudTd>@context.Clicks</MudTd><MudTd>@context.Impressions</MudTd><MudTd>@context.CtrPercent%</MudTd><MudTd>@context.AveragePosition</MudTd><MudTd>@context.BookingStarts</MudTd><MudTd>@context.BookingRequests</MudTd><MudTd>@context.ScheduledAppointments</MudTd><MudTd>@(context.AggregateRequestRatePercent.HasValue ? $"{context.AggregateRequestRatePercent}%" : "—")</MudTd></RowTemplate></MudTable>
+                <MudText Typo="Typo.h5" Class="mt-6">Device breakdown</MudText>
+                <MudTable Items="_search.Devices" Dense="true"><HeaderContent><MudTh>Device</MudTh><MudTh>Clicks</MudTh><MudTh>Impressions</MudTh><MudTh>CTR</MudTh><MudTh>Position</MudTh></HeaderContent><RowTemplate><MudTd>@context.Device</MudTd><MudTd>@context.Clicks</MudTd><MudTd>@context.Impressions</MudTd><MudTd>@context.CtrPercent%</MudTd><MudTd>@context.AveragePosition</MudTd></RowTemplate></MudTable>
+                <MudText Typo="Typo.h5" Class="mt-6">Query → page analysis</MudText>
+                <MudTable Items="_search.QueryPages" Dense="true" Hover="true"><HeaderContent><MudTh>Query</MudTh><MudTh>Landing page</MudTh><MudTh>Clicks</MudTh><MudTh>Impressions</MudTh><MudTh>CTR</MudTh><MudTh>Position</MudTh></HeaderContent><RowTemplate><MudTd>@context.Query</MudTd><MudTd>@context.LandingPage</MudTd><MudTd>@context.Clicks</MudTd><MudTd>@context.Impressions</MudTd><MudTd>@context.CtrPercent%</MudTd><MudTd>@context.AveragePosition</MudTd></RowTemplate></MudTable>
+            }
+        }
     }
 </MudContainer>
 
 @code {
-    private PatientAcquisitionDashboard? _report; private bool _loading = true; private int _days = 30;
+    private PatientAcquisitionDashboard? _report; private SearchAcquisitionDashboard? _search; private bool _loading = true; private int _days = 30; private string _queryFilter = "";
     protected override async Task OnInitializedAsync() => await LoadDays(30);
-    private async Task LoadDays(int days) { _days = days; _loading = true; try { var to = DateTimeOffset.UtcNow; var from = to.AddDays(-days); _report = await Client.GetAsync(from, to); } finally { _loading = false; } }
+    private async Task LoadDays(int days) { _days = days; _loading = true; try { var to = DateTimeOffset.UtcNow; var from = to.AddDays(-days); var acquisitionTask = Client.GetAsync(from, to); var searchTask = Client.GetSearchAsync(from, to); await Task.WhenAll(acquisitionTask, searchTask); _report = await acquisitionTask; _search = await searchTask; } finally { _loading = false; } }
     private IEnumerable<(string Name,string Value)> Metrics()
     {
         yield return ("Landing visits", _report!.LandingVisits?.ToString("N0") ?? "Not measured");
