@@ -1,6 +1,7 @@
 using CloudDentalOffice.Contracts.Events;
 using CloudDentalOffice.Contracts.Scheduling;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
 using System.Data;
 using System.Text.Json;
 
@@ -8,10 +9,13 @@ public sealed class BookingRequestWorkflow
 {
     private readonly SchedulingDbContext db;
     private readonly IPatientAcquisitionService acquisition;
-    public BookingRequestWorkflow(SchedulingDbContext db, IPatientAcquisitionService? acquisition = null)
+    private readonly ILogger<BookingRequestWorkflow> logger;
+    public BookingRequestWorkflow(SchedulingDbContext db, IPatientAcquisitionService? acquisition = null,
+        ILogger<BookingRequestWorkflow>? logger = null)
     {
         this.db = db;
         this.acquisition = acquisition ?? new PatientAcquisitionService(db, TimeProvider.System);
+        this.logger = logger ?? NullLogger<BookingRequestWorkflow>.Instance;
     }
     public async Task<BookingRequest> MatchPatientAsync(Guid id, string tenantId, MatchBookingPatientRequest match, CancellationToken cancellationToken = default)
     {
@@ -76,7 +80,11 @@ public sealed class BookingRequestWorkflow
         {
             await db.SaveChangesAsync(cancellationToken);
             var request = await db.BookingRequests.SingleAsync(r => r.TenantId == evt.TenantId && r.EventId == evt.EventId, cancellationToken);
-            await acquisition.RecordBookingRequestAsync(request, cancellationToken);
+            try { await acquisition.RecordBookingRequestAsync(request, cancellationToken); }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                logger.LogWarning(ex, "Booking request {BookingRequestId} was saved, but acquisition analytics could not be recorded.", request.Id);
+            }
             return true;
         }
         catch (DbUpdateException)
@@ -153,8 +161,12 @@ public sealed class BookingRequestWorkflow
         request.ApprovedBy = approval.ApprovedBy;
         request.UpdatedAt = DateTime.UtcNow;
         await db.SaveChangesAsync(cancellationToken);
-        await acquisition.RecordScheduledAsync(request, appointment, cancellationToken);
         await transaction.CommitAsync(cancellationToken);
+        try { await acquisition.RecordScheduledAsync(request, appointment, cancellationToken); }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning(ex, "Appointment {AppointmentId} was scheduled, but acquisition analytics could not be recorded.", appointment.Id);
+        }
         return (request, appointment, true);
     }
 
