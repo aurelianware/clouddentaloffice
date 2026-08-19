@@ -4,6 +4,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using CloudDentalOffice.Contracts.Scheduling;
 using CloudDentalOffice.Portal.Models;
+using CloudDentalOffice.Portal.Services.Tenancy;
 // Disambiguate from the internal AppointmentStatus (integration sync status) declared
 // in this same namespace by the scheduling integration admin client.
 using SchedStatus = CloudDentalOffice.Contracts.Scheduling.AppointmentStatus;
@@ -18,7 +19,12 @@ namespace CloudDentalOffice.Portal.Services;
 /// alongside manually scheduled ones. It replaces the legacy monolith
 /// <see cref="AppointmentServiceImpl"/> that used the portal's own database.
 /// </summary>
-public sealed class AppointmentServiceHttpClient(HttpClient http) : IAppointmentService
+public sealed class AppointmentServiceHttpClient(
+    HttpClient http,
+    ITenantProvider tenantProvider,
+    IPatientService patientService,
+    ILogger<AppointmentServiceHttpClient> logger,
+    IReviewOutreachScheduler? reviewOutreachScheduler = null) : IAppointmentService
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web)
     {
@@ -96,7 +102,32 @@ public sealed class AppointmentServiceHttpClient(HttpClient http) : IAppointment
         var response = await http.PutAsJsonAsync($"/api/appointments/{id}", request, Json);
         await EnsureSuccess(response);
         var updated = (await response.Content.ReadFromJsonAsync<AppointmentDto>(Json))!;
-        return ToModel(updated);
+        var model = ToModel(updated);
+        await TryScheduleReviewOutreachAsync(model);
+        return model;
+    }
+
+    // A completed appointment is the trigger for post-visit review outreach. Scheduling
+    // is idempotent (deduped per appointment), so it is safe to attempt on every save
+    // that lands in the Completed state, and it never blocks the appointment update.
+    private async Task TryScheduleReviewOutreachAsync(Appointment appointment)
+    {
+        if (reviewOutreachScheduler is null) return;
+        if (!string.Equals(appointment.Status, "Completed", StringComparison.OrdinalIgnoreCase)) return;
+        if (!Guid.TryParse(appointment.ExternalId, out var appointmentId)) return;
+        var tenantId = tenantProvider.TenantId;
+        if (string.IsNullOrEmpty(tenantId)) return;
+        try
+        {
+            var patient = await patientService.GetPatientByIdAsync(appointment.PatientId.ToString());
+            await reviewOutreachScheduler.ScheduleAsync(tenantId, appointmentId, appointment.PatientId,
+                patient?.Status, patient?.Email);
+        }
+        catch (Exception ex)
+        {
+            // Outreach scheduling must never fail the appointment update it follows.
+            logger.LogWarning(ex, "Could not schedule review outreach for a completed appointment.");
+        }
     }
 
     public async Task DeleteAppointmentAsync(string appointmentId)
