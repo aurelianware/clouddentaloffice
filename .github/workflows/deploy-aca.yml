@@ -14,6 +14,7 @@ name: Deploy to Azure Container Apps
 #   POSTGRES_ADMIN_PASSWORD – PostgreSQL administrator password
 #   JWT_KEY                – Portal signing key
 #   PUBLIC_BOOKING_API_KEY – 32+ character website-to-IntakeService credential
+#   PATIENT_SERVICE_API_KEY – 32+ character SchedulingService-to-PatientService credential
 #   GOOGLE_OAUTH_CLIENT_ID – Google OAuth web client for the Portal ACA hostname
 #   GOOGLE_OAUTH_CLIENT_SECRET – matching Google OAuth client secret
 #   CHO_ESTIMATE_API_KEY   – API key for the estimate-only CloudHealthOffice endpoint
@@ -241,6 +242,7 @@ jobs:
               serviceBusSendConnection='${{ steps.servicebus.outputs.send_connection }}' \
               serviceBusListenConnection='${{ steps.servicebus.outputs.listen_connection }}' \
               publicBookingApiKey='${{ secrets.PUBLIC_BOOKING_API_KEY }}' \
+              patientServiceApiKey='${{ secrets.PATIENT_SERVICE_API_KEY }}' \
               publicSchedulingServiceApiKey='${{ secrets.PUBLIC_SCHEDULING_SERVICE_API_KEY }}' \
               publicAvailabilitySlotKey='${{ secrets.PUBLIC_AVAILABILITY_SLOT_KEY }}' \
               googleOAuthClientId='${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}' \

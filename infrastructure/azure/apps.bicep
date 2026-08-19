@@ -48,7 +48,7 @@ param serviceBusListenConnection string
 param publicBookingApiKey string
 @secure()
 @description('Tenant-scoped key authorizing SchedulingService to call PatientService internal APIs')
-param patientServiceApiKey string = ''
+param patientServiceApiKey string
 @secure()
 @description('Tenant-scoped key authorizing IntakeService to call SchedulingService availability APIs')
 param publicSchedulingServiceApiKey string
