@@ -71,6 +71,22 @@ public sealed class PaymentProcessingTests : IDisposable
     }
 
     [Fact]
+    public async Task Checkout_rejects_duplicate_and_noncanonical_internal_references()
+    {
+        await SeedAccount();
+        var checkout = Checkout();
+        await checkout.CreateAsync(Request(125m, "payment-1"));
+
+        var duplicate = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            checkout.CreateAsync(Request(125m, "payment-1")));
+        Assert.Equal("The internal payment reference already exists.", duplicate.Message);
+        await Assert.ThrowsAsync<ArgumentException>(() =>
+            checkout.CreateAsync(Request(125m, " payment-2 ")));
+        Assert.Single(_db.PatientPayments);
+        Assert.Equal(1, _processor.SessionCalls);
+    }
+
+    [Fact]
     public async Task Successful_event_posts_exactly_one_patient_payment_ledger_entry()
     {
         await SeedAccount();

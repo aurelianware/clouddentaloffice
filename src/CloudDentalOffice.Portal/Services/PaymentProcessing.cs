@@ -2,6 +2,7 @@ using CloudDentalOffice.Portal.Data;
 using CloudDentalOffice.Portal.Models;
 using CloudDentalOffice.Portal.Services.Tenancy;
 using Microsoft.EntityFrameworkCore;
+using System.Data;
 
 namespace CloudDentalOffice.Portal.Services;
 
@@ -138,7 +139,19 @@ public sealed class PaymentCheckoutService(CloudDentalDbContext db, IPaymentProc
             CreatedAt = now, UpdatedAt = now
         };
         db.PatientPayments.Add(payment);
-        await db.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await db.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException)
+        {
+            db.ChangeTracker.Clear();
+            if (await db.PatientPayments.IgnoreQueryFilters().AsNoTracking().AnyAsync(x =>
+                    x.TenantId == request.TenantId &&
+                    x.InternalPaymentReference == request.InternalPaymentReference, cancellationToken))
+                throw new InvalidOperationException("The internal payment reference already exists.");
+            throw;
+        }
         try
         {
             var session = await processor.CreateSessionAsync(configuration, request, cancellationToken);
@@ -162,8 +175,8 @@ public sealed class PaymentCheckoutService(CloudDentalDbContext db, IPaymentProc
 
     internal static void ValidateReference(string value, string parameter)
     {
-        if (string.IsNullOrWhiteSpace(value) || value.Trim().Length > 128 ||
-            !value.Trim().All(x => char.IsLetterOrDigit(x) || x is '-' or '_' or '.'))
+        if (string.IsNullOrWhiteSpace(value) || value.Length > 128 || value != value.Trim() ||
+            !value.All(x => char.IsLetterOrDigit(x) || x is '-' or '_' or '.'))
             throw new ArgumentException("Payment references must be 1-128 letters, digits, hyphens, underscores, or periods.", parameter);
     }
 
@@ -231,25 +244,43 @@ public sealed class PaymentReconciliationService(CloudDentalDbContext db, IPatie
             ExternalEventId = paymentEvent.ExternalEventId.Trim(), ExternalPaymentId = paymentEvent.ExternalPaymentId.Trim(),
             PaymentId = payment.PaymentId, Status = PaymentProcessorEventStatus.Received, CreatedAt = now
         };
-        db.PaymentProcessorEvents.Add(inbox);
-        payment.ExternalPaymentId = paymentEvent.ExternalPaymentId.Trim();
-        payment.Status = paymentEvent.Status;
-        payment.PaymentDate = NormalizeUtc(paymentEvent.OccurredAt);
-        payment.UpdatedAt = now;
-        if (paymentEvent.Status == PaymentStatus.Succeeded && !payment.LedgerEntryId.HasValue)
+        try
         {
-            var account = await db.PatientAccounts.IgnoreQueryFilters().AsNoTracking().SingleAsync(x =>
-                x.TenantId == paymentEvent.TenantId && x.Id == payment.PatientAccountId, cancellationToken);
-            var ledger = await accounts.PostAsync(new PostPatientLedgerEntry(paymentEvent.TenantId, account.PatientId,
-                PatientLedgerEntryType.PatientPayment, paymentEvent.Amount, payment.PaymentDate,
-                PatientLedgerSourceType.PatientPayment, payment.PaymentId.ToString("N"), "patient-payment",
-                $"processor:{paymentEvent.Processor}"), cancellationToken);
-            payment.LedgerEntryId = ledger.LedgerEntryId;
+            db.PaymentProcessorEvents.Add(inbox);
+            payment.ExternalPaymentId = paymentEvent.ExternalPaymentId.Trim();
+            payment.Status = paymentEvent.Status;
+            payment.PaymentDate = NormalizeUtc(paymentEvent.OccurredAt);
+            payment.UpdatedAt = now;
+            if (paymentEvent.Status == PaymentStatus.Succeeded && !payment.LedgerEntryId.HasValue)
+            {
+                var account = await db.PatientAccounts.IgnoreQueryFilters().AsNoTracking().SingleAsync(x =>
+                    x.TenantId == paymentEvent.TenantId && x.Id == payment.PatientAccountId, cancellationToken);
+                var ledger = await accounts.PostAsync(new PostPatientLedgerEntry(paymentEvent.TenantId, account.PatientId,
+                    PatientLedgerEntryType.PatientPayment, paymentEvent.Amount, payment.PaymentDate,
+                    PatientLedgerSourceType.PatientPayment, payment.PaymentId.ToString("N"), "patient-payment",
+                    $"processor:{paymentEvent.Processor}"), cancellationToken);
+                payment.LedgerEntryId = ledger.LedgerEntryId;
+            }
+            inbox.Status = PaymentProcessorEventStatus.Processed;
+            inbox.ProcessedAt = now;
+            await db.SaveChangesAsync(cancellationToken);
+            return new(payment.PaymentId, false, payment.Status, payment.LedgerEntryId);
         }
-        inbox.Status = PaymentProcessorEventStatus.Processed;
-        inbox.ProcessedAt = now;
-        await db.SaveChangesAsync(cancellationToken);
-        return new(payment.PaymentId, false, payment.Status, payment.LedgerEntryId);
+        catch (Exception ex) when (ex is DbUpdateException or DuplicateLedgerSourceException)
+        {
+            db.ChangeTracker.Clear();
+            var concurrent = await db.PaymentProcessorEvents.IgnoreQueryFilters().AsNoTracking().SingleOrDefaultAsync(x =>
+                x.TenantId == paymentEvent.TenantId && x.Processor == paymentEvent.Processor &&
+                x.ExternalEventId == paymentEvent.ExternalEventId, cancellationToken);
+            if (concurrent is null) throw;
+            return new(concurrent.PaymentId ?? Guid.Empty, true,
+                concurrent.PaymentId.HasValue
+                    ? await Status(concurrent.PaymentId.Value, paymentEvent.TenantId, cancellationToken)
+                    : PaymentStatus.Failed,
+                concurrent.PaymentId.HasValue
+                    ? await LedgerId(concurrent.PaymentId.Value, paymentEvent.TenantId, cancellationToken)
+                    : null);
+        }
     }
 
     private async Task<PaymentStatus> Status(Guid id, string tenant, CancellationToken cancellationToken) =>
@@ -275,6 +306,7 @@ public sealed class PaymentAllocationService(CloudDentalDbContext db, ITenantPro
         if (amount.Amount <= 0) throw new ArgumentOutOfRangeException(nameof(amount));
         if (string.IsNullOrWhiteSpace(createdBy) || createdBy.Trim().Length > 100)
             throw new ArgumentException("A bounded allocation actor is required.", nameof(createdBy));
+        await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
         var payment = await db.PatientPayments.IgnoreQueryFilters().Include(x => x.Allocations).SingleOrDefaultAsync(x =>
             x.TenantId == tenantId && x.PaymentId == paymentId, cancellationToken)
             ?? throw new KeyNotFoundException("Payment was not found for the tenant.");
@@ -301,7 +333,17 @@ public sealed class PaymentAllocationService(CloudDentalDbContext db, ITenantPro
             LedgerEntryId = ledgerEntryId, Amount = amount.Amount, CreatedAt = clock.GetUtcNow().UtcDateTime,
             CreatedBy = createdBy.Trim()
         });
-        await db.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await db.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+        }
+        catch (DbUpdateException)
+        {
+            await transaction.RollbackAsync(CancellationToken.None);
+            db.ChangeTracker.Clear();
+            throw new InvalidOperationException("The payment was concurrently allocated; reload its allocations and try again.");
+        }
         return new(payment.PaymentId, payment.Amount, allocated + amount.Amount,
             payment.Amount - allocated - amount.Amount, payment.Currency);
     }
