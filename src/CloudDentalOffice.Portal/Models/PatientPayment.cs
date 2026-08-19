@@ -126,6 +126,8 @@ public sealed class PaymentProcessorConfiguration : ITenantEntity
     public bool PayoutsEnabled { get; set; }
     public bool DetailsSubmitted { get; set; }
     [MaxLength(128)] public string? LastStatusCode { get; set; }
+    public DateTime? LastReconciliationAt { get; set; }
+    [MaxLength(64)] public string? LastReconciliationStatusCode { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
 }

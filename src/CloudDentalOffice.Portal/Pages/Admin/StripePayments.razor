@@ -3,6 +3,7 @@
 @using CloudDentalOffice.Portal.Models
 @using CloudDentalOffice.Portal.Services.Tenancy
 @inject IStripeConnectService StripeConnect
+@inject IStripeProductionReadinessService ReadinessService
 @inject ITenantProvider TenantProvider
 @inject AuthenticationStateProvider AuthenticationState
 @inject NavigationManager Navigation
@@ -22,7 +23,13 @@
                 <MudText Typo="Typo.h5">Stripe Connect</MudText>
                 <MudChip T="string" Color="@StatusColor()">@_status.Status</MudChip>
             </div>
-            <MudText>Environment: @_status.Environment</MudText>
+            <MudAlert Severity="@(_status.Environment == PaymentProcessorEnvironment.Production ? Severity.Error : Severity.Warning)"
+                      Dense="true" Class="mb-4">
+                <strong>@(_status.Environment == PaymentProcessorEnvironment.Production ? "LIVE" : "SANDBOX / TEST")</strong>
+                — @(_status.Environment == PaymentProcessorEnvironment.Production
+                    ? "Real patient payments and payouts are enabled for this configuration."
+                    : "Test payments must only be used with an explicitly approved test tenant.")
+            </MudAlert>
             <MudText>Charges enabled: @YesNo(_status.ChargesEnabled)</MudText>
             <MudText>Payouts enabled: @YesNo(_status.PayoutsEnabled)</MudText>
             <MudText>Details submitted: @YesNo(_status.DetailsSubmitted)</MudText>
@@ -37,19 +44,46 @@
             {
                 <MudButton Color="Color.Error" Variant="Variant.Text" Class="ml-2" Disabled="_busy" OnClick="Disable">Disable locally</MudButton>
             }
+
+            @if (_readiness is not null)
+            {
+                <MudDivider Class="my-5" />
+                <div class="d-flex justify-space-between align-center mb-3">
+                    <MudText Typo="Typo.h6">Production readiness</MudText>
+                    <MudChip T="string" Color="@(_readiness.PilotReady ? Color.Success : Color.Warning)">
+                        @(_readiness.PilotReady ? "Ready" : "Action required")
+                    </MudChip>
+                </div>
+                <MudText>Webhook: @(_readiness.WebhookHealthy ? "Healthy" : "Needs attention")</MudText>
+                <MudText>Last successful payment event: @DisplayDate(_readiness.LastSuccessfulPaymentEventAt)</MudText>
+                <MudText>Pending webhook events: @_readiness.PendingInboxCount</MudText>
+                <MudText>Failed webhook events: @_readiness.FailedInboxCount</MudText>
+                <MudText>Reconciliation: @_readiness.ReconciliationStatus (@DisplayDate(_readiness.LastReconciliationAt))</MudText>
+                @foreach (var blocker in _readiness.Blockers)
+                {
+                    <MudAlert Severity="Severity.Warning" Dense="true" Class="mt-2">@blocker</MudAlert>
+                }
+            }
         }
     </MudPaper>
 </MudContainer>
 
 @code {
-    private StripeConnectStatus? _status; private bool _loading = true, _busy;
+    private StripeConnectStatus? _status; private StripeProductionReadiness? _readiness;
+    private bool _loading = true, _busy;
     protected override async Task OnInitializedAsync() { await Load(); _loading = false; }
     private async Task Load()
     {
         _status = null;
-        try { _status = await StripeConnect.RefreshStatusAsync(TenantProvider.TenantId); }
+        _readiness = null;
+        try
+        {
+            _status = await StripeConnect.RefreshStatusAsync(TenantProvider.TenantId);
+        }
         catch (PaymentProcessorUnavailableException ex) { Snackbar.Add(ex.Message, Severity.Warning); }
         catch (Exception) { Snackbar.Add("Stripe status could not be refreshed.", Severity.Error); }
+        try { _readiness = await ReadinessService.GetAsync(TenantProvider.TenantId); }
+        catch (Exception) { Snackbar.Add("Stripe readiness could not be loaded.", Severity.Warning); }
     }
     private async Task Connect()
     {
@@ -74,4 +108,5 @@
     private Uri PageUri(string flow) => new(Navigation.ToAbsoluteUri($"/settings/payments/stripe?flow={flow}").AbsoluteUri);
     private Color StatusColor() => _status?.Status == PaymentProcessorOnboardingStatus.Enabled ? Color.Success : Color.Warning;
     private static string YesNo(bool value) => value ? "Yes" : "No";
+    private static string DisplayDate(DateTime? value) => value?.ToLocalTime().ToString("g") ?? "Not yet";
 }

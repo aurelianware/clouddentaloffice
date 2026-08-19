@@ -60,7 +60,7 @@ public interface IIntegrationInbox
     Task<IntegrationInboxPersistResult> PersistAsync(string tenantId, string channel,
         string externalEventId, string eventType, IntegrationEvent payload,
         CancellationToken cancellationToken = default);
-    Task<IntegrationInboxTenantStatus> GetStatusAsync(string tenantId,
+    Task<IntegrationInboxTenantStatus> GetStatusAsync(string tenantId, string? channel = null,
         CancellationToken cancellationToken = default);
     Task<bool> RequeueAsync(string tenantId, Guid id, CancellationToken cancellationToken = default);
 }
@@ -97,11 +97,16 @@ public sealed class IntegrationInbox(IntakeDbContext db, TimeProvider timeProvid
         }
     }
 
-    public async Task<IntegrationInboxTenantStatus> GetStatusAsync(string tenantId,
+    public async Task<IntegrationInboxTenantStatus> GetStatusAsync(string tenantId, string? channel = null,
         CancellationToken cancellationToken = default)
     {
         ValidateTenant(tenantId);
         var query = db.IntegrationInboxMessages.AsNoTracking().Where(x => x.TenantId == tenantId);
+        if (!string.IsNullOrWhiteSpace(channel))
+        {
+            if (channel.Length > 40) throw new ArgumentException("Channel is invalid.");
+            query = query.Where(x => x.Channel == channel);
+        }
         var counts = await query.GroupBy(x => x.Status).Select(x => new { x.Key, Count = x.Count() })
             .ToDictionaryAsync(x => x.Key, x => x.Count, cancellationToken);
         var oldest = await query.Where(x => x.Status == IntegrationInboxStatus.Received ||

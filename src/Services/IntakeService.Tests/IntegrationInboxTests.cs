@@ -140,6 +140,24 @@ public sealed class IntegrationInboxTests : IDisposable
     }
 
     [Fact]
+    public async Task Status_can_be_scoped_to_Stripe_without_counting_other_channels()
+    {
+        await using var db = CreateDb();
+        var inbox = new IntegrationInbox(db, _clock);
+        await inbox.PersistAsync("tenant-a", "Stripe", "stripe-status",
+            nameof(StripePaymentWebhookEvent), new StripePaymentWebhookEvent("tenant-a", "stripe-status",
+                "checkout.session.completed", "acct", "cs", "pi", "pay", 100, "USD", "paid", false));
+        await inbox.PersistAsync("tenant-a", "Zocdoc", "zocdoc-status",
+            nameof(ZocdocAppointmentWebhookEvent), Event("tenant-a", "zocdoc-status"));
+
+        var stripe = await inbox.GetStatusAsync("tenant-a", "Stripe");
+        var all = await inbox.GetStatusAsync("tenant-a");
+
+        Assert.Equal(1, stripe.Received);
+        Assert.Equal(2, all.Received);
+    }
+
+    [Fact]
     public async Task Concurrent_dispatchers_claim_a_message_only_once()
     {
         var path = Path.Combine(Path.GetTempPath(), $"cdo-inbox-{Guid.NewGuid():N}.db");

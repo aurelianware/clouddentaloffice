@@ -56,6 +56,7 @@ public class CloudDentalDbContext : DbContext
     public DbSet<PaymentProcessorEvent> PaymentProcessorEvents => Set<PaymentProcessorEvent>();
     public DbSet<PatientPaymentAttempt> PatientPaymentAttempts => Set<PatientPaymentAttempt>();
     public DbSet<PatientPortalIdentity> PatientPortalIdentities => Set<PatientPortalIdentity>();
+    public DbSet<PatientBillingNotification> PatientBillingNotifications => Set<PatientBillingNotification>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -85,6 +86,17 @@ public class CloudDentalDbContext : DbContext
         ConfigureTenantEntity<PaymentProcessorEvent>(modelBuilder);
         ConfigureTenantEntity<PatientPaymentAttempt>(modelBuilder);
         ConfigureTenantEntity<PatientPortalIdentity>(modelBuilder);
+        ConfigureTenantEntity<PatientBillingNotification>(modelBuilder);
+
+        modelBuilder.Entity<PatientBillingNotification>(entity =>
+        {
+            entity.Property(x => x.NotificationType).HasConversion<string>().HasMaxLength(32);
+            entity.Property(x => x.Status).HasConversion<string>().HasMaxLength(24);
+            entity.HasOne<PatientAccount>().WithMany()
+                .HasForeignKey(x => new { x.TenantId, x.PatientAccountId })
+                .HasPrincipalKey(x => new { x.TenantId, x.Id }).OnDelete(DeleteBehavior.Restrict);
+            entity.HasQueryFilter(x => x.TenantId == CurrentTenantId);
+        });
 
         modelBuilder.Entity<PatientPortalIdentity>(entity =>
         {

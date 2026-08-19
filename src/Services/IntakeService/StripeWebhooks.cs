@@ -80,6 +80,7 @@ public static class StripeWebhookEndpoint
 
     public static void MapStripeWebhook(this WebApplication app) =>
         app.MapPost("/api/integrations/stripe/webhooks", HandleAsync)
+            .WithMetadata(new Microsoft.AspNetCore.Mvc.RequestSizeLimitAttribute(1_048_576))
             .RequireRateLimiting("stripe-webhooks").WithTags("StripeWebhooks");
 
     private static async Task<IResult> HandleAsync(HttpContext http, IConfiguration configuration,
@@ -87,8 +88,9 @@ public static class StripeWebhookEndpoint
     {
         metrics.Received.Add(1);
         var section = configuration.GetSection("StripeWebhooks");
-        var secret = section["EndpointSecret"];
-        if (string.IsNullOrWhiteSpace(secret)) return Results.NotFound();
+        var secret = section["EndpointSecret"]?.Trim();
+        if (string.IsNullOrWhiteSpace(secret) || !secret.StartsWith("whsec_", StringComparison.Ordinal))
+            return Results.NotFound();
         byte[] body;
         try
         {

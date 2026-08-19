@@ -68,8 +68,9 @@ public sealed class ConfigurationStripeCredentialProvider(IConfiguration configu
         var secret = configuration[processorConfiguration.CredentialReference];
         if (string.IsNullOrWhiteSpace(secret))
             throw new PaymentProcessorUnavailableException("Stripe credentials are unavailable from the configured secret provider.");
-        var expectedPrefix = processorConfiguration.Environment == PaymentProcessorEnvironment.Production ? "sk_live_" : "sk_test_";
-        if (!secret.StartsWith(expectedPrefix, StringComparison.Ordinal))
+        var mode = processorConfiguration.Environment == PaymentProcessorEnvironment.Production ? "live" : "test";
+        if (!secret.StartsWith($"sk_{mode}_", StringComparison.Ordinal) &&
+            !secret.StartsWith($"rk_{mode}_", StringComparison.Ordinal))
             throw new PaymentProcessorUnavailableException("Stripe credentials do not match the configured environment.");
         return secret;
     }

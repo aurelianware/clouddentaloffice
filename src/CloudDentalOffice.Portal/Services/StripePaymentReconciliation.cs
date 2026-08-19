@@ -35,6 +35,8 @@ public sealed class StripePaymentReconciliationService(CloudDentalDbContext db, 
             await ReplaceIssuesAsync(tenantId,
                 [Candidate(PaymentReconciliationIssueType.DisconnectedAccount, null, null,
                     "stripe-account-disconnected")], now, cancellationToken);
+            if (configuration is not null)
+                await RecordRunAsync(tenantId, now, "review-required", cancellationToken);
             return new(0, 0, 1, await ListAsync(tenantId, cancellationToken));
         }
 
@@ -88,6 +90,7 @@ public sealed class StripePaymentReconciliationService(CloudDentalDbContext db, 
         }
         await ReplaceIssuesAsync(tenantId, candidates, now, cancellationToken);
         var diagnostics = await ListAsync(tenantId, cancellationToken);
+        await RecordRunAsync(tenantId, now, diagnostics.Count == 0 ? "clean" : "review-required", cancellationToken);
         return new(localPayments.Count, localRefunds.Count, diagnostics.Count, diagnostics);
     }
 
@@ -131,6 +134,16 @@ public sealed class StripePaymentReconciliationService(CloudDentalDbContext db, 
         string code, string? external = null) => new(type, paymentId, refundId, code, external);
     private static string? SafeReference(string? value) => string.IsNullOrWhiteSpace(value) ? null :
         value.Length <= 8 ? value : $"…{value[^8..]}";
+
+    private async Task RecordRunAsync(string tenantId, DateTime now, string status,
+        CancellationToken cancellationToken)
+    {
+        await db.PaymentProcessorConfigurations.IgnoreQueryFilters().Where(x =>
+                x.TenantId == tenantId && x.Provider == PaymentProcessorProvider.Stripe)
+            .ExecuteUpdateAsync(setters => setters
+                .SetProperty(x => x.LastReconciliationAt, now)
+                .SetProperty(x => x.LastReconciliationStatusCode, status), cancellationToken);
+    }
     private sealed record IssueCandidate(PaymentReconciliationIssueType Type, Guid? PaymentId, Guid? RefundId,
         string Code, string? ExternalReference);
 }

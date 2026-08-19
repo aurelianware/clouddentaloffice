@@ -22,7 +22,7 @@ Create one tenant-scoped `PaymentProcessorConfiguration` with provider `Stripe`:
 - `CredentialReference`: configuration/secret-provider key name, never the secret value
 - `Enabled`: must be true before onboarding
 
-The referenced value is loaded server-side through configuration, which in production can be backed by Azure Key Vault. Sandbox credentials must start with `sk_test_`; production credentials must start with `sk_live_`. Keys, identity data, and bank data must never be entered into CDO forms or stored in its database.
+The referenced value is loaded server-side through configuration, which in production can be backed by Azure Key Vault. Sandbox credentials must be a `sk_test_` or least-privilege `rk_test_` key; production credentials must be a matching `sk_live_` or `rk_live_` key. Prefer a restricted key containing only the permissions required by Connect accounts, Account Links, Checkout Sessions, PaymentIntents, and Refunds. Keys, identity data, and bank data must never be entered into CDO forms or stored in its database.
 
 The version headers follow Stripe's current examples: account creation uses `2026-07-29.preview`, while account reads and Account Links use `2026-07-29.dahlia`. They can be pinned independently with `Stripe:Connect:AccountsCreateApiVersion`, `Stripe:Connect:AccountsReadApiVersion`, and `Stripe:Connect:AccountLinksApiVersion` after reviewing Stripe's changelog.
 
@@ -45,7 +45,7 @@ Production return and refresh URLs must use HTTPS. An account is operational onl
 - Update `CredentialReference` only when the secret-provider path changes.
 - Refresh status after onboarding and when Stripe reports requirement changes.
 - Do not log Stripe bodies, authorization headers, KYC data, or bank information.
-- A future webhook integration should consume Accounts v2 requirement-update events and verify signatures before updating cached status.
+- Review pinned API versions against Stripe's changelog before a version change and validate upgrades in sandbox first.
 
 Official references: [Accounts v2](https://docs.stripe.com/connect/accounts-v2), [create a SaaS connected account](https://docs.stripe.com/connect/saas/tasks/create), [direct charges](https://docs.stripe.com/connect/charges), and [Stripe-hosted onboarding](https://docs.stripe.com/connect/hosted-onboarding).
 
@@ -91,10 +91,16 @@ StripeWebhooks__Accounts__0__Enabled=true
 ServiceBus__StripeWebhookTopic=stripe-webhooks
 ServiceBus__StripeWebhookSubscription=portal
 Payments__StripePosting__AllocateStatementPayments=true
+Payments__StripePosting__AllowedSandboxTenantIds__0=<explicit test tenant>
 ```
 
 Never commit the secret. Dashboard, test/live, and Stripe CLI endpoints each have
 distinct secrets.
+
+Sandbox events are refused by the Portal ledger processor unless their tenant is
+explicitly listed in `AllowedSandboxTenantIds`. Never add a live patient tenant to
+that list. The Stripe administration page labels the environment as either
+**SANDBOX / TEST** or **LIVE**.
 
 ```text
 Stripe Connect webhook
@@ -169,3 +175,61 @@ refunds as pending, succeeded, failed, or canceled. Because CDO uses Connect
 direct charges, refund API reads and writes must include the connected-account
 context. See Stripe's [refund guidance](https://docs.stripe.com/refunds) and
 [Connect direct-charge guidance](https://docs.stripe.com/connect/direct-charges).
+
+## Patient notifications
+
+When `Payments:Notifications:Enabled` is true, CDO queues durable, idempotent email
+notifications for a new statement, due balance, received payment, or failed
+payment. Messages name the practice and direct the patient to authenticated CDO
+Billing. They contain no balance, procedure, diagnosis, treatment, insurance,
+claim, patient name, or patient identifier. Delivery uses the existing SMTP
+configuration and lease/retry worker. Missing or invalid email addresses are
+suppressed without logging the address. The repository has no SMS sender, so SMS
+is intentionally not simulated through an ungoverned provider.
+
+No anonymous payment-link tokens are issued. Patients authenticate to the portal
+before CDO creates a short-lived Stripe-hosted Checkout Session.
+
+## Stripe data-flow inventory
+
+| Operation | Data sent to Stripe |
+|---|---|
+| Connect onboarding | Practice administrator contact email; connected-account configuration/capabilities; HTTPS return/refresh URLs |
+| Checkout | Connected account ID; amount in minor units; ISO currency; generic `Account payment` product; safe return URLs; opaque random payment reference/idempotency key |
+| Refund | Connected account ID; Stripe PaymentIntent ID; amount; supported generic reason; opaque refund reference/idempotency key |
+| Reconciliation | Connected account context, creation-time filter/cursor, and Stripe object IDs |
+
+CDO does not send patient name/email, CDO patient/account/statement IDs, date of
+birth, diagnosis, procedure or tooth data, insurance/claim data, or clinical text
+in Stripe metadata, descriptions, statement descriptors, or idempotency keys.
+Stripe returns object state through signed webhooks. Raw webhook bodies and payment
+method details are not logged.
+
+## PCI and security controls
+
+- Stripe-hosted Checkout collects payment details. CDO never renders PAN/CVC fields
+  and never receives or stores raw card data.
+- API and webhook secrets are server-only environment/Key Vault values; database
+  rows contain credential references and connected account IDs only.
+- Webhook verification uses the unmodified body, endpoint-specific secret, signed
+  timestamp, and replay tolerance before durable inbox acceptance.
+- Rotate API keys by deploying a replacement from the secret manager, validating
+  readiness, then expiring the old key. Rotate webhook secrets using Stripe's
+  overlap window. Review live-key access and Stripe audit logs periodically.
+- Use restricted keys and IP restrictions where deployment architecture permits.
+
+## Pilot readiness
+
+**Settings → Payments → Stripe** reports Connect/charges/payouts state, webhook
+health, last successful payment event, pending and failed Stripe inbox counts, and
+the last reconciliation result. Counts come from IntakeService through a
+tenant-bound service credential with `channel=Stripe`, so unrelated integration
+events cannot affect Stripe status.
+
+Configure `Payments:StripeReadiness:IntakeServiceBaseUrl` and inject
+`Payments:StripeReadiness:IntakeServiceKey` from a secret provider. A clean
+reconciliation and recent signed event are required for pilot-ready status. The
+manual **Stripe Pilot Validation** GitHub workflow is protected by the
+`stripe-sandbox` environment. It verifies sandbox account access and runs the
+mocked CDO lifecycle tests without exposing secrets to pull requests. Hosted
+Checkout completion remains a manual pilot-checklist step.
