@@ -45,6 +45,8 @@ public class CloudDentalDbContext : DbContext
     public DbSet<ClinicalNote> ClinicalNotes => Set<ClinicalNote>();
     public DbSet<PatientAccount> PatientAccounts => Set<PatientAccount>();
     public DbSet<PatientLedgerEntry> PatientLedgerEntries => Set<PatientLedgerEntry>();
+    public DbSet<PatientStatement> PatientStatements => Set<PatientStatement>();
+    public DbSet<PatientStatementLine> PatientStatementLines => Set<PatientStatementLine>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -63,6 +65,8 @@ public class CloudDentalDbContext : DbContext
         ConfigureTenantEntity<ClaimProcedure>(modelBuilder);
         ConfigureTenantEntity<PatientAccount>(modelBuilder);
         ConfigureTenantEntity<PatientLedgerEntry>(modelBuilder);
+        ConfigureTenantEntity<PatientStatement>(modelBuilder);
+        ConfigureTenantEntity<PatientStatementLine>(modelBuilder);
 
         modelBuilder.Entity<PatientAccount>(entity =>
         {
@@ -74,6 +78,7 @@ public class CloudDentalDbContext : DbContext
 
         modelBuilder.Entity<PatientLedgerEntry>(entity =>
         {
+            entity.HasAlternateKey(x => new { x.TenantId, x.LedgerEntryId });
             entity.Property(x => x.Amount).HasPrecision(18, 2);
             entity.Property(x => x.EntryType).HasConversion<string>().HasMaxLength(32);
             entity.Property(x => x.SourceType).HasConversion<string>().HasMaxLength(32);
@@ -86,6 +91,41 @@ public class CloudDentalDbContext : DbContext
             entity.HasIndex(x => new { x.TenantId, x.ReversalOfEntryId }).IsUnique()
                 .HasFilter("\"ReversalOfEntryId\" IS NOT NULL");
             entity.HasIndex(x => new { x.TenantId, x.PatientAccountId, x.EffectiveDate });
+            entity.HasQueryFilter(x => x.TenantId == CurrentTenantId);
+        });
+
+        modelBuilder.Entity<PatientStatement>(entity =>
+        {
+            entity.Property(x => x.Status).HasConversion<string>().HasMaxLength(24);
+            entity.Property(x => x.BalanceForward).HasPrecision(18, 2);
+            entity.Property(x => x.NewCharges).HasPrecision(18, 2);
+            entity.Property(x => x.InsurancePayments).HasPrecision(18, 2);
+            entity.Property(x => x.Adjustments).HasPrecision(18, 2);
+            entity.Property(x => x.PatientPayments).HasPrecision(18, 2);
+            entity.Property(x => x.Credits).HasPrecision(18, 2);
+            entity.Property(x => x.Refunds).HasPrecision(18, 2);
+            entity.Property(x => x.DebitAdjustments).HasPrecision(18, 2);
+            entity.Property(x => x.AmountDue).HasPrecision(18, 2);
+            entity.HasAlternateKey(x => new { x.TenantId, x.StatementId });
+            entity.HasOne(x => x.PatientAccount).WithMany()
+                .HasForeignKey(x => new { x.TenantId, x.PatientAccountId })
+                .HasPrincipalKey(x => new { x.TenantId, x.Id }).OnDelete(DeleteBehavior.Restrict);
+            entity.HasIndex(x => new { x.TenantId, x.PatientAccountId, x.StatementDate });
+            entity.HasIndex(x => new { x.TenantId, x.PatientAccountId, x.LedgerThroughDate });
+            entity.HasQueryFilter(x => x.TenantId == CurrentTenantId);
+        });
+
+        modelBuilder.Entity<PatientStatementLine>(entity =>
+        {
+            entity.Property(x => x.EntryType).HasConversion<string>().HasMaxLength(32);
+            entity.Property(x => x.Amount).HasPrecision(18, 2);
+            entity.HasOne(x => x.Statement).WithMany(x => x.Lines)
+                .HasForeignKey(x => new { x.TenantId, x.StatementId })
+                .HasPrincipalKey(x => new { x.TenantId, x.StatementId }).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<PatientLedgerEntry>().WithMany()
+                .HasForeignKey(x => new { x.TenantId, x.LedgerEntryId })
+                .HasPrincipalKey(x => new { x.TenantId, x.LedgerEntryId }).OnDelete(DeleteBehavior.Restrict);
+            entity.HasIndex(x => new { x.TenantId, x.StatementId, x.LedgerEntryId }).IsUnique();
             entity.HasQueryFilter(x => x.TenantId == CurrentTenantId);
         });
 
@@ -410,6 +450,21 @@ public class CloudDentalDbContext : DbContext
     {
         if (ChangeTracker.Entries<PatientLedgerEntry>().Any(x => x.State is EntityState.Modified or EntityState.Deleted))
             throw new InvalidOperationException("Posted patient ledger entries are immutable; post a reversal or adjustment instead.");
+        if (ChangeTracker.Entries<PatientStatementLine>().Any(x => x.State is EntityState.Modified or EntityState.Deleted))
+            throw new InvalidOperationException("Statement snapshot lines are immutable.");
+        var mutableStatusProperties = new HashSet<string>(StringComparer.Ordinal)
+        {
+            nameof(PatientStatement.Status), nameof(PatientStatement.StatusUpdatedAt),
+            nameof(PatientStatement.VoidedAt), nameof(PatientStatement.VoidReasonCode),
+            nameof(PatientStatement.SupersedesStatementId), nameof(PatientStatement.SupersededByStatementId)
+        };
+        foreach (var entry in ChangeTracker.Entries<PatientStatement>())
+        {
+            if (entry.State == EntityState.Deleted)
+                throw new InvalidOperationException("Patient statements cannot be deleted; void or supersede them instead.");
+            if (entry.State == EntityState.Modified && entry.Properties.Any(x => x.IsModified && !mutableStatusProperties.Contains(x.Metadata.Name)))
+                throw new InvalidOperationException("Statement financial snapshots are immutable after creation.");
+        }
     }
 
     /// <summary>
