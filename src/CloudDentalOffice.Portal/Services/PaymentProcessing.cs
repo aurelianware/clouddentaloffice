@@ -7,7 +7,8 @@ using System.Data;
 namespace CloudDentalOffice.Portal.Services;
 
 public sealed record PaymentRequest(string TenantId, Guid PatientAccountId, Guid? StatementId,
-    Money Amount, string InternalPaymentReference, PatientPaymentMethod Method);
+    Money Amount, string InternalPaymentReference, PatientPaymentMethod Method,
+    string? SuccessUrl = null, string? CancelUrl = null);
 
 public sealed record PaymentSession(string InternalPaymentReference, string ExternalSessionId,
     string? ExternalPaymentId, Uri? CheckoutUrl, string? ClientToken, DateTime? ExpiresAt, PaymentStatus Status);

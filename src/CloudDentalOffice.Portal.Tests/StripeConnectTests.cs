@@ -187,6 +187,9 @@ public sealed class StripeConnectTests : IDisposable
             CreateLinkCalls++; LinkedAccounts.Add(accountId); if (Failure is not null) throw Failure;
             return Task.FromResult(new StripeOnboardingLink(new Uri("https://connect.stripe.test/onboard"), DateTime.UtcNow.AddMinutes(5)));
         }
+        public Task<StripeCheckoutSessionSnapshot> CreateCheckoutSessionAsync(PaymentProcessorConfiguration configuration,
+            string connectedAccountId, PaymentRequest request, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
     }
     private sealed class RecordingHandler(string responseJson) : HttpMessageHandler
     {

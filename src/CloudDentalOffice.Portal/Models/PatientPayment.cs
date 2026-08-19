@@ -9,6 +9,8 @@ public enum PaymentStatus { Pending, Succeeded, Failed, Cancelled }
 public enum PatientPaymentMethod { Card, BankAccount, DigitalWallet, Other }
 public enum PaymentProcessorEventStatus { Received, Processed, Failed }
 public enum PaymentProcessorOnboardingStatus { NotStarted, Pending, Enabled, Restricted, Disabled }
+public enum PatientPaymentSelection { FullBalance, StatementBalance, Partial }
+public enum PatientPaymentAttemptStatus { Pending, SessionCreated, Failed, Completed, Cancelled }
 
 [Table("PatientPayments")]
 public sealed class PatientPayment : ITenantEntity
@@ -78,4 +80,25 @@ public sealed class PaymentProcessorEvent : ITenantEntity
     [MaxLength(64)] public string? FailureCode { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime? ProcessedAt { get; set; }
+}
+
+[Table("PatientPaymentAttempts")]
+public sealed class PatientPaymentAttempt : ITenantEntity
+{
+    [Key] public Guid Id { get; set; }
+    [Required, MaxLength(64)] public string TenantId { get; set; } = string.Empty;
+    public Guid PatientAccountId { get; set; }
+    public Guid? StatementId { get; set; }
+    public Guid? PaymentId { get; set; }
+    public PatientPaymentSelection Selection { get; set; }
+    [Column(TypeName = "decimal(18,2)")] public decimal Amount { get; set; }
+    [Required, MaxLength(3)] public string Currency { get; set; } = "USD";
+    [Required, MaxLength(128)] public string PaymentReference { get; set; } = string.Empty;
+    public PatientPaymentAttemptStatus Status { get; set; }
+    [MaxLength(128)] public string? StripeCheckoutSessionId { get; set; }
+    [MaxLength(128)] public string? StripePaymentIntentId { get; set; }
+    [MaxLength(128)] public string? ConnectedAccountId { get; set; }
+    [MaxLength(64)] public string? FailureCode { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public DateTime UpdatedAt { get; set; }
 }

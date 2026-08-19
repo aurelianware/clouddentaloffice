@@ -48,3 +48,17 @@ Production return and refresh URLs must use HTTPS. An account is operational onl
 - A future webhook integration should consume Accounts v2 requirement-update events and verify signatures before updating cached status.
 
 Official references: [Accounts v2](https://docs.stripe.com/connect/accounts-v2), [create a SaaS connected account](https://docs.stripe.com/connect/saas/tasks/create), [direct charges](https://docs.stripe.com/connect/charges), and [Stripe-hosted onboarding](https://docs.stripe.com/connect/hosted-onboarding).
+
+## Patient balance Checkout
+
+CDO creates Stripe-hosted Checkout Sessions as direct charges on the practice connected account. The server sends the `Stripe-Account` header and uses a server-generated payment reference as the idempotency key. Checkout is available only when the tenant configuration, card-payment capability, and payout capability are enabled.
+
+The selectable amount is recalculated by CDO immediately before session creation:
+
+- full balance comes from the current immutable patient ledger;
+- statement balance comes from the statement snapshot less succeeded payments linked to it;
+- a custom partial amount must be positive, within the current account balance unless overpayments are enabled, and no greater than `Payments:Checkout:MaximumAmount`.
+
+Configure `Payments:Checkout:PublicBaseUrl` as the HTTPS Portal origin. The only Stripe-facing product name is `Account payment`. Session and PaymentIntent metadata contain only `payment_reference`, an opaque random CDO reference. Names, patient IDs, dates of birth, diagnoses, procedures, insurance and claim information are prohibited. See Stripe's [metadata security guidance](https://docs.stripe.com/metadata/use-cases).
+
+CDO persists a `PatientPaymentAttempt` before contacting Stripe, then records the Checkout Session, optional PaymentIntent, and connected account IDs. Multiple sessions are allowed and receive distinct references. The success redirect is display-only and never posts a payment. A later verified Connect webhook must reconcile successful direct-charge events through the existing processor-event idempotency and ledger-posting boundary. Direct-charge objects must be retrieved in the connected-account context using `Stripe-Account`.

@@ -6,6 +6,8 @@ namespace CloudDentalOffice.Portal.Services;
 public sealed record PatientLedgerEntryResponse(Guid Id, PatientLedgerEntryType EntryType, decimal Amount,
     string Currency, DateTime EffectiveDate, PatientLedgerSourceType SourceType, string SourceId,
     string DescriptionCode, DateTime CreatedAt, string CreatedBy, Guid? ReversalOfEntryId);
+public sealed record PatientCheckoutApiRequest(PatientPaymentSelection Selection, Guid? StatementId,
+    decimal? CustomAmount, string Currency = "USD");
 
 public static class PatientAccountApi
 {
@@ -31,6 +33,24 @@ public static class PatientAccountApi
             return Results.Ok(rows.Select(x => new PatientLedgerEntryResponse(x.LedgerEntryId, x.EntryType, x.Amount,
                 x.Currency, x.EffectiveDate, x.SourceType, x.SourceId, x.DescriptionCode, x.CreatedAt,
                 x.CreatedBy, x.ReversalOfEntryId)));
+        });
+
+        group.MapPost("/{patientAccountId:guid}/checkout", async (Guid patientAccountId,
+            PatientCheckoutApiRequest request, ClaimsPrincipal user, IPatientBalanceCheckoutService checkout,
+            CancellationToken cancellationToken) =>
+        {
+            var tenantId = TrustedTenantId(user);
+            if (tenantId is null) return Results.Forbid();
+            Money? customAmount = request.CustomAmount.HasValue
+                ? new Money(request.CustomAmount.Value, request.Currency)
+                : null;
+            var result = await checkout.CreateAsync(new PatientBalanceCheckoutRequest(tenantId, patientAccountId,
+                request.Selection, request.StatementId, customAmount), cancellationToken);
+            return Results.Ok(new
+            {
+                result.AttemptId, result.PaymentReference, Amount = result.Amount.Amount,
+                result.Amount.Currency, CheckoutUrl = result.CheckoutUrl.AbsoluteUri, result.ExpiresAt
+            });
         });
         return endpoints;
     }

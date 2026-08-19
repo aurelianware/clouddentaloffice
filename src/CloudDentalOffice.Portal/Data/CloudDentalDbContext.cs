@@ -51,6 +51,7 @@ public class CloudDentalDbContext : DbContext
     public DbSet<PatientPaymentAllocation> PatientPaymentAllocations => Set<PatientPaymentAllocation>();
     public DbSet<PaymentProcessorConfiguration> PaymentProcessorConfigurations => Set<PaymentProcessorConfiguration>();
     public DbSet<PaymentProcessorEvent> PaymentProcessorEvents => Set<PaymentProcessorEvent>();
+    public DbSet<PatientPaymentAttempt> PatientPaymentAttempts => Set<PatientPaymentAttempt>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -75,6 +76,7 @@ public class CloudDentalDbContext : DbContext
         ConfigureTenantEntity<PatientPaymentAllocation>(modelBuilder);
         ConfigureTenantEntity<PaymentProcessorConfiguration>(modelBuilder);
         ConfigureTenantEntity<PaymentProcessorEvent>(modelBuilder);
+        ConfigureTenantEntity<PatientPaymentAttempt>(modelBuilder);
 
         modelBuilder.Entity<PatientAccount>(entity =>
         {
@@ -191,6 +193,31 @@ public class CloudDentalDbContext : DbContext
                 .HasPrincipalKey(x => new { x.TenantId, x.PaymentId }).OnDelete(DeleteBehavior.Restrict);
             entity.HasIndex(x => new { x.TenantId, x.Processor, x.ExternalEventId }).IsUnique();
             entity.HasIndex(x => new { x.TenantId, x.PaymentId, x.CreatedAt });
+            entity.HasQueryFilter(x => x.TenantId == CurrentTenantId);
+        });
+
+        modelBuilder.Entity<PatientPaymentAttempt>(entity =>
+        {
+            entity.Property(x => x.Amount).HasPrecision(18, 2);
+            entity.Property(x => x.Selection).HasConversion<string>().HasMaxLength(24);
+            entity.Property(x => x.Status).HasConversion<string>().HasMaxLength(24);
+            entity.HasOne<PatientAccount>().WithMany()
+                .HasForeignKey(x => new { x.TenantId, x.PatientAccountId })
+                .HasPrincipalKey(x => new { x.TenantId, x.Id }).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<PatientStatement>().WithMany()
+                .HasForeignKey(x => new { x.TenantId, x.StatementId })
+                .HasPrincipalKey(x => new { x.TenantId, x.StatementId }).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<PatientPayment>().WithMany()
+                .HasForeignKey(x => new { x.TenantId, x.PaymentId })
+                .HasPrincipalKey(x => new { x.TenantId, x.PaymentId }).OnDelete(DeleteBehavior.Restrict);
+            entity.HasIndex(x => new { x.TenantId, x.PaymentReference }).IsUnique();
+            entity.HasIndex(x => new { x.TenantId, x.PaymentId }).IsUnique()
+                .HasFilter("\"PaymentId\" IS NOT NULL");
+            entity.HasIndex(x => new { x.TenantId, x.StripeCheckoutSessionId }).IsUnique()
+                .HasFilter("\"StripeCheckoutSessionId\" IS NOT NULL");
+            entity.HasIndex(x => new { x.TenantId, x.StripePaymentIntentId }).IsUnique()
+                .HasFilter("\"StripePaymentIntentId\" IS NOT NULL");
+            entity.HasIndex(x => new { x.TenantId, x.PatientAccountId, x.CreatedAt });
             entity.HasQueryFilter(x => x.TenantId == CurrentTenantId);
         });
 
