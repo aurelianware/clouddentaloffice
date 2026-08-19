@@ -47,6 +47,10 @@ public class CloudDentalDbContext : DbContext
     public DbSet<PatientLedgerEntry> PatientLedgerEntries => Set<PatientLedgerEntry>();
     public DbSet<PatientStatement> PatientStatements => Set<PatientStatement>();
     public DbSet<PatientStatementLine> PatientStatementLines => Set<PatientStatementLine>();
+    public DbSet<PatientPayment> PatientPayments => Set<PatientPayment>();
+    public DbSet<PatientPaymentAllocation> PatientPaymentAllocations => Set<PatientPaymentAllocation>();
+    public DbSet<PaymentProcessorConfiguration> PaymentProcessorConfigurations => Set<PaymentProcessorConfiguration>();
+    public DbSet<PaymentProcessorEvent> PaymentProcessorEvents => Set<PaymentProcessorEvent>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -67,6 +71,10 @@ public class CloudDentalDbContext : DbContext
         ConfigureTenantEntity<PatientLedgerEntry>(modelBuilder);
         ConfigureTenantEntity<PatientStatement>(modelBuilder);
         ConfigureTenantEntity<PatientStatementLine>(modelBuilder);
+        ConfigureTenantEntity<PatientPayment>(modelBuilder);
+        ConfigureTenantEntity<PatientPaymentAllocation>(modelBuilder);
+        ConfigureTenantEntity<PaymentProcessorConfiguration>(modelBuilder);
+        ConfigureTenantEntity<PaymentProcessorEvent>(modelBuilder);
 
         modelBuilder.Entity<PatientAccount>(entity =>
         {
@@ -126,6 +134,62 @@ public class CloudDentalDbContext : DbContext
                 .HasForeignKey(x => new { x.TenantId, x.LedgerEntryId })
                 .HasPrincipalKey(x => new { x.TenantId, x.LedgerEntryId }).OnDelete(DeleteBehavior.Restrict);
             entity.HasIndex(x => new { x.TenantId, x.StatementId, x.LedgerEntryId }).IsUnique();
+            entity.HasQueryFilter(x => x.TenantId == CurrentTenantId);
+        });
+
+        modelBuilder.Entity<PatientPayment>(entity =>
+        {
+            entity.Property(x => x.Amount).HasPrecision(18, 2);
+            entity.Property(x => x.Method).HasConversion<string>().HasMaxLength(24);
+            entity.Property(x => x.Processor).HasConversion<string>().HasMaxLength(32);
+            entity.Property(x => x.Status).HasConversion<string>().HasMaxLength(24);
+            entity.HasAlternateKey(x => new { x.TenantId, x.PaymentId });
+            entity.HasOne(x => x.PatientAccount).WithMany()
+                .HasForeignKey(x => new { x.TenantId, x.PatientAccountId })
+                .HasPrincipalKey(x => new { x.TenantId, x.Id }).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<PatientStatement>().WithMany()
+                .HasForeignKey(x => new { x.TenantId, x.StatementId })
+                .HasPrincipalKey(x => new { x.TenantId, x.StatementId }).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<PatientLedgerEntry>().WithMany()
+                .HasForeignKey(x => new { x.TenantId, x.LedgerEntryId })
+                .HasPrincipalKey(x => new { x.TenantId, x.LedgerEntryId }).OnDelete(DeleteBehavior.Restrict);
+            entity.HasIndex(x => new { x.TenantId, x.InternalPaymentReference }).IsUnique();
+            entity.HasIndex(x => new { x.TenantId, x.Processor, x.ExternalPaymentId }).IsUnique()
+                .HasFilter("\"ExternalPaymentId\" IS NOT NULL");
+            entity.HasIndex(x => new { x.TenantId, x.PatientAccountId, x.PaymentDate });
+            entity.HasQueryFilter(x => x.TenantId == CurrentTenantId);
+        });
+
+        modelBuilder.Entity<PatientPaymentAllocation>(entity =>
+        {
+            entity.Property(x => x.Amount).HasPrecision(18, 2);
+            entity.HasOne(x => x.Payment).WithMany(x => x.Allocations)
+                .HasForeignKey(x => new { x.TenantId, x.PaymentId })
+                .HasPrincipalKey(x => new { x.TenantId, x.PaymentId }).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<PatientLedgerEntry>().WithMany()
+                .HasForeignKey(x => new { x.TenantId, x.LedgerEntryId })
+                .HasPrincipalKey(x => new { x.TenantId, x.LedgerEntryId }).OnDelete(DeleteBehavior.Restrict);
+            entity.HasIndex(x => new { x.TenantId, x.PaymentId, x.LedgerEntryId }).IsUnique();
+            entity.HasQueryFilter(x => x.TenantId == CurrentTenantId);
+        });
+
+        modelBuilder.Entity<PaymentProcessorConfiguration>(entity =>
+        {
+            entity.Property(x => x.Provider).HasConversion<string>().HasMaxLength(32);
+            entity.Property(x => x.Environment).HasConversion<string>().HasMaxLength(24);
+            entity.HasIndex(x => new { x.TenantId, x.Provider }).IsUnique();
+            entity.HasQueryFilter(x => x.TenantId == CurrentTenantId);
+        });
+
+        modelBuilder.Entity<PaymentProcessorEvent>(entity =>
+        {
+            entity.Property(x => x.Processor).HasConversion<string>().HasMaxLength(32);
+            entity.Property(x => x.Status).HasConversion<string>().HasMaxLength(24);
+            entity.HasOne<PatientPayment>().WithMany()
+                .HasForeignKey(x => new { x.TenantId, x.PaymentId })
+                .HasPrincipalKey(x => new { x.TenantId, x.PaymentId }).OnDelete(DeleteBehavior.Restrict);
+            entity.HasIndex(x => new { x.TenantId, x.Processor, x.ExternalEventId }).IsUnique();
+            entity.HasIndex(x => new { x.TenantId, x.PaymentId, x.CreatedAt });
             entity.HasQueryFilter(x => x.TenantId == CurrentTenantId);
         });
 
@@ -464,6 +528,33 @@ public class CloudDentalDbContext : DbContext
                 throw new InvalidOperationException("Patient statements cannot be deleted; void or supersede them instead.");
             if (entry.State == EntityState.Modified && entry.Properties.Any(x => x.IsModified && !mutableStatusProperties.Contains(x.Metadata.Name)))
                 throw new InvalidOperationException("Statement financial snapshots are immutable after creation.");
+        }
+        if (ChangeTracker.Entries<PatientPaymentAllocation>().Any(x => x.State is EntityState.Modified or EntityState.Deleted))
+            throw new InvalidOperationException("Payment allocations are immutable; post a correcting allocation workflow instead.");
+        var mutablePaymentProperties = new HashSet<string>(StringComparer.Ordinal)
+        {
+            nameof(PatientPayment.ExternalSessionId), nameof(PatientPayment.ExternalPaymentId),
+            nameof(PatientPayment.Status), nameof(PatientPayment.PaymentDate),
+            nameof(PatientPayment.LedgerEntryId), nameof(PatientPayment.UpdatedAt)
+        };
+        foreach (var entry in ChangeTracker.Entries<PatientPayment>())
+        {
+            if (entry.State == EntityState.Deleted)
+                throw new InvalidOperationException("Patient payments cannot be deleted.");
+            if (entry.State == EntityState.Modified && entry.Properties.Any(x => x.IsModified && !mutablePaymentProperties.Contains(x.Metadata.Name)))
+                throw new InvalidOperationException("Patient payment financial identity is immutable after creation.");
+        }
+        var mutableEventProperties = new HashSet<string>(StringComparer.Ordinal)
+        {
+            nameof(PaymentProcessorEvent.Status), nameof(PaymentProcessorEvent.FailureCode),
+            nameof(PaymentProcessorEvent.ProcessedAt)
+        };
+        foreach (var entry in ChangeTracker.Entries<PaymentProcessorEvent>())
+        {
+            if (entry.State == EntityState.Deleted)
+                throw new InvalidOperationException("Processor idempotency events cannot be deleted.");
+            if (entry.State == EntityState.Modified && entry.Properties.Any(x => x.IsModified && !mutableEventProperties.Contains(x.Metadata.Name)))
+                throw new InvalidOperationException("Processor event identity is immutable after receipt.");
         }
     }
 

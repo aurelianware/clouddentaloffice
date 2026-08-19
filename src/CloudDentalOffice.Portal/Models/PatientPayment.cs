@@ -1,0 +1,75 @@
+using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations.Schema;
+
+namespace CloudDentalOffice.Portal.Models;
+
+public enum PaymentProcessorProvider { Stripe }
+public enum PaymentProcessorEnvironment { Sandbox, Production }
+public enum PaymentStatus { Pending, Succeeded, Failed, Cancelled }
+public enum PatientPaymentMethod { Card, BankAccount, DigitalWallet, Other }
+public enum PaymentProcessorEventStatus { Received, Processed, Failed }
+
+[Table("PatientPayments")]
+public sealed class PatientPayment : ITenantEntity
+{
+    [Key] public Guid PaymentId { get; set; }
+    [Required, MaxLength(64)] public string TenantId { get; set; } = string.Empty;
+    public Guid PatientAccountId { get; set; }
+    public Guid? StatementId { get; set; }
+    [Column(TypeName = "decimal(18,2)")] public decimal Amount { get; set; }
+    [Required, MaxLength(3)] public string Currency { get; set; } = "USD";
+    public DateTime PaymentDate { get; set; }
+    public PatientPaymentMethod Method { get; set; }
+    public PaymentProcessorProvider Processor { get; set; }
+    [MaxLength(128)] public string? ExternalSessionId { get; set; }
+    [MaxLength(128)] public string? ExternalPaymentId { get; set; }
+    [Required, MaxLength(128)] public string InternalPaymentReference { get; set; } = string.Empty;
+    public PaymentStatus Status { get; set; }
+    public Guid? LedgerEntryId { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public DateTime UpdatedAt { get; set; }
+    public PatientAccount PatientAccount { get; set; } = null!;
+    public ICollection<PatientPaymentAllocation> Allocations { get; set; } = [];
+}
+
+[Table("PatientPaymentAllocations")]
+public sealed class PatientPaymentAllocation : ITenantEntity
+{
+    [Key] public Guid PaymentAllocationId { get; set; }
+    [Required, MaxLength(64)] public string TenantId { get; set; } = string.Empty;
+    public Guid PaymentId { get; set; }
+    public Guid LedgerEntryId { get; set; }
+    [Column(TypeName = "decimal(18,2)")] public decimal Amount { get; set; }
+    public DateTime CreatedAt { get; set; }
+    [Required, MaxLength(100)] public string CreatedBy { get; set; } = string.Empty;
+    public PatientPayment Payment { get; set; } = null!;
+}
+
+[Table("PaymentProcessorConfigurations")]
+public sealed class PaymentProcessorConfiguration : ITenantEntity
+{
+    [Key] public Guid Id { get; set; }
+    [Required, MaxLength(64)] public string TenantId { get; set; } = string.Empty;
+    public PaymentProcessorProvider Provider { get; set; }
+    public bool Enabled { get; set; }
+    public PaymentProcessorEnvironment Environment { get; set; }
+    [MaxLength(256)] public string? CredentialReference { get; set; }
+    [MaxLength(128)] public string? ConnectedMerchantReference { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public DateTime UpdatedAt { get; set; }
+}
+
+[Table("PaymentProcessorEvents")]
+public sealed class PaymentProcessorEvent : ITenantEntity
+{
+    [Key] public Guid Id { get; set; }
+    [Required, MaxLength(64)] public string TenantId { get; set; } = string.Empty;
+    public PaymentProcessorProvider Processor { get; set; }
+    [Required, MaxLength(128)] public string ExternalEventId { get; set; } = string.Empty;
+    [MaxLength(128)] public string? ExternalPaymentId { get; set; }
+    public Guid? PaymentId { get; set; }
+    public PaymentProcessorEventStatus Status { get; set; }
+    [MaxLength(64)] public string? FailureCode { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public DateTime? ProcessedAt { get; set; }
+}
