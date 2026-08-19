@@ -15,6 +15,7 @@ using CloudDentalOffice.Portal.Models;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Web;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using MudBlazor;
 using MudBlazor.Services;
 
@@ -288,6 +289,15 @@ builder.Services.AddDbContext<CloudDentalDbContext>(options =>
     }
 });
 
+// Health endpoints back the Container App liveness/readiness probes.
+//   /health/live  — process is up. Runs no checks, so a transient database
+//                   outage never trips liveness and restarts a healthy replica.
+//   /health/ready — database is reachable. The ingress uses this to hold traffic
+//                   away from a replica that cannot yet serve requests, instead
+//                   of surfacing 5xx errors to end users.
+builder.Services.AddHealthChecks()
+    .AddCheck<DatabaseReadinessHealthCheck>("database", tags: new[] { "ready" });
+
 
 // Configure Azure Key Vault for secrets management (cloud-ready)
 if (!builder.Environment.IsDevelopment())
@@ -449,8 +459,14 @@ using (var scope = app.Services.CreateScope())
     {
         logger.LogError(ex, "Error during database initialization: {Message}", ex.Message);
         logger.LogError("Stack trace: {StackTrace}", ex.StackTrace);
-        
-        if (!app.Environment.IsDevelopment()) throw;
+
+        // In development, fail fast so the problem is obvious. In production,
+        // keep the process alive rather than crash-looping the whole portal on a
+        // transient database outage: the readiness probe (/health/ready) reports
+        // unhealthy while the database is unreachable, so the ingress holds
+        // traffic away from this replica until the database recovers, and the
+        // process retries connectivity without a platform restart cycle.
+        if (app.Environment.IsDevelopment()) throw;
     }
 }
 
@@ -468,6 +484,17 @@ app.UseRouting();
 app.UseAuthentication();
 app.UseMiddleware<StaffAccessMiddleware>();
 app.UseAuthorization();
+
+// Probe endpoints are anonymous and bypass StaffAccessMiddleware (see below),
+// so the Container App platform can reach them without a Google staff identity.
+app.MapHealthChecks("/health/live", new HealthCheckOptions
+{
+    Predicate = _ => false
+});
+app.MapHealthChecks("/health/ready", new HealthCheckOptions
+{
+    Predicate = check => check.Tags.Contains("ready")
+});
 
 app.MapBlazorHub();
 app.MapFallbackToPage("/_Host");

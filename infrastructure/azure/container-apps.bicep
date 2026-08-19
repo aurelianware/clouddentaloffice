@@ -138,6 +138,15 @@ resource portal 'Microsoft.App/containerApps@2023-05-01' = {
             { name: 'CloudHealthOffice__BenefitPlanMappings__${cloudHealthOfficePayerId}', value: cloudHealthOfficeBenefitPlanId }
             { name: 'PayerConnectivity__Payers__${cloudHealthOfficePayerId}__PaymentEstimate__0', value: 'CloudHealthOffice' }
           ]
+          probes: [
+            // Liveness has no database dependency, so a transient database outage
+            // does not cause the platform to restart an otherwise-healthy process.
+            { type: 'Liveness', httpGet: { path: '/health/live', port: 5000 }, initialDelaySeconds: 15, periodSeconds: 15, failureThreshold: 3 }
+            // Readiness reflects current database connectivity, so the ingress only
+            // routes traffic to replicas that can actually serve requests instead
+            // of surfacing 5xx errors to end users.
+            { type: 'Readiness', httpGet: { path: '/health/ready', port: 5000 }, initialDelaySeconds: 10, periodSeconds: 10, failureThreshold: 3 }
+          ]
         }
       ]
       // Staff UI stays warm to avoid login/review cold starts.

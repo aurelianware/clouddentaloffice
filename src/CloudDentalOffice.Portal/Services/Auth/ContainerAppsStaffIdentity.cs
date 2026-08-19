@@ -88,6 +88,16 @@ public sealed class StaffAccessMiddleware(RequestDelegate next, IConfiguration c
 {
     public async Task InvokeAsync(HttpContext context)
     {
+        // Platform health probes reach the container directly, without the
+        // Container Apps EasyAuth principal header. They must never be gated by
+        // the staff allowlist, or every readiness/liveness probe would 403 and
+        // the platform would take the replica out of service.
+        if (context.Request.Path.StartsWithSegments("/health"))
+        {
+            await next(context);
+            return;
+        }
+
         if (!configuration.GetValue("StaffAuth:Enabled", false))
         {
             await next(context);
