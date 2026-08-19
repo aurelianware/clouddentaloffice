@@ -13,12 +13,15 @@ public class AppointmentServiceImpl : IAppointmentService
     private readonly CloudDentalDbContext _context;
     private readonly ITenantProvider _tenantProvider;
     private readonly ILogger<AppointmentServiceImpl> _logger;
+    private readonly IReviewOutreachScheduler? _reviewOutreachScheduler;
 
-    public AppointmentServiceImpl(CloudDentalDbContext context, ITenantProvider tenantProvider, ILogger<AppointmentServiceImpl> logger)
+    public AppointmentServiceImpl(CloudDentalDbContext context, ITenantProvider tenantProvider, ILogger<AppointmentServiceImpl> logger,
+        IReviewOutreachScheduler? reviewOutreachScheduler = null)
     {
         _context = context;
         _tenantProvider = tenantProvider;
         _logger = logger;
+        _reviewOutreachScheduler = reviewOutreachScheduler;
     }
 
     public async Task<List<Appointment>> GetAppointmentsAsync(DateTime date)
@@ -128,12 +131,26 @@ public class AppointmentServiceImpl : IAppointmentService
             
             existingAppointment.DurationMinutes = appointment.DurationMinutes;
             existingAppointment.AppointmentType = appointment.AppointmentType;
+            var completedNow = !string.Equals(existingAppointment.Status, "Completed", StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(appointment.Status, "Completed", StringComparison.OrdinalIgnoreCase);
             existingAppointment.Status = appointment.Status;
             existingAppointment.Notes = appointment.Notes;
             existingAppointment.ReasonForVisit = appointment.ReasonForVisit;
             existingAppointment.ModifiedDate = DateTime.UtcNow;
 
-            await _context.SaveChangesAsync();
+            if (completedNow && _reviewOutreachScheduler is not null && _context.Database.IsRelational())
+            {
+                await using var transaction = await _context.Database.BeginTransactionAsync();
+                await _context.SaveChangesAsync();
+                await _reviewOutreachScheduler.ScheduleAsync(tenantId, existingAppointment.AppointmentId);
+                await transaction.CommitAsync();
+            }
+            else
+            {
+                await _context.SaveChangesAsync();
+                if (completedNow && _reviewOutreachScheduler is not null)
+                    await _reviewOutreachScheduler.ScheduleAsync(tenantId, existingAppointment.AppointmentId);
+            }
 
             // Reload with navigation properties
             return await GetAppointmentByIdAsync(appointment.AppointmentId.ToString()) 

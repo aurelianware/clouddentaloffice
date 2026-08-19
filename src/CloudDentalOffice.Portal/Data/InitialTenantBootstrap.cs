@@ -39,6 +39,20 @@ public static class InitialTenantBootstrap
             });
         }
 
+        var review = section.GetSection("ReviewOutreach");
+        if (!await db.ReviewOutreachSettings.IgnoreQueryFilters().AnyAsync(x => x.TenantId == tenantId, cancellationToken))
+        {
+            db.ReviewOutreachSettings.Add(new ReviewOutreachSettings
+            {
+                TenantId = tenantId,
+                Enabled = review.GetValue("Enabled", false),
+                DelayMinutes = Math.Max(0, review.GetValue("DelayMinutes", 240)),
+                ReviewLandingPageUrl = review["ReviewLandingPageUrl"],
+                GoogleReviewUrl = review["GoogleReviewUrl"],
+                SenderName = review["SenderName"] ?? name
+            });
+        }
+
         await db.SaveChangesAsync(cancellationToken);
     }
 }
