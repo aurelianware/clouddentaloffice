@@ -21,6 +21,8 @@ param connScheduling string
 @secure()
 param connIntake string
 @secure()
+param connAuth string
+@secure()
 param connClaims string
 @secure()
 param connPrescription string
@@ -552,6 +554,7 @@ resource authService 'Microsoft.App/containerApps@2023-05-01' = {
         transport: 'http'
       }
       secrets: [
+        { name: 'conn-auth', value: connAuth }
         { name: 'jwt-key', value: jwtKey }
       ]
     }
@@ -563,6 +566,8 @@ resource authService 'Microsoft.App/containerApps@2023-05-01' = {
           resources: { cpu: json('0.25'), memory: '0.5Gi' }
           env: [
             { name: 'ASPNETCORE_ENVIRONMENT', value: 'Production' }
+            { name: 'DatabaseProvider', value: 'PostgreSQL' }
+            { name: 'ConnectionStrings__AuthDb', secretRef: 'conn-auth' }
             { name: 'Jwt__Key', secretRef: 'jwt-key' }
             { name: 'Jwt__Issuer', value: jwtIssuer }
             { name: 'Jwt__Audience', value: jwtAudience }

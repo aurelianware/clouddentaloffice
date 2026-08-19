@@ -71,6 +71,11 @@ resource intakeDb 'Microsoft.DBforPostgreSQL/flexibleServers/databases@2023-06-0
   name: 'cdo_intake'
 }
 
+resource authDb 'Microsoft.DBforPostgreSQL/flexibleServers/databases@2023-06-01-preview' = {
+  parent: postgresServer
+  name: 'cdo_auth'
+}
+
 resource claimsDb 'Microsoft.DBforPostgreSQL/flexibleServers/databases@2023-06-01-preview' = {
   parent: postgresServer
   name: 'cdo_claims'

@@ -60,7 +60,7 @@ Cloud Dental Office uses a **microservices architecture** with each bounded cont
 | **ClaimsService** | 5103 | Claim lifecycle (draft → submit → adjudicate), 837D generation |
 | **EligibilityService** | 5104 | Real-time 270/271 eligibility verification |
 | **EraService** | 5105 | 835 ERA file processing, claim matching, auto-posting |
-| **AuthService** | 5106 | JWT authentication, OpenID Connect, multi-tenant identity |
+| **AuthService** | 5106 | Tenant-aware identity, membership-derived roles, password verification, and short-lived JWT issuance |
 | **PrescriptionService** | 5107 | e-Prescribing with DoseSpot integration, EPCS compliance, Surescripts certified |
 | **VisionService** | 5108 | AI vision platform — privaseeAI integration, insurance card OCR (Azure AI Vision), narcotics cabinet monitoring, consent recording, clinical note generation |
 | **IntakeService** | 5109 | Isolated public intake. Publishes validated booking requests and stores only minimized, durable integration-inbox records; it has no read access to patient/clinical systems. |

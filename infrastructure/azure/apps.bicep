@@ -97,6 +97,7 @@ module apps 'container-apps.bicep' = {
     connPatient: '${pgBase}cdo_patients;'
     connScheduling: '${pgBase}cdo_scheduling;'
     connIntake: '${pgBase}cdo_intake;'
+    connAuth: '${pgBase}cdo_auth;'
     connClaims: '${pgBase}cdo_claims;'
     connPrescription: '${pgBase}cdo_prescriptions;'
     connVision: '${pgBase}cdo_vision;'

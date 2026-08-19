@@ -1,62 +1,74 @@
-using System.IdentityModel.Tokens.Jwt;
-using System.Security.Claims;
-using System.Text;
-using Microsoft.IdentityModel.Tokens;
+using System.Net;
+using System.Threading.RateLimiting;
+using Microsoft.AspNetCore.HttpOverrides;
+using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c => c.SwaggerDoc("v1", new() { Title = "Auth Service", Version = "v1" }));
 builder.Services.AddHealthChecks();
+builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.AddDbContext<AuthDbContext>(options =>
+{
+    if (builder.Configuration.GetValue("DatabaseProvider", "Sqlite") == "PostgreSQL")
+        options.UseNpgsql(builder.Configuration.GetConnectionString("AuthDb"));
+    else options.UseSqlite(builder.Configuration.GetConnectionString("AuthDb") ?? "Data Source=auth.db");
+});
+builder.Services.AddScoped<Microsoft.AspNetCore.Identity.IPasswordHasher<AuthUser>, Microsoft.AspNetCore.Identity.PasswordHasher<AuthUser>>();
+builder.Services.AddScoped<IIdentityService, IdentityService>();
+builder.Services.AddSingleton<JwtTokenIssuer>();
+builder.Services.AddOptions<AuthSecurityOptions>().Bind(builder.Configuration.GetSection("Auth"))
+    .ValidateDataAnnotations().ValidateOnStart();
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
+{
+    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+    foreach (var value in builder.Configuration.GetSection("TrustedProxies").Get<string[]>() ?? [])
+        if (IPAddress.TryParse(value, out var address)) options.KnownProxies.Add(address);
+});
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.AddPolicy("login", context => RateLimitPartition.GetFixedWindowLimiter(
+        context.Connection.RemoteIpAddress?.ToString() ?? "unknown", _ => new()
+        { PermitLimit = 10, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
+});
 
 var app = builder.Build();
+AuthConfiguration.Validate(app.Configuration, app.Environment);
+await AuthDatabase.InitializeAsync(app.Services, app.Configuration, app.Environment);
 if (app.Environment.IsDevelopment()) { app.UseSwagger(); app.UseSwaggerUI(); }
+app.UseForwardedHeaders();
+app.UseRateLimiter();
 app.MapHealthChecks("/health");
 
-app.MapPost("/api/auth/login", (LoginRequest request, IConfiguration config) =>
+app.MapPost("/api/auth/login", async (LoginRequest request, IIdentityService identity,
+    ILogger<Program> logger, HttpContext http, CancellationToken cancellationToken) =>
 {
-    // TODO: Validate credentials against user store
-    // This is a placeholder — replace with proper identity provider integration
-    if (string.IsNullOrEmpty(request.Username) || string.IsNullOrEmpty(request.Password))
-        return Results.BadRequest(new { Error = "Username and password required" });
-
-    var jwtKey = config["Jwt:Key"] ?? "CloudDentalOffice-Dev-Key-Replace-In-Production-Min32Chars!!";
-    var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey));
-    var credentials = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
-
-    var claims = new[]
+    var result = await identity.AuthenticateAsync(request.Username, request.Password, cancellationToken);
+    if (result is null)
     {
-        new System.Security.Claims.Claim(ClaimTypes.Name, request.Username),
-        new System.Security.Claims.Claim(ClaimTypes.Role, "Dentist"),
-        new System.Security.Claims.Claim("tenant_id", request.TenantId ?? "default"),
-    };
+        logger.LogWarning("AuthenticationFailed correlation {CorrelationId}.", http.TraceIdentifier);
+        return Results.Json(new { error = "Invalid username or password." }, statusCode: 401);
+    }
+    logger.LogInformation("AuthenticationSucceeded user {UserId} correlation {CorrelationId}.", result.User.Id, http.TraceIdentifier);
+    return Results.Ok(result.Response);
+}).RequireRateLimiting("login").WithTags("Authentication");
 
-    var token = new JwtSecurityToken(
-        issuer: config["Jwt:Issuer"] ?? "CloudDentalOffice",
-        audience: config["Jwt:Audience"] ?? "CloudDentalOffice",
-        claims: claims,
-        expires: DateTime.UtcNow.AddHours(8),
-        signingCredentials: credentials
-    );
-
-    return Results.Ok(new
-    {
-        Token = new JwtSecurityTokenHandler().WriteToken(token),
-        ExpiresAt = token.ValidTo,
-        Username = request.Username
-    });
-}).WithTags("Authentication");
-
-app.MapPost("/api/auth/refresh", () =>
+app.MapPost("/api/auth/select-tenant", async (TenantSelectionRequest request, IIdentityService identity,
+    ILogger<Program> logger, HttpContext http, CancellationToken cancellationToken) =>
 {
-    // TODO: Refresh token endpoint
-    return Results.Ok(new { Message = "Not yet implemented" });
-}).WithTags("Authentication");
+    var response = await identity.SelectTenantAsync(request.SelectionToken, request.TenantId, cancellationToken);
+    if (response is null)
+    {
+        logger.LogWarning("TenantSelectionDenied correlation {CorrelationId}.", http.TraceIdentifier);
+        return Results.Json(new { error = "Tenant selection is not authorized." }, statusCode: 403);
+    }
+    logger.LogInformation("TokenIssued tenant {TenantId} correlation {CorrelationId}.", response.Tenant!.Id, http.TraceIdentifier);
+    return Results.Ok(response);
+}).RequireRateLimiting("login").WithTags("Authentication");
 
 app.Run();
-
-public record LoginRequest
-{
-    public string Username { get; init; } = string.Empty;
-    public string Password { get; init; } = string.Empty;
-    public string? TenantId { get; init; }
-}
+public partial class Program { }
+public sealed record LoginRequest(string Username, string Password);
+public sealed record TenantSelectionRequest(string SelectionToken, string TenantId);

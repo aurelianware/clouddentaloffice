@@ -356,6 +356,13 @@ spec:
           env:
             - name: ASPNETCORE_ENVIRONMENT
               value: Production
+            - name: DatabaseProvider
+              value: PostgreSQL
+            - name: ConnectionStrings__AuthDb
+              valueFrom:
+                secretKeyRef:
+                  name: cdo-app-secrets
+                  key: ConnectionStrings__AuthDb
             - name: Jwt__Key
               valueFrom:
                 secretKeyRef:
