@@ -117,7 +117,11 @@ public sealed class StaffPatientBillingService(CloudDentalDbContext db, IPatient
         var context = Context(user, BillingPermissions.PostPayment);
         if (command.Method is not (PatientPaymentMethod.Cash or PatientPaymentMethod.Check or PatientPaymentMethod.External))
             throw new ArgumentException("Staff payments must be cash, check, or external.");
-        ValidateReference(command.Reference);
+        PaymentCheckoutService.ValidateReference(command.Reference, nameof(command.Reference));
+        var reference = command.Reference;
+        if (await db.PatientPayments.IgnoreQueryFilters().AnyAsync(x => x.TenantId == context.Tenant &&
+            x.InternalPaymentReference == reference, cancellationToken))
+            throw new InvalidOperationException("The payment reference already exists.");
         var summary = await accounts.GetSummaryAsync(context.Tenant, command.PatientId, cancellationToken)
             ?? throw new KeyNotFoundException("Patient account was not found for the tenant.");
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
@@ -132,14 +136,22 @@ public sealed class StaffPatientBillingService(CloudDentalDbContext db, IPatient
             Amount = command.Amount.Amount, Currency = command.Amount.Currency, PaymentDate = command.PaymentDate,
             Method = command.Method, Processor = command.Method == PatientPaymentMethod.External
                 ? PaymentProcessorProvider.External : PaymentProcessorProvider.Office,
-            ExternalPaymentId = command.Method == PatientPaymentMethod.External ? command.Reference.Trim() : null,
-            InternalPaymentReference = command.Reference.Trim(), Status = PaymentStatus.Succeeded,
+            ExternalPaymentId = command.Method == PatientPaymentMethod.External ? reference : null,
+            InternalPaymentReference = reference, Status = PaymentStatus.Succeeded,
             LedgerEntryId = entry.LedgerEntryId, CreatedAt = now, UpdatedAt = now, CreatedBy = context.Actor
         };
         db.PatientPayments.Add(payment);
         Audit(context, "PaymentRecorded", "PatientPayment", id.ToString("N"));
-        await db.SaveChangesAsync(cancellationToken);
-        await transaction.CommitAsync(cancellationToken);
+        try
+        {
+            await db.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+        }
+        catch (DbUpdateException ex)
+        {
+            await transaction.RollbackAsync(CancellationToken.None);
+            throw new InvalidOperationException("The payment reference was concurrently recorded; use a unique reference.", ex);
+        }
         return payment;
     }
 
@@ -267,11 +279,6 @@ public sealed class StaffPatientBillingService(CloudDentalDbContext db, IPatient
             Action = action, EntityType = entityType, EntityId = entityId, Actor = context.Actor,
             ReasonCode = reason?.Trim(), CreatedAt = clock.GetUtcNow().UtcDateTime });
     private static string SafeReference(string value) => value.Length <= 8 ? value : value[^8..];
-    private static void ValidateReference(string value)
-    {
-        if (string.IsNullOrWhiteSpace(value) || value.Trim().Length > 128)
-            throw new ArgumentException("A bounded payment reference is required.");
-    }
     private static void ValidateReason(string value)
     {
         if (string.IsNullOrWhiteSpace(value) || value.Trim().Length > 64)

@@ -69,6 +69,26 @@ public sealed class StaffPatientBillingTests : IDisposable
         await Assert.ThrowsAsync<InvalidOperationException>(() => _db.SaveChangesAsync());
     }
 
+    [Theory]
+    [InlineData(" receipt with spaces ")]
+    [InlineData("receipt/100")]
+    [InlineData("receipt#100")]
+    public async Task Manual_payment_rejects_noncanonical_internal_reference(string reference)
+    {
+        await Assert.ThrowsAsync<ArgumentException>(() => _service.RecordPaymentAsync(User("BillingStaff"),
+            Payment(PatientPaymentMethod.Cash, reference)));
+    }
+
+    [Fact]
+    public async Task Duplicate_manual_payment_reference_returns_a_domain_conflict()
+    {
+        await _service.RecordPaymentAsync(User("BillingStaff"), Payment(PatientPaymentMethod.Check, "check-duplicate"));
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() => _service.RecordPaymentAsync(
+            User("BillingStaff"), Payment(PatientPaymentMethod.Check, "check-duplicate")));
+        Assert.Contains("already exists", error.Message);
+        Assert.Single(_db.PatientPayments.Where(x => x.InternalPaymentReference == "check-duplicate"));
+    }
+
     [Fact]
     public async Task Adjustment_and_reversal_preserve_history_and_actor()
     {

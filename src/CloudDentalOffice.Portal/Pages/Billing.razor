@@ -55,11 +55,12 @@
     private async Task RecordPayment()=>await Run(async()=>{await BillingAdminService.RecordPaymentAsync(_user,new(_patientId,new Money(_paymentAmount),_method,_reference,DateTime.UtcNow));await Reload();});
     private async Task PostAdjustment()=>await Run(async()=>{await BillingAdminService.PostAdjustmentAsync(_user,new(_patientId,new Money(_adjustmentAmount),_adjustmentType,_reason,DateTime.UtcNow));await Reload();});
     private async Task ReversePayment(Guid id)=>await Run(async()=>{await BillingAdminService.ReverseManualPaymentAsync(_user,id,string.IsNullOrWhiteSpace(_reason)?"staff-correction":_reason);await Reload();});
-    private async Task GenerateStatement()=>await Run(async()=>{await BillingAdminService.GenerateStatementAsync(_user,_patientId,(_dueDate??DateTime.Today.AddDays(30)).ToUniversalTime());await Reload();});
+    private async Task GenerateStatement()=>await Run(async()=>{var due=(_dueDate??DateTime.Today.AddDays(30)).Date;await BillingAdminService.GenerateStatementAsync(_user,_patientId,DateTime.SpecifyKind(due,DateTimeKind.Utc));await Reload();});
     private async Task SendStatement(Guid id)=>await Run(async()=>{await BillingAdminService.SendStatementAsync(_user,id);await Reload();});
-    private async Task AllocatePayment()=>await Run(async()=>{await BillingAdminService.AllocateAsync(_user,Guid.Parse(_allocationPayment),Guid.Parse(_allocationLedger),new Money(_allocationAmount));await Reload();});
-    private async Task UnapplyPayment()=>await Run(async()=>{await BillingAdminService.UnapplyAsync(_user,Guid.Parse(_allocationId),_unapplyReason);await Reload();});
+    private async Task AllocatePayment()=>await Run(async()=>{await BillingAdminService.AllocateAsync(_user,RequiredGuid(_allocationPayment,"payment"),RequiredGuid(_allocationLedger,"charge ledger"),new Money(_allocationAmount));await Reload();});
+    private async Task UnapplyPayment()=>await Run(async()=>{await BillingAdminService.UnapplyAsync(_user,RequiredGuid(_allocationId,"allocation"),_unapplyReason);await Reload();});
     private async Task Reload(){_account=await BillingAdminService.GetAccountAsync(_user,_patientId);await RefreshDashboard();}
     private async Task Run(Func<Task> action){try{_busy=true;await action();Snackbar.Add("Billing operation completed.",Severity.Success);}catch(Exception ex) when(ex is ArgumentException or InvalidOperationException or KeyNotFoundException or UnauthorizedAccessException){Snackbar.Add(ex.Message,Severity.Error);}finally{_busy=false;}}
+    private static Guid RequiredGuid(string value,string label)=>Guid.TryParse(value,out var id)?id:throw new ArgumentException($"Enter a valid {label} ID.");
     private static string Money(decimal amount,string currency)=>$"{amount:N2} {currency}";
 }
