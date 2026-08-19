@@ -1,4 +1,6 @@
+using System.Net;
 using System.Threading.RateLimiting;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 
@@ -18,6 +20,12 @@ builder.Services.AddScoped<IIdentityService, IdentityService>();
 builder.Services.AddSingleton<JwtTokenIssuer>();
 builder.Services.AddOptions<AuthSecurityOptions>().Bind(builder.Configuration.GetSection("Auth"))
     .ValidateDataAnnotations().ValidateOnStart();
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
+{
+    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+    foreach (var value in builder.Configuration.GetSection("TrustedProxies").Get<string[]>() ?? [])
+        if (IPAddress.TryParse(value, out var address)) options.KnownProxies.Add(address);
+});
 builder.Services.AddRateLimiter(options =>
 {
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
@@ -30,6 +38,7 @@ var app = builder.Build();
 AuthConfiguration.Validate(app.Configuration, app.Environment);
 await AuthDatabase.InitializeAsync(app.Services, app.Configuration, app.Environment);
 if (app.Environment.IsDevelopment()) { app.UseSwagger(); app.UseSwaggerUI(); }
+app.UseForwardedHeaders();
 app.UseRateLimiter();
 app.MapHealthChecks("/health");
 

@@ -91,6 +91,35 @@ public sealed class IdentityServiceTests : IAsyncLifetime
         Assert.Throws<InvalidOperationException>(() => AuthConfiguration.Validate(config, new Env("Production")));
     }
 
+    [Fact]
+    public void Production_configuration_requires_postgresql_connection()
+    {
+        var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        { ["Jwt:Key"] = Key, ["Jwt:Issuer"] = "issuer", ["Jwt:Audience"] = "audience" }).Build();
+        var error = Assert.Throws<InvalidOperationException>(() => AuthConfiguration.Validate(config, new Env("Production")));
+        Assert.Contains("PostgreSQL", error.Message);
+
+        config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        { ["Jwt:Key"] = Key, ["Jwt:Issuer"] = "issuer", ["Jwt:Audience"] = "audience", ["DatabaseProvider"] = "PostgreSQL" }).Build();
+        error = Assert.Throws<InvalidOperationException>(() => AuthConfiguration.Validate(config, new Env("Production")));
+        Assert.Contains("ConnectionStrings:AuthDb", error.Message);
+    }
+
+    [Fact]
+    public async Task Successful_login_persists_an_upgraded_password_hash()
+    {
+        var user = new AuthUser { Email = "rehash@example.test", NormalizedEmail = "REHASH@EXAMPLE.TEST", DisplayName = "Rehash" };
+        user.PasswordHash = "legacy-hash";
+        user.Memberships.Add(new() { TenantId = "tenant-a", TenantName = "A", Roles = "Admin" });
+        _db.Users.Add(user);
+        await _db.SaveChangesAsync();
+        var identity = new IdentityService(_db, new RehashingHasher(), Issuer());
+
+        Assert.NotNull(await identity.AuthenticateAsync(user.Email, "CorrectPassword!"));
+        _db.ChangeTracker.Clear();
+        Assert.Equal("upgraded-hash", (await _db.Users.SingleAsync(x => x.Id == user.Id)).PasswordHash);
+    }
+
     private async Task<AuthUser> AddUser(string email, string password, string tenant, string roles)
     {
         var user = new AuthUser { Email = email, NormalizedEmail = email.ToUpperInvariant(), DisplayName = "Test User" };
@@ -107,5 +136,11 @@ public sealed class IdentityServiceTests : IAsyncLifetime
         public string EnvironmentName { get; set; } = name; public string ApplicationName { get; set; } = "test";
         public string WebRootPath { get; set; } = ""; public IFileProvider WebRootFileProvider { get; set; } = new NullFileProvider();
         public string ContentRootPath { get; set; } = ""; public IFileProvider ContentRootFileProvider { get; set; } = new NullFileProvider();
+    }
+    private sealed class RehashingHasher : IPasswordHasher<AuthUser>
+    {
+        public string HashPassword(AuthUser user, string password) => "upgraded-hash";
+        public PasswordVerificationResult VerifyHashedPassword(AuthUser user, string hashedPassword, string providedPassword) =>
+            providedPassword == "CorrectPassword!" ? PasswordVerificationResult.SuccessRehashNeeded : PasswordVerificationResult.Failed;
     }
 }

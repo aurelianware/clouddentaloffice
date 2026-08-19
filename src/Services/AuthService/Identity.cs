@@ -4,6 +4,7 @@ using System.Security.Claims;
 using System.Text;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Design;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 
@@ -49,6 +50,17 @@ public sealed class AuthDbContext(DbContextOptions<AuthDbContext> options) : DbC
     }
 }
 
+public sealed class AuthDbContextFactory : IDesignTimeDbContextFactory<AuthDbContext>
+{
+    public AuthDbContext CreateDbContext(string[] args)
+    {
+        var options = new DbContextOptionsBuilder<AuthDbContext>()
+            .UseNpgsql("Host=localhost;Database=cdo_auth;Username=postgres")
+            .Options;
+        return new(options);
+    }
+}
+
 public sealed class AuthSecurityOptions
 {
     [Range(15, 60)] public int AccessTokenMinutes { get; set; } = 30;
@@ -75,8 +87,14 @@ public sealed class IdentityService(AuthDbContext db, IPasswordHasher<AuthUser> 
         if (string.IsNullOrWhiteSpace(username) || string.IsNullOrEmpty(password)) return null;
         var user = await db.Users.Include(x => x.Memberships).SingleOrDefaultAsync(
             x => x.NormalizedEmail == username.Trim().ToUpperInvariant(), cancellationToken);
-        if (user is null || !user.Enabled || string.IsNullOrWhiteSpace(user.PasswordHash) ||
-            hasher.VerifyHashedPassword(user, user.PasswordHash, password) == PasswordVerificationResult.Failed) return null;
+        if (user is null || !user.Enabled || string.IsNullOrWhiteSpace(user.PasswordHash)) return null;
+        var verification = hasher.VerifyHashedPassword(user, user.PasswordHash, password);
+        if (verification == PasswordVerificationResult.Failed) return null;
+        if (verification == PasswordVerificationResult.SuccessRehashNeeded)
+        {
+            user.PasswordHash = hasher.HashPassword(user, password);
+            await db.SaveChangesAsync(cancellationToken);
+        }
         var memberships = user.Memberships.Where(x => x.Enabled).ToList();
         if (memberships.Count == 0) return null;
         return new(user, memberships.Count == 1 ? tokens.IssueAccess(user, memberships[0]) : tokens.IssueSelection(user, memberships));
@@ -100,10 +118,11 @@ public sealed class JwtTokenIssuer(IConfiguration configuration, IOptions<AuthSe
     public LoginResponse IssueAccess(AuthUser user, TenantMembership membership)
     {
         var now = clock.GetUtcNow(); var expires = now.AddMinutes(options.Value.AccessTokenMinutes);
+        var roles = membership.RoleList();
         var claims = BaseClaims(user, now).Append(new("tenant_id", membership.TenantId))
-            .Concat(membership.RoleList().Select(x => new Claim(ClaimTypes.Role, x)));
+            .Concat(roles.Select(x => new Claim(ClaimTypes.Role, x)));
         return new(Create(claims, Audience, now, expires), expires.UtcDateTime, PublicUser(user),
-            new(membership.TenantId, membership.TenantName), membership.RoleList(), false, null, []);
+            new(membership.TenantId, membership.TenantName), roles, false, null, []);
     }
     public LoginResponse IssueSelection(AuthUser user, IReadOnlyList<TenantMembership> memberships)
     {

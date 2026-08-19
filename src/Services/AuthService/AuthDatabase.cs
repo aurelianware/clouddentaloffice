@@ -13,6 +13,11 @@ public static class AuthConfiguration
         if (environment.IsProduction() && (configuration.GetValue("DemoAuth:Enabled", false) ||
             key.Contains("Dev-Key", StringComparison.OrdinalIgnoreCase) || key.Contains("DevelopmentOnly", StringComparison.OrdinalIgnoreCase)))
             throw new InvalidOperationException("Development authentication settings are forbidden in production.");
+        if (environment.IsProduction() &&
+            !string.Equals(configuration["DatabaseProvider"], "PostgreSQL", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("AuthService requires PostgreSQL in production.");
+        if (environment.IsProduction() && string.IsNullOrWhiteSpace(configuration.GetConnectionString("AuthDb")))
+            throw new InvalidOperationException("AuthService requires ConnectionStrings:AuthDb in production.");
     }
 }
 
