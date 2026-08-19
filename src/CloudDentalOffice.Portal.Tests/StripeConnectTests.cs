@@ -79,9 +79,13 @@ public sealed class StripeConnectTests : IDisposable
     public async Task Disabled_configuration_fails_closed()
     {
         var config = await _db.PaymentProcessorConfigurations.SingleAsync();
-        config.Enabled = false; await _db.SaveChangesAsync();
+        config.Enabled = false; config.OnboardingStatus = PaymentProcessorOnboardingStatus.Disabled;
+        config.ConnectedMerchantReference = "acct_existing"; await _db.SaveChangesAsync();
         await Assert.ThrowsAsync<PaymentProcessorUnavailableException>(() =>
             _service.CreateOnboardingLinkAsync("tenant-a", "admin@example.test", Refresh, Return));
+        var status = await _service.RefreshStatusAsync("tenant-a");
+        Assert.False(status.Enabled); Assert.Equal(PaymentProcessorOnboardingStatus.Disabled, status.Status);
+        Assert.Equal("acct_existing", status.ConnectedAccountId);
         Assert.Equal(0, _api.CreateAccountCalls);
     }
 
@@ -122,6 +126,23 @@ public sealed class StripeConnectTests : IDisposable
         Assert.Equal("2026-07-29.preview", handler.ApiVersion);
         Assert.Contains("\"fees_collector\":\"stripe\"", handler.Body);
         Assert.DoesNotContain("sk_test_", handler.Body);
+    }
+
+    [Theory]
+    [InlineData("\"2026-08-19T20:30:00.000Z\"")]
+    [InlineData("1787171400")]
+    public async Task Api_client_accepts_v2_and_legacy_account_link_expiration(string expiresAt)
+    {
+        var handler = new RecordingHandler($$"""
+            {"url":"https://connect.stripe.test/onboard","expires_at":{{expiresAt}}}
+            """);
+        var values = new Dictionary<string, string?> { ["Secrets:StripeTest"] = "sk_test_not-a-real-secret" };
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(values).Build();
+        var client = new StripeApiClient(new HttpClient(handler) { BaseAddress = new Uri("https://api.stripe.com") },
+            new ConfigurationStripeCredentialProvider(configuration), configuration);
+        var link = await client.CreateAccountLinkAsync(Configuration(), "acct_test_practice", Refresh, Return);
+        Assert.Equal(DateTimeKind.Utc, link.ExpiresAt.Kind);
+        Assert.Equal(new DateTime(2026, 8, 19, 20, 30, 0, DateTimeKind.Utc), link.ExpiresAt);
     }
 
     [Fact]

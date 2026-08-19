@@ -121,7 +121,7 @@ public sealed class StripeApiClient(HttpClient httpClient, IStripeCredentialProv
         var dto = await ReadAsync<StripeAccountLinkDto>(response, cancellationToken);
         if (!Uri.TryCreate(dto.Url, UriKind.Absolute, out var url) || url.Scheme != Uri.UriSchemeHttps)
             throw new StripeConnectException("Stripe returned an invalid onboarding URL.");
-        return new(url, dto.ExpiresAtUtc);
+        return new(url, ParseTimestamp(dto.ExpiresAt));
     }
 
     private async Task<HttpResponseMessage> SendAsync(PaymentProcessorConfiguration config, HttpMethod method,
@@ -158,6 +158,19 @@ public sealed class StripeApiClient(HttpClient httpClient, IStripeCredentialProv
         if (!value.IsAbsoluteUri || (environment == PaymentProcessorEnvironment.Production && value.Scheme != Uri.UriSchemeHttps))
             throw new ArgumentException("Stripe production onboarding redirect URLs must use HTTPS.");
     }
+    private static DateTime ParseTimestamp(JsonElement value)
+    {
+        if (value.ValueKind == JsonValueKind.String &&
+            DateTimeOffset.TryParse(value.GetString(), System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.AssumeUniversal, out var timestamp))
+            return timestamp.UtcDateTime;
+        if (value.ValueKind == JsonValueKind.Number && value.TryGetInt64(out var seconds))
+        {
+            try { return DateTimeOffset.FromUnixTimeSeconds(seconds).UtcDateTime; }
+            catch (ArgumentOutOfRangeException) { }
+        }
+        throw new StripeConnectException("Stripe returned an invalid onboarding expiration.");
+    }
 }
 
 public sealed class StripeConnectService(CloudDentalDbContext db, IStripeApiClient api, ITenantProvider tenantProvider,
@@ -190,7 +203,8 @@ public sealed class StripeConnectService(CloudDentalDbContext db, IStripeApiClie
 
     public async Task<StripeConnectStatus> RefreshStatusAsync(string tenantId, CancellationToken cancellationToken = default)
     {
-        EnsureTenant(tenantId); var config = await Configuration(tenantId, cancellationToken);
+        EnsureTenant(tenantId); var config = await Configuration(tenantId, cancellationToken, requireEnabled: false);
+        if (!config.Enabled) return Status(config);
         if (string.IsNullOrWhiteSpace(config.ConnectedMerchantReference)) return Status(config);
         Apply(config, await api.GetConnectedAccountAsync(config, config.ConnectedMerchantReference, cancellationToken));
         await db.SaveChangesAsync(cancellationToken); return Status(config);
@@ -203,12 +217,14 @@ public sealed class StripeConnectService(CloudDentalDbContext db, IStripeApiClie
         config.UpdatedAt = clock.GetUtcNow().UtcDateTime; await db.SaveChangesAsync(cancellationToken);
     }
 
-    private async Task<PaymentProcessorConfiguration> Configuration(string tenantId, CancellationToken cancellationToken)
+    private async Task<PaymentProcessorConfiguration> Configuration(string tenantId, CancellationToken cancellationToken,
+        bool requireEnabled = true)
     {
         var value = await db.PaymentProcessorConfigurations.IgnoreQueryFilters().SingleOrDefaultAsync(x =>
             x.TenantId == tenantId && x.Provider == PaymentProcessorProvider.Stripe, cancellationToken)
             ?? throw new PaymentProcessorUnavailableException("Stripe payment configuration is not configured for the tenant.");
-        if (!value.Enabled) throw new PaymentProcessorUnavailableException("Stripe payment configuration is disabled.");
+        if (requireEnabled && !value.Enabled)
+            throw new PaymentProcessorUnavailableException("Stripe payment configuration is disabled.");
         return value;
     }
     private void Apply(PaymentProcessorConfiguration config, StripeAccountSnapshot account)
@@ -251,7 +267,7 @@ internal sealed record StripeRequirementsSummaryDto(
 internal sealed record StripeDeadlineDto([property: JsonPropertyName("status")] string? Status);
 internal sealed record StripeAccountLinkDto(
     [property: JsonPropertyName("url")] string Url,
-    [property: JsonPropertyName("expires_at")] DateTime ExpiresAtUtc);
+    [property: JsonPropertyName("expires_at")] JsonElement ExpiresAt);
 
 // Patient checkout/refund support is intentionally separate from Connect onboarding in this PR.
 public sealed class StripePaymentProcessor : IPaymentProcessor

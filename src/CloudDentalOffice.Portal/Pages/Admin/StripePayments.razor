@@ -46,6 +46,7 @@
     protected override async Task OnInitializedAsync() { await Load(); _loading = false; }
     private async Task Load()
     {
+        _status = null;
         try { _status = await StripeConnect.RefreshStatusAsync(TenantProvider.TenantId); }
         catch (PaymentProcessorUnavailableException ex) { Snackbar.Add(ex.Message, Severity.Warning); }
         catch (Exception) { Snackbar.Add("Stripe status could not be refreshed.", Severity.Error); }
