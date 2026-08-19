@@ -247,6 +247,8 @@ jobs:
               publicAvailabilitySlotKey='${{ secrets.PUBLIC_AVAILABILITY_SLOT_KEY }}' \
               googleOAuthClientId='${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}' \
               googleOAuthClientSecret='${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}' \
+              searchConsoleServiceAccountEmail='${{ secrets.SEARCH_CONSOLE_SERVICE_ACCOUNT_EMAIL }}' \
+              searchConsolePrivateKey='${{ secrets.SEARCH_CONSOLE_PRIVATE_KEY }}' \
               cloudHealthOfficeApiKey='${{ secrets.CHO_ESTIMATE_API_KEY }}'
 
       # DNS is hosted in Cloudflare. The CNAME and asuid TXT records must exist

@@ -70,6 +70,9 @@ param googleOAuthClientId string = ''
 @secure()
 @description('Google OAuth client secret for Portal sign-in; leave empty to disable Google sign-in')
 param googleOAuthClientSecret string = ''
+param searchConsoleServiceAccountEmail string = ''
+@secure()
+param searchConsolePrivateKey string = ''
 @description('Base URL for the CloudHealthOffice payment estimate API')
 param cloudHealthOfficeBaseUrl string = 'https://benefit-plan-estimate.lemoncoast-a1e8528c.westus3.azurecontainerapps.io'
 @secure()
@@ -116,6 +119,8 @@ module apps 'container-apps.bicep' = {
     initialTenantId: initialTenantId
     googleOAuthClientId: googleOAuthClientId
     googleOAuthClientSecret: googleOAuthClientSecret
+    searchConsoleServiceAccountEmail: searchConsoleServiceAccountEmail
+    searchConsolePrivateKey: searchConsolePrivateKey
     cloudHealthOfficeBaseUrl: cloudHealthOfficeBaseUrl
     cloudHealthOfficeApiKey: cloudHealthOfficeApiKey
     cloudHealthOfficeBenefitPlanId: cloudHealthOfficeBenefitPlanId

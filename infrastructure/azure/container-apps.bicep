@@ -53,6 +53,9 @@ param initialTenantId string = 'third-set-smiles'
 param googleOAuthClientId string = ''
 @secure()
 param googleOAuthClientSecret string = ''
+param searchConsoleServiceAccountEmail string = ''
+@secure()
+param searchConsolePrivateKey string = ''
 param cloudHealthOfficeBaseUrl string
 @secure()
 param cloudHealthOfficeApiKey string
@@ -274,14 +277,16 @@ resource schedulingService 'Microsoft.App/containerApps@2023-05-01' = {
         targetPort: 5102
         transport: 'http'
       }
-      secrets: [
+      secrets: concat([
         { name: 'conn-scheduling', value: connScheduling }
         { name: 'servicebus-listen', value: serviceBusListenConnection }
         { name: 'jwt-key', value: jwtKey }
         { name: 'patient-service-api-key', value: patientServiceApiKey }
         { name: 'public-intake-api-key', value: publicSchedulingServiceApiKey }
         { name: 'public-slot-key', value: publicAvailabilitySlotKey }
-      ]
+      ], empty(searchConsoleServiceAccountEmail) || empty(searchConsolePrivateKey) ? [] : [
+        { name: 'search-console-private-key', value: searchConsolePrivateKey }
+      ])
     }
     template: {
       containers: [
@@ -289,7 +294,7 @@ resource schedulingService 'Microsoft.App/containerApps@2023-05-01' = {
           name: 'scheduling-service'
           image: '${acrLoginServer}/scheduling-service:${imageTag}'
           resources: { cpu: json('0.25'), memory: '0.5Gi' }
-          env: [
+          env: concat([
             { name: 'ASPNETCORE_ENVIRONMENT', value: 'Production' }
             { name: 'DatabaseProvider', value: 'PostgreSQL' }
             { name: 'ConnectionStrings__SchedulingDb', secretRef: 'conn-scheduling' }
@@ -303,7 +308,10 @@ resource schedulingService 'Microsoft.App/containerApps@2023-05-01' = {
             { name: 'Jwt__Key', secretRef: 'jwt-key' }
             { name: 'Jwt__Issuer', value: jwtIssuer }
             { name: 'Jwt__Audience', value: jwtAudience }
-          ]
+          ], empty(searchConsoleServiceAccountEmail) || empty(searchConsolePrivateKey) ? [] : [
+            { name: 'SearchConsoleCredentials__third-set-smiles__ClientEmail', value: searchConsoleServiceAccountEmail }
+            { name: 'SearchConsoleCredentials__third-set-smiles__PrivateKey', secretRef: 'search-console-private-key' }
+          ])
         }
       ]
       // No HTTP ingress wakes this consumer. KEDA watches the private
@@ -338,6 +346,18 @@ resource schedulingService 'Microsoft.App/containerApps@2023-05-01' = {
               auth: [
                 { secretRef: 'servicebus-listen', triggerParameter: 'connection' }
               ]
+            }
+          }
+          {
+            name: 'search-console-daily-sync'
+            custom: {
+              type: 'cron'
+              metadata: {
+                timezone: 'Etc/UTC'
+                start: '0 6 * * *'
+                end: '45 6 * * *'
+                desiredReplicas: '1'
+              }
             }
           }
           {

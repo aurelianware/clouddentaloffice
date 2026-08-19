@@ -36,6 +36,31 @@ public sealed record AcquisitionBreakdown(string Name, long? Visits, long? Start
     decimal? ScheduleConversionPercent);
 public sealed record AcquisitionDailyTotal(DateOnly Date, long Starts, long Requests, long Scheduled);
 
+public sealed record SearchPerformanceSummary(long Clicks, long Impressions, decimal CtrPercent, decimal AveragePosition);
+public sealed record SearchDailyTotal(DateOnly Date, long Clicks, long Impressions);
+public sealed record SearchQueryPerformance(string Query, long Clicks, long Impressions, decimal CtrPercent, decimal AveragePosition);
+public sealed record SearchDevicePerformance(string Device, long Clicks, long Impressions, decimal CtrPercent, decimal AveragePosition);
+public sealed record SearchLandingPagePerformance(string LandingPage, bool IsProduction, long Clicks, long Impressions,
+    decimal CtrPercent, decimal AveragePosition, long BookingStarts, long BookingRequests, long ScheduledAppointments,
+    decimal? AggregateRequestRatePercent);
+public sealed record SearchQueryPagePerformance(string Query, string LandingPage, long Clicks, long Impressions,
+    decimal CtrPercent, decimal AveragePosition);
+public sealed record SearchConsoleStatus(bool Configured, bool Enabled, string? PropertyUrl, string SyncStatus,
+    DateTimeOffset? LastSuccessfulSyncAt, DateOnly? LatestImportedDate, string? LastError);
+public sealed record SearchAcquisitionDashboard
+{
+    public required DateTimeOffset From { get; init; }
+    public required DateTimeOffset To { get; init; }
+    public required SearchPerformanceSummary Summary { get; init; }
+    public required IReadOnlyList<SearchDailyTotal> Daily { get; init; }
+    public required IReadOnlyList<SearchQueryPerformance> TopQueries { get; init; }
+    public required IReadOnlyList<SearchLandingPagePerformance> LandingPages { get; init; }
+    public required IReadOnlyList<SearchQueryPagePerformance> QueryPages { get; init; }
+    public required IReadOnlyList<SearchDevicePerformance> Devices { get; init; }
+    public required SearchConsoleStatus Status { get; init; }
+    public string AttributionDisclaimer { get; init; } = "Search Console metrics are aggregate. Booking metrics are compared by landing page and date range and do not identify which search query an individual patient used.";
+}
+
 public sealed record PatientAcquisitionDashboard
 {
     public required DateTimeOffset From { get; init; }

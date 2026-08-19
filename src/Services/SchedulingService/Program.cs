@@ -32,6 +32,11 @@ builder.Services.AddHealthChecks();
 builder.Services.AddSchedulingIntegrations();
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddScoped<IPatientAcquisitionService, PatientAcquisitionService>();
+builder.Services.Configure<SearchConsoleOptions>(builder.Configuration.GetSection(SearchConsoleOptions.SectionName));
+builder.Services.AddHttpClient<ISearchConsoleClient, GoogleSearchConsoleClient>(client => client.Timeout = TimeSpan.FromSeconds(60));
+builder.Services.AddScoped<ISearchConsoleSyncService, SearchConsoleSyncService>();
+builder.Services.AddScoped<ISearchAcquisitionReportingService, SearchAcquisitionReportingService>();
+builder.Services.AddHostedService<SearchConsoleSyncWorker>();
 builder.Services.AddEventPublishing(builder.Configuration);
 
 // When configured, administrative scheduling-integration routes accept the
@@ -140,6 +145,38 @@ app.MapGet("/api/reports/patient-acquisition", async (
     try { return Results.Ok(await service.GetDashboardAsync(tenantId, new(from, to, source, appointmentIntent, landingPage, locationId, providerId), cancellationToken)); }
     catch (ArgumentException ex) { return Results.ValidationProblem(new Dictionary<string, string[]> { ["range"] = [ex.Message] }); }
 }).RequireAuthorization("SchedulingIntegrationAdmin").WithTags("Reports");
+
+app.MapGet("/api/reports/patient-acquisition/search", async (
+    DateTimeOffset from, DateTimeOffset to, ClaimsPrincipal user, ISearchAcquisitionReportingService service,
+    CancellationToken cancellationToken) =>
+{
+    var tenantId = SchedulingIntegrationAdminApi.TenantId(user)!;
+    try { return Results.Ok(await service.GetAsync(tenantId, from, to, cancellationToken)); }
+    catch (ArgumentException ex) { return Results.ValidationProblem(new Dictionary<string, string[]> { ["range"] = [ex.Message] }); }
+}).RequireAuthorization("SchedulingIntegrationAdmin").WithTags("Reports");
+
+app.MapPut("/api/admin/search-console", async (UpdateSearchConsoleIntegration request, ClaimsPrincipal user,
+    SchedulingDbContext db, CancellationToken cancellationToken) =>
+{
+    var tenantId = SchedulingIntegrationAdminApi.TenantId(user)!;
+    if (!Uri.TryCreate(request.PropertyUrl, UriKind.Absolute, out var property) || property.Scheme != Uri.UriSchemeHttps ||
+        string.IsNullOrWhiteSpace(request.CredentialReference)) return Results.ValidationProblem(new Dictionary<string, string[]> { ["configuration"] = ["An HTTPS property URL and credential reference are required."] });
+    var row = await db.SearchConsoleIntegrations.SingleOrDefaultAsync(x => x.TenantId == tenantId, cancellationToken);
+    if (row is null) { row = new() { TenantId = tenantId }; db.SearchConsoleIntegrations.Add(row); }
+    row.Enabled = request.Enabled; row.PropertyUrl = request.PropertyUrl.Trim();
+    row.CredentialReference = request.CredentialReference.Trim(); row.CanonicalHost = request.CanonicalHost?.Trim();
+    row.SyncStatus = request.Enabled ? SearchConsoleSyncStatus.Pending : SearchConsoleSyncStatus.Disabled;
+    row.NextSyncAt = request.Enabled ? DateTime.UtcNow : null; row.LockId = null; row.LockedUntil = null;
+    await db.SaveChangesAsync(cancellationToken);
+    return Results.NoContent();
+}).RequireAuthorization("SchedulingIntegrationAdmin").WithTags("SearchConsoleAdmin");
+
+app.MapPost("/api/admin/search-console/sync", async (bool? backfill, ClaimsPrincipal user,
+    ISearchConsoleSyncService service, CancellationToken cancellationToken) =>
+{
+    var tenantId = SchedulingIntegrationAdminApi.TenantId(user)!;
+    return Results.Ok(new { rowsImported = await service.SyncAsync(tenantId, backfill == true, cancellationToken) });
+}).RequireAuthorization("SchedulingIntegrationAdmin").WithTags("SearchConsoleAdmin");
 
 // Staff appointment APIs contain PHI and always require a signed bearer token.
 // Tenant context comes from the validated token, never request input or network location.
@@ -273,6 +310,7 @@ using (var scope = app.Services.CreateScope())
     await SchedulingIntegrationSchema.EnsureAsync(db);
     await SchedulingAvailabilitySchema.EnsureAsync(db);
     await PatientAcquisitionSchema.EnsureAsync(db);
+    await SearchConsoleSchema.EnsureAsync(db);
 }
 
 app.Run();
@@ -311,4 +349,9 @@ public class SchedulingDbContext(DbContextOptions<SchedulingDbContext> options) 
     public DbSet<SchedulingIntegrationEvent> SchedulingIntegrationEvents => Set<SchedulingIntegrationEvent>();
     public DbSet<SchedulingAvailabilitySyncState> SchedulingAvailabilitySyncStates => Set<SchedulingAvailabilitySyncState>();
     public DbSet<PatientAcquisitionEvent> PatientAcquisitionEvents => Set<PatientAcquisitionEvent>();
+    public DbSet<SearchConsoleIntegration> SearchConsoleIntegrations => Set<SearchConsoleIntegration>();
+    public DbSet<SearchPerformanceDaily> SearchPerformanceDaily => Set<SearchPerformanceDaily>();
 }
+
+public sealed record UpdateSearchConsoleIntegration(bool Enabled, string PropertyUrl,
+    string CredentialReference, string? CanonicalHost);
