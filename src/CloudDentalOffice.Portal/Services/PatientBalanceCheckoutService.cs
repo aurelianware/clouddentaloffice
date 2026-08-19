@@ -124,7 +124,8 @@ public sealed class PatientBalanceCheckoutService(CloudDentalDbContext db, IPaym
         if (!request.StatementId.HasValue) throw new ArgumentException("A statement is required for statement payment.");
         var statement = await db.PatientStatements.IgnoreQueryFilters().AsNoTracking().SingleOrDefaultAsync(x =>
             x.TenantId == request.TenantId && x.StatementId == request.StatementId &&
-            x.PatientAccountId == accountId && x.Status != PatientStatementStatus.Voided, cancellationToken)
+            x.PatientAccountId == accountId && (x.Status == PatientStatementStatus.Ready ||
+                x.Status == PatientStatementStatus.Sent || x.Status == PatientStatementStatus.PartiallyPaid), cancellationToken)
             ?? throw new KeyNotFoundException("Payable statement was not found for the patient account.");
         var paymentAmounts = await db.PatientPayments.IgnoreQueryFilters().AsNoTracking().Where(x =>
             x.TenantId == request.TenantId && x.StatementId == statement.StatementId &&

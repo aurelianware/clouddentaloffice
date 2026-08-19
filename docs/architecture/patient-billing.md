@@ -110,14 +110,39 @@ It also exposes authenticated statement administration:
 - `POST /api/patient-statements/{statementId}/void`
 - `POST /api/patient-statements/{statementId}/supersede`
 
-Tenant identity comes from authenticated claims and is not accepted as a query, route, or request-header parameter. `patientId` is only a filter within that trusted tenant. There are no anonymous statement URLs, patient portal, or payment-processor endpoints in this foundation. The existing `/billing` page still uses placeholder invoice data and is not presented as an authoritative statement UI.
+Tenant identity comes from authenticated claims and is not accepted as a query, route, or request-header parameter. `patientId` is only a filter within that trusted tenant. There are no anonymous statement URLs.
+
+## Authenticated patient Billing
+
+The patient-facing route is `/patient/billing` and requires the `Patient` role. A
+server-owned `PatientPortalIdentity` binds the authenticated issuer and subject to
+one tenant and patient record. The browser never selects or supplies a PatientId or
+PatientAccountId. Missing, inactive, wrong-tenant, and wrong-subject bindings fail
+closed.
+
+Provision a binding only after the practice verifies the patient and authenticated
+account through its approved onboarding process. Deactivating it immediately
+removes billing access without deleting financial history.
+
+The page displays CDO-owned account balance, credits, insurance activity, immutable
+statement snapshots, and safe payment history. It does not expose clinical detail,
+raw processor identifiers, Stripe-hosted invoices, or Stripe credentials.
+
+`Pay Now` resolves the account again from authenticated identity and invokes the
+server-side Checkout service. Full balance, eligible statement balance, and an
+enabled custom partial amount are recalculated against the current ledger and
+practice Stripe status. Statement Checkout accepts only Ready, Sent, or
+PartiallyPaid statements.
+
+The return route says `Payment processing` and reloads CDO's payment state. A
+Checkout query string or browser redirect is never proof of payment; only the
+verified Stripe webhook pipeline marks a payment succeeded and posts the ledger.
 
 ## Follow-up work
 
 - post procedure charges and adjudicated ERA/835 payments and adjustments through the application service
 - add authenticated staff payment/allocation APIs and durable refund records
-- replace the placeholder Billing page with the authenticated statement APIs and add aging buckets
+- add aging buckets to staff billing administration
 - render/print statements and add controlled delivery tracking
 - add account-to-account transfer orchestration
-- connect a processor adapter such as Stripe without delegating ledger ownership
 - baseline provider-specific PostgreSQL migrations as described by the Portal database bootstrap policy

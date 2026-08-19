@@ -1,0 +1,9 @@
+<MudPaper Class="pa-4" Outlined="true" Style="height:100%">
+    <MudText Typo="Typo.overline">@Label</MudText>
+    <MudText Typo="Typo.h5">@Value</MudText>
+</MudPaper>
+
+@code {
+    [Parameter, EditorRequired] public string Label { get; set; } = string.Empty;
+    [Parameter, EditorRequired] public string Value { get; set; } = string.Empty;
+}

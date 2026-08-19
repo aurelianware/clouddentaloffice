@@ -62,6 +62,28 @@ public sealed class PatientBalanceCheckoutTests : IDisposable
         Assert.Equal(200m, result.Amount.Amount);
     }
 
+    [Theory]
+    [InlineData(PatientStatementStatus.Draft)]
+    [InlineData(PatientStatementStatus.Paid)]
+    [InlineData(PatientStatementStatus.Superseded)]
+    [InlineData(PatientStatementStatus.Voided)]
+    public async Task Checkout_rejects_non_payable_statement_status(PatientStatementStatus status)
+    {
+        await SeedBalance(100m);
+        var statementId = Guid.NewGuid();
+        _db.PatientStatements.Add(new PatientStatement { StatementId = statementId, TenantId = "tenant-a",
+            PatientAccountId = _accountId, StatementDate = DateTime.UtcNow, DueDate = DateTime.UtcNow.AddDays(30),
+            Status = status, AmountDue = 100m, Currency = "USD", LedgerThroughDate = DateTime.UtcNow,
+            CreatedAt = DateTime.UtcNow, CreatedBy = "test", StatusUpdatedAt = DateTime.UtcNow });
+        await _db.SaveChangesAsync();
+
+        await Assert.ThrowsAsync<KeyNotFoundException>(() => Service().CreateAsync(
+            Request(PatientPaymentSelection.StatementBalance, statementId)));
+
+        Assert.Empty(_db.PatientPaymentAttempts);
+        Assert.Equal(0, _checkout.Calls);
+    }
+
     [Fact]
     public async Task Partial_payment_is_validated_against_current_balance_and_maximum()
     {

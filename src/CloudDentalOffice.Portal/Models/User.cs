@@ -39,7 +39,7 @@ public class User : ITenantEntity
     public string FirstName { get; set; } = string.Empty;
     public string LastName { get; set; } = string.Empty;
     
-    public string Role { get; set; } = "Staff"; // Admin, Dentist, Staff
+    public string Role { get; set; } = "Staff"; // Admin, Dentist, Staff, Patient
 
     /// <summary>
     /// Whether this user can invite other users to the organization
