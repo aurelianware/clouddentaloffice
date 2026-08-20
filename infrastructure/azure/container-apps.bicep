@@ -320,6 +320,11 @@ resource schedulingService 'Microsoft.App/containerApps@2023-05-01' = {
           ], empty(searchConsoleServiceAccountEmail) || empty(searchConsolePrivateKey) ? [] : [
             { name: 'SearchConsoleCredentials__third-set-smiles__ClientEmail', value: searchConsoleServiceAccountEmail }
             { name: 'SearchConsoleCredentials__third-set-smiles__PrivateKey', secretRef: 'search-console-private-key' }
+            { name: 'SearchConsoleBootstrap__Enabled', value: 'true' }
+            { name: 'SearchConsoleBootstrap__TenantId', value: initialTenantId }
+            { name: 'SearchConsoleBootstrap__PropertyUrl', value: 'sc-domain:3rdsetsmiles.com' }
+            { name: 'SearchConsoleBootstrap__CredentialReference', value: 'third-set-smiles' }
+            { name: 'SearchConsoleBootstrap__CanonicalHost', value: 'www.3rdsetsmiles.com' }
           ])
         }
       ]

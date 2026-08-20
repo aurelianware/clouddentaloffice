@@ -160,8 +160,8 @@ app.MapPut("/api/admin/search-console", async (UpdateSearchConsoleIntegration re
     SchedulingDbContext db, CancellationToken cancellationToken) =>
 {
     var tenantId = SchedulingIntegrationAdminApi.TenantId(user)!;
-    if (!Uri.TryCreate(request.PropertyUrl, UriKind.Absolute, out var property) || property.Scheme != Uri.UriSchemeHttps ||
-        string.IsNullOrWhiteSpace(request.CredentialReference)) return Results.ValidationProblem(new Dictionary<string, string[]> { ["configuration"] = ["An HTTPS property URL and credential reference are required."] });
+    if (!SearchConsoleProperty.IsValid(request.PropertyUrl) ||
+        string.IsNullOrWhiteSpace(request.CredentialReference)) return Results.ValidationProblem(new Dictionary<string, string[]> { ["configuration"] = ["A valid Search Console URL-prefix or domain property and credential reference are required."] });
     var row = await db.SearchConsoleIntegrations.SingleOrDefaultAsync(x => x.TenantId == tenantId, cancellationToken);
     if (row is null) { row = new() { TenantId = tenantId }; db.SearchConsoleIntegrations.Add(row); }
     row.Enabled = request.Enabled; row.PropertyUrl = request.PropertyUrl.Trim();
@@ -375,6 +375,7 @@ using (var scope = app.Services.CreateScope())
     await SchedulingAvailabilitySchema.EnsureAsync(db);
     await PatientAcquisitionSchema.EnsureAsync(db);
     await SearchConsoleSchema.EnsureAsync(db);
+    await SearchConsoleBootstrap.ApplyAsync(db, builder.Configuration);
 }
 
 app.Run();

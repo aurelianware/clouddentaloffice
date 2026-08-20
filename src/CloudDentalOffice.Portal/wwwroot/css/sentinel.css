@@ -75,6 +75,74 @@ a:hover {
   text-shadow: 0 0 8px var(--cyan-glow);
 }
 
+/* === NAVIGATION READABILITY === */
+.mud-drawer .mud-nav-link,
+.mud-drawer .mud-nav-group .mud-nav-link,
+.mud-drawer .mud-nav-group > .mud-nav-link {
+  color: #d7dce0 !important;
+  font-size: 1rem;
+  font-weight: 550;
+}
+
+.mud-drawer .mud-nav-link .mud-icon-root {
+  color: #aeb6bc !important;
+}
+
+.mud-drawer .mud-nav-link:hover {
+  background-color: rgba(0, 255, 255, 0.12) !important;
+  color: #ffffff !important;
+  text-shadow: none;
+}
+
+.mud-drawer .mud-nav-link.active {
+  background-color: #18c5ca !important;
+  color: #001414 !important;
+  font-weight: 700;
+}
+
+.mud-drawer .mud-nav-link.active .mud-icon-root {
+  color: #001414 !important;
+}
+
+/* === SELECT/DROPDOWN READABILITY === */
+.patient-acquisition-date-range .mud-input,
+.patient-acquisition-date-range .mud-input-slot,
+.patient-acquisition-date-range .mud-input-label,
+.patient-acquisition-date-range .mud-select-input,
+.patient-acquisition-date-range .mud-icon-root {
+  color: #f4f7f8 !important;
+}
+
+.mud-popover .mud-list {
+  background-color: #101415 !important;
+  color: #f4f7f8 !important;
+  border: 1px solid rgba(0, 255, 255, 0.35);
+}
+
+.mud-popover .mud-list-item,
+.mud-popover .mud-list-item .mud-list-item-text,
+.mud-popover .mud-list-item .mud-typography {
+  color: #f4f7f8 !important;
+  font-size: 1rem;
+  font-weight: 500;
+}
+
+.mud-popover .mud-list-item:hover {
+  background-color: #263235 !important;
+}
+
+.mud-popover .mud-list-item.mud-selected-item,
+.mud-popover .mud-list-item.mud-selected-item:hover {
+  background-color: #18c5ca !important;
+}
+
+.mud-popover .mud-list-item.mud-selected-item,
+.mud-popover .mud-list-item.mud-selected-item .mud-list-item-text,
+.mud-popover .mud-list-item.mud-selected-item .mud-typography {
+  color: #001414 !important;
+  font-weight: 700;
+}
+
 /* === NOTIFICATIONS === */
 .mud-snackbar {
   border: 1px solid rgba(255, 255, 255, 0.35);
