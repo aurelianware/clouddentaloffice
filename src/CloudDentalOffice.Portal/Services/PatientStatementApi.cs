@@ -17,11 +17,18 @@ public sealed record PatientStatementDetailResponse(PatientStatementSummaryRespo
     Guid? SupersedesStatementId, Guid? SupersededByStatementId, DateTime? VoidedAt, string? VoidReasonCode,
     IReadOnlyList<PatientStatementLinePreview> Lines);
 
+/// <summary>
+/// Staff billing HTTP surface for patient statements. Read operations require
+/// <see cref="BillingPermissions.View"/>; statement generation and lifecycle
+/// mutations (finalize/status/void/supersede) require <see cref="BillingPermissions.Adjust"/>,
+/// matching the in-process staff billing service. Patients never reach these routes —
+/// they read finalized statements through the identity-bound patient billing surface.
+/// </summary>
 public static class PatientStatementApi
 {
     public static IEndpointRouteBuilder MapPatientStatementApi(this IEndpointRouteBuilder endpoints)
     {
-        var group = endpoints.MapGroup("/api/patient-statements").RequireAuthorization().WithTags("Patient Statements");
+        var group = endpoints.MapGroup("/api/patient-statements").WithTags("Patient Statements (Staff)");
         group.MapPost("/preview", async (StatementPreviewRequest request, ClaimsPrincipal user,
             IPatientStatementService statements, TimeProvider clock, CancellationToken cancellationToken) =>
         {
@@ -29,7 +36,7 @@ public static class PatientStatementApi
             if (tenant is null) return Results.Forbid();
             return Results.Ok(await statements.PreviewAsync(tenant, request.PatientId, request.StatementDate,
                 request.DueDate, request.LedgerThroughDate ?? clock.GetUtcNow().UtcDateTime, cancellationToken));
-        });
+        }).RequireAuthorization(BillingAuthorization.ViewPolicy);
         group.MapPost("", async (CreateStatementRequest request, ClaimsPrincipal user,
             IPatientStatementService statements, TimeProvider clock, CancellationToken cancellationToken) =>
         {
@@ -40,14 +47,14 @@ public static class PatientStatementApi
                 request.DueDate, request.LedgerThroughDate ?? clock.GetUtcNow().UtcDateTime,
                 request.Finalize, actor, cancellationToken);
             return Results.Created($"/api/patient-statements/{statement.StatementId}", Summary(statement));
-        });
+        }).RequireAuthorization(BillingAuthorization.AdjustPolicy);
         group.MapGet("", async (int? patientId, ClaimsPrincipal user, IPatientStatementService statements,
             CancellationToken cancellationToken) =>
         {
             var tenant = PatientAccountApi.TrustedTenantId(user);
             if (tenant is null) return Results.Forbid();
             return Results.Ok((await statements.ListAsync(tenant, patientId, cancellationToken)).Select(Summary));
-        });
+        }).RequireAuthorization(BillingAuthorization.ViewPolicy);
         group.MapGet("/{statementId:guid}", async (Guid statementId, ClaimsPrincipal user,
             IPatientStatementService statements, CancellationToken cancellationToken) =>
         {
@@ -55,20 +62,24 @@ public static class PatientStatementApi
             if (tenant is null) return Results.Forbid();
             var statement = await statements.GetAsync(tenant, statementId, cancellationToken);
             return statement is null ? Results.NotFound() : Results.Ok(Detail(statement));
-        });
+        }).RequireAuthorization(BillingAuthorization.ViewPolicy);
         group.MapPost("/{statementId:guid}/finalize", async (Guid statementId, ClaimsPrincipal user,
             IPatientStatementService statements, CancellationToken cancellationToken) =>
-            await WithTenant(user, tenant => statements.FinalizeAsync(tenant, statementId, cancellationToken)));
+            await WithTenant(user, tenant => statements.FinalizeAsync(tenant, statementId, cancellationToken)))
+            .RequireAuthorization(BillingAuthorization.AdjustPolicy);
         group.MapPost("/{statementId:guid}/status", async (Guid statementId, TransitionStatementRequest request,
             ClaimsPrincipal user, IPatientStatementService statements, CancellationToken cancellationToken) =>
-            await WithTenant(user, tenant => statements.TransitionAsync(tenant, statementId, request.Status, cancellationToken)));
+            await WithTenant(user, tenant => statements.TransitionAsync(tenant, statementId, request.Status, cancellationToken)))
+            .RequireAuthorization(BillingAuthorization.AdjustPolicy);
         group.MapPost("/{statementId:guid}/void", async (Guid statementId, VoidStatementRequest request,
             ClaimsPrincipal user, IPatientStatementService statements, CancellationToken cancellationToken) =>
-            await WithTenant(user, tenant => statements.VoidAsync(tenant, statementId, request.ReasonCode, cancellationToken)));
+            await WithTenant(user, tenant => statements.VoidAsync(tenant, statementId, request.ReasonCode, cancellationToken)))
+            .RequireAuthorization(BillingAuthorization.AdjustPolicy);
         group.MapPost("/{statementId:guid}/supersede", async (Guid statementId, SupersedeStatementRequest request,
             ClaimsPrincipal user, IPatientStatementService statements, CancellationToken cancellationToken) =>
             await WithTenant(user, tenant => statements.SupersedeAsync(tenant, statementId,
-                request.ReplacementStatementId, cancellationToken)));
+                request.ReplacementStatementId, cancellationToken)))
+            .RequireAuthorization(BillingAuthorization.AdjustPolicy);
         return endpoints;
     }
 
