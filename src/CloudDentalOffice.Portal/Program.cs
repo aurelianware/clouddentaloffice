@@ -498,6 +498,11 @@ using (var scope = app.Services.CreateScope())
         // fail with "violates foreign key constraint FK_Appointments_Patients_...".
         await StaleForeignKeyCleanup.ApplyAsync(dbContext, databaseProvider, logger);
 
+        // EnsureCreated does not add tables introduced after an existing
+        // production database was provisioned. Reconcile the review-outreach
+        // schema before the tenant bootstrap queries its settings table.
+        await ReviewOutreachSchemaReconciliation.ApplyAsync(dbContext, databaseProvider, logger);
+
         await InitialTenantBootstrap.ApplyAsync(dbContext, builder.Configuration);
 
         // Sample people, claims, and credentials must never be created in production.
