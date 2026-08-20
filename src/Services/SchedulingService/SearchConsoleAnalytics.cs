@@ -71,6 +71,22 @@ public sealed record SearchConsoleRow(DateOnly Date, string Query, string Page, 
     long Clicks, long Impressions, double Position);
 public sealed record SearchConsoleQueryResult(IReadOnlyList<SearchConsoleRow> Rows);
 
+public static class SearchConsoleProperty
+{
+    public static bool IsValid(string? value)
+    {
+        var property = value?.Trim();
+        if (string.IsNullOrWhiteSpace(property)) return false;
+        if (property.StartsWith("sc-domain:", StringComparison.OrdinalIgnoreCase))
+        {
+            var host = property["sc-domain:".Length..];
+            return host.Length <= 253 && !host.Contains('/') && !host.Contains(':') &&
+                Uri.CheckHostName(host) != UriHostNameType.Unknown;
+        }
+        return Uri.TryCreate(property, UriKind.Absolute, out var uri) && uri.Scheme == Uri.UriSchemeHttps;
+    }
+}
+
 public interface ISearchConsoleClient
 {
     Task<SearchConsoleQueryResult> QueryAsync(string tenantId, string credentialReference,
@@ -148,7 +164,7 @@ public sealed class GoogleSearchConsoleClient(HttpClient http, IConfiguration co
     {
         if (string.IsNullOrWhiteSpace(tenantId) || tenantId.Length > 64) throw new ArgumentException("Tenant is invalid.");
         if (string.IsNullOrWhiteSpace(reference)) throw new SearchConsoleApiException("credential_reference_missing", false);
-        if (!Uri.TryCreate(request.PropertyUrl, UriKind.Absolute, out var uri) || uri.Scheme != Uri.UriSchemeHttps)
+        if (!SearchConsoleProperty.IsValid(request.PropertyUrl))
             throw new SearchConsoleApiException("invalid_property", false);
     }
     private static string Base64Url(byte[] value) => Convert.ToBase64String(value).TrimEnd('=').Replace('+', '-').Replace('/', '_');

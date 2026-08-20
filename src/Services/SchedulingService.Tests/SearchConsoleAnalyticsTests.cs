@@ -34,6 +34,17 @@ public sealed class SearchConsoleAnalyticsTests : IDisposable
         Assert.Equal(production, result.IsProduction);
     }
 
+    [Theory]
+    [InlineData("https://www.3rdsetsmiles.com/", true)]
+    [InlineData("sc-domain:3rdsetsmiles.com", true)]
+    [InlineData("sc-domain:", false)]
+    [InlineData("sc-domain:3rdsetsmiles.com/path", false)]
+    [InlineData("http://3rdsetsmiles.com/", false)]
+    public void Search_console_property_accepts_url_prefix_and_domain_properties(string value, bool expected)
+    {
+        Assert.Equal(expected, SearchConsoleProperty.IsValid(value));
+    }
+
     [Fact]
     public async Task Google_client_authenticates_and_sends_paginated_dimension_query()
     {
