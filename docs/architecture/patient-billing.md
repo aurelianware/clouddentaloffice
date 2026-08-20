@@ -94,23 +94,125 @@ Supported lifecycle states are `Draft`, `Ready`, `Sent`, `PartiallyPaid`, `Paid`
 
 ## Staff APIs
 
-The Portal exposes authenticated staff-only reads:
+The Portal exposes permission-bound staff account endpoints. Each route names the
+billing permission it requires:
 
-- `GET /api/patient-accounts/patients/{patientId}/summary`
-- `GET /api/patient-accounts/patients/{patientId}/ledger`
+- `GET /api/patient-accounts/patients/{patientId}/summary` — `Billing.View`
+- `GET /api/patient-accounts/patients/{patientId}/ledger` — `Billing.View`
+- `POST /api/patient-accounts/{patientAccountId}/checkout` — `Billing.PostPayment`
+  (staff-initiated payment link; the amount is derived from the authoritative
+  ledger balance, never the request)
 
-It also exposes authenticated statement administration:
+It also exposes permission-bound statement administration:
 
-- `POST /api/patient-statements/preview`
-- `POST /api/patient-statements`
-- `GET /api/patient-statements?patientId={id}`
-- `GET /api/patient-statements/{statementId}`
-- `POST /api/patient-statements/{statementId}/finalize`
-- `POST /api/patient-statements/{statementId}/status`
-- `POST /api/patient-statements/{statementId}/void`
-- `POST /api/patient-statements/{statementId}/supersede`
+- `POST /api/patient-statements/preview` — `Billing.View`
+- `POST /api/patient-statements` — `Billing.Adjust`
+- `GET /api/patient-statements?patientId={id}` — `Billing.View`
+- `GET /api/patient-statements/{statementId}` — `Billing.View`
+- `POST /api/patient-statements/{statementId}/finalize` — `Billing.Adjust`
+- `POST /api/patient-statements/{statementId}/status` — `Billing.Adjust`
+- `POST /api/patient-statements/{statementId}/void` — `Billing.Adjust`
+- `POST /api/patient-statements/{statementId}/supersede` — `Billing.Adjust`
 
-Tenant identity comes from authenticated claims and is not accepted as a query, route, or request-header parameter. `patientId` is only a filter within that trusted tenant. There are no anonymous statement URLs.
+Authorization is enforced at the API boundary through named policies
+(`BillingAuthorization`), not through UI hiding or handler-local role string
+comparisons. An authenticated principal without the required billing permission —
+including a signed-in patient — receives `403`, never another patient's financial
+data. Tenant identity comes from authenticated claims and is not accepted as a
+query, route, or request-header parameter. `patientId` is only a filter within that
+trusted tenant. There are no anonymous statement URLs.
+
+## Patient self-service billing APIs
+
+The identity-bound patient surface lives under `/api/patient/billing` and requires
+the `Patient` role (`BillingAuthorization.PatientSelfServicePolicy`). None of these
+routes accept a `patientId`, `patientAccountId`, `statementId`, or `paymentId` as
+the authority for record selection; the account is resolved server-side from the
+authenticated `PatientPortalIdentity`.
+
+- `GET /api/patient/billing/account` — own balance, credits, statements, payments
+- `GET /api/patient/billing/statements` — own non-draft, non-voided statements
+- `GET /api/patient/billing/payments` — own payment history (safe references only)
+- `POST /api/patient/billing/checkout` — Checkout for own account; the body carries
+  only `{ selection, statementId?, customAmount? }`. A supplied `statementId` is
+  validated to belong to the resolved account (otherwise `404`), so a patient can
+  never pay or probe another patient's statement.
+
+## Billing security boundary
+
+Authorization is enforced at the API boundary. The system does not rely on UI
+control hiding, route secrecy, unprivileged callers behaving correctly, or tenant
+isolation alone. A valid identity inside Tenant A still cannot reach every patient's
+financial data in Tenant A.
+
+```
+                  ┌─────────────────────┐
+Patient ----------> Patient Billing API │
+                  │ identity-bound      │
+                  └──────────┬──────────┘
+                             │  server-resolved PatientPortalIdentity
+                             ▼
+                       Patient Account
+                  ┌─────────────────────┐
+Billing Staff ----> Staff Billing API   │
+                  │ permission-bound    │
+                  └──────────┬──────────┘
+                             │  Billing.* permission + tenant claim
+                             ▼
+                       Patient Account
+```
+
+**Patient identity resolution.** Patient requests never carry a patient or account
+identifier as the selection authority. The server maps the authenticated issuer +
+subject + tenant to a single active `PatientPortalIdentity`, then derives the
+`PatientId` and `PatientAccount`. Missing, inactive, wrong-tenant, and wrong-subject
+bindings fail closed.
+
+**Staff billing permissions.** Staff routes are bound to `Billing.View`,
+`Billing.PostPayment`, `Billing.Adjust`, `Billing.Refund`, and
+`Billing.ConfigurePayments` via `BillingPermissions.Has` — the same permission model
+the in-process staff billing service uses. Refunds, Stripe Connect onboarding,
+payment-processor configuration, and reconciliation remain staff-only and are never
+reachable by a patient or ordinary clinical role.
+
+**Tenant isolation.** Authorization never replaces tenant checks. Every billing
+operation additionally requires `resource.TenantId == authenticatedTenant`. Staff
+endpoints require an authorized permission *and* a tenant match; patient endpoints
+require patient identity *and* a tenant match *and* server-resolved ownership.
+
+**IDOR prevention.** Because patient routes take no record identifier as authority
+and the checkout validates statement ownership against the resolved account, Patient
+A cannot retrieve or act on Patient B's account, ledger, statements, payments, or
+Checkout — same-tenant or cross-tenant — even knowing the corresponding IDs.
+Existence is hidden behind `404`/`403` rather than leaked.
+
+**Response semantics.** `401` unauthenticated, `403` authenticated but not
+authorized (or a login not linked to a billing account), `404` where hiding
+existence is preferable.
+
+### Route-security matrix
+
+| Route | Caller | Authentication | Authorization | Tenant validation | Patient/account ownership |
+| --- | --- | --- | --- | --- | --- |
+| `GET /api/patient-accounts/patients/{patientId}/summary` | Staff | Required | `Billing.View` | Claim-scoped | `patientId` filtered within tenant |
+| `GET /api/patient-accounts/patients/{patientId}/ledger` | Staff | Required | `Billing.View` | Claim-scoped | `patientId` filtered within tenant |
+| `POST /api/patient-accounts/{patientAccountId}/checkout` | Staff | Required | `Billing.PostPayment` | Checkout service re-validates tenant | Account must exist in tenant; amount from ledger |
+| `POST /api/patient-statements/preview` | Staff | Required | `Billing.View` | Claim-scoped | `patientId` filtered within tenant |
+| `POST /api/patient-statements` | Staff | Required | `Billing.Adjust` | Claim-scoped | `patientId` filtered within tenant |
+| `GET /api/patient-statements` | Staff | Required | `Billing.View` | Claim-scoped | `patientId` filter within tenant |
+| `GET /api/patient-statements/{statementId}` | Staff | Required | `Billing.View` | Claim-scoped | Statement filtered within tenant |
+| `POST /api/patient-statements/{statementId}/finalize` | Staff | Required | `Billing.Adjust` | Claim-scoped | Statement filtered within tenant |
+| `POST /api/patient-statements/{statementId}/status` | Staff | Required | `Billing.Adjust` | Claim-scoped | Statement filtered within tenant |
+| `POST /api/patient-statements/{statementId}/void` | Staff | Required | `Billing.Adjust` | Claim-scoped | Statement filtered within tenant |
+| `POST /api/patient-statements/{statementId}/supersede` | Staff | Required | `Billing.Adjust` | Claim-scoped | Statement filtered within tenant |
+| `GET /api/patient/billing/account` | Patient | Required | `Patient` role | Identity tenant | Account resolved from identity |
+| `GET /api/patient/billing/statements` | Patient | Required | `Patient` role | Identity tenant | Account resolved from identity |
+| `GET /api/patient/billing/payments` | Patient | Required | `Patient` role | Identity tenant | Account resolved from identity |
+| `POST /api/patient/billing/checkout` | Patient | Required | `Patient` role | Identity tenant | Account resolved from identity; `statementId` ownership validated |
+| Stripe refunds / Connect onboarding / processor config / reconciliation | Staff | Required | `Billing.Refund` / `Billing.ConfigurePayments` (in-process staff service) | Claim-scoped | N/A (tenant-scoped) |
+
+Staff-initiated Checkout and patient self-service Checkout are deliberately separate
+endpoints so the two trust models never share one handler.
 
 ## Staff billing administration
 

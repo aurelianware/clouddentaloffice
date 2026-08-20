@@ -419,6 +419,10 @@ builder.Services.Configure<PatientCheckoutOptions>(builder.Configuration.GetSect
 builder.Services.AddScoped<IPatientBalanceCheckoutService, PatientBalanceCheckoutService>();
 builder.Services.AddScoped<IPatientBillingPortalService, PatientBillingPortalService>();
 builder.Services.AddScoped<IStaffPatientBillingService, StaffPatientBillingService>();
+
+// Billing HTTP boundary: staff endpoints are permission-bound, patient endpoints
+// are identity-bound. Registers the named policies used by the billing route groups.
+builder.Services.AddBillingAuthorization();
 builder.Services.Configure<PatientBillingNotificationOptions>(
     builder.Configuration.GetSection(PatientBillingNotificationOptions.SectionName));
 builder.Services.AddScoped<IPatientBillingNotificationService, PatientBillingNotificationService>();
@@ -561,6 +565,7 @@ app.MapHealthChecks("/health/ready", new HealthCheckOptions
 
 app.MapPatientAccountApi();
 app.MapPatientStatementApi();
+app.MapPatientBillingApi();
 
 app.MapBlazorHub();
 app.MapFallbackToPage("/_Host");
