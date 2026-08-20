@@ -30,7 +30,7 @@
             <MudAutocomplete T="Patient" Value="_selectedPatient" ValueChanged="SelectPatient"
                              Label="Patient" Placeholder="Search by patient name, email, or phone"
                              SearchFunc="SearchPatients" ToStringFunc="@(patient => patient?.FullName ?? string.Empty)"
-                             Variant="Variant.Outlined" Clearable="true" MaxItems="20" Dense="true"
+                             Variant="Variant.Outlined" Clearable="true" MaxItems="@PatientSearchResultLimit" Dense="true"
                              Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search"
                              Style="flex: 1 1 32rem;" />
             <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="LoadAccount"
@@ -65,6 +65,7 @@
 </MudContainer>
 
 @code {
+    private const int PatientSearchResultLimit = 20;
     private ClaimsPrincipal _user = new(new ClaimsIdentity()); private StaffBillingDashboard? _dashboard; private StaffPatientBillingAccount? _account; private List<Patient> _patients = new(); private Patient? _selectedPatient; private int _patientId; private bool _busy;
     private decimal _paymentAmount, _adjustmentAmount, _allocationAmount, _refundAmount; private string _reference = "", _reason = "", _allocationPayment = "", _allocationLedger = "", _allocationId = "", _unapplyReason = "", _refundPayment = "", _refundReason = "requested_by_customer"; private StripeReconciliationSummary? _reconciliation;
     private PatientPaymentMethod _method = PatientPaymentMethod.Cash; private PatientLedgerEntryType _adjustmentType = PatientLedgerEntryType.Credit; private DateTime? _dueDate = DateTime.Today.AddDays(30);
@@ -104,7 +105,7 @@
         return Task.FromResult(_patients.Where(patient => patient.FullName.Contains(search, StringComparison.OrdinalIgnoreCase)
             || (patient.Email?.Contains(search, StringComparison.OrdinalIgnoreCase) ?? false)
             || (patient.PrimaryPhone?.Contains(search, StringComparison.OrdinalIgnoreCase) ?? false))
-            .OrderBy(patient => patient.LastName).ThenBy(patient => patient.FirstName).Take(20).AsEnumerable());
+            .OrderBy(patient => patient.LastName).ThenBy(patient => patient.FirstName).Take(PatientSearchResultLimit).AsEnumerable());
     }
     private Task SelectPatient(Patient? patient)
     {
