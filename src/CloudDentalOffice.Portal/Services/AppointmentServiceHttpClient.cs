@@ -31,6 +31,9 @@ public sealed class AppointmentServiceHttpClient(
         // Tolerate both string- and number-encoded enums from the scheduling service.
         Converters = { new JsonStringEnumConverter() }
     };
+    // Minimal APIs use the default numeric enum representation for request binding.
+    // Keep request serialization separate from the permissive response reader above.
+    private static readonly JsonSerializerOptions RequestJson = new(JsonSerializerDefaults.Web);
 
     public async Task<List<Appointment>> GetAppointmentsAsync(DateTime date)
     {
@@ -99,7 +102,7 @@ public sealed class AppointmentServiceHttpClient(
             AppointmentTypeId = NullIfBlank(appointment.AppointmentType),
             ReasonForVisit = NullIfBlank(appointment.ReasonForVisit)
         };
-        var response = await http.PutAsJsonAsync($"/api/appointments/{id}", request, Json);
+        var response = await http.PutAsJsonAsync($"/api/appointments/{id}", request, RequestJson);
         await EnsureSuccess(response);
         var updated = (await response.Content.ReadFromJsonAsync<AppointmentDto>(Json))!;
         var model = ToModel(updated);
