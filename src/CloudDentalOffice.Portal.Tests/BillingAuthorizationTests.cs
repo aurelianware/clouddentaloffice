@@ -112,8 +112,8 @@ public sealed class BillingAuthorizationTests
             ["GET /api/patient-accounts/patients/{patientId:int}/ledger"] = BillingAuthorization.ViewPolicy,
             ["POST /api/patient-accounts/{patientAccountId:guid}/checkout"] = BillingAuthorization.PostPaymentPolicy,
             ["POST /api/patient-statements/preview"] = BillingAuthorization.ViewPolicy,
-            ["POST /api/patient-statements/"] = BillingAuthorization.AdjustPolicy,
-            ["GET /api/patient-statements/"] = BillingAuthorization.ViewPolicy,
+            ["POST /api/patient-statements"] = BillingAuthorization.AdjustPolicy,
+            ["GET /api/patient-statements"] = BillingAuthorization.ViewPolicy,
             ["GET /api/patient-statements/{statementId:guid}"] = BillingAuthorization.ViewPolicy,
             ["POST /api/patient-statements/{statementId:guid}/finalize"] = BillingAuthorization.AdjustPolicy,
             ["POST /api/patient-statements/{statementId:guid}/status"] = BillingAuthorization.AdjustPolicy,
@@ -161,7 +161,12 @@ public sealed class BillingAuthorizationTests
                      .SelectMany(source => source.Endpoints).OfType<RouteEndpoint>())
         {
             var method = endpoint.Metadata.GetMetadata<HttpMethodMetadata>()?.HttpMethods.FirstOrDefault() ?? "ANY";
-            var route = $"{method} /{endpoint.RoutePattern.RawText!.TrimStart('/')}";
+            // A collection endpoint mapped with an empty pattern inside a group prefix
+            // renders with a trailing slash (e.g. "/api/patient-statements/"); normalize
+            // it away so the assertions are independent of that framework detail.
+            var path = "/" + endpoint.RoutePattern.RawText!.TrimStart('/');
+            if (path.Length > 1) path = path.TrimEnd('/');
+            var route = $"{method} {path}";
             var policies = endpoint.Metadata.GetOrderedMetadata<IAuthorizeData>()
                 .Select(x => x.Policy).Where(x => !string.IsNullOrEmpty(x)).Select(x => x!).ToList();
             result[route] = policies;

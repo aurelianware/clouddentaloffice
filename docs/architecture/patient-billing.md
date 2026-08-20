@@ -94,7 +94,8 @@ Supported lifecycle states are `Draft`, `Ready`, `Sent`, `PartiallyPaid`, `Paid`
 
 ## Staff APIs
 
-The Portal exposes permission-bound staff reads. Both require `Billing.View`:
+The Portal exposes permission-bound staff account endpoints. Each route names the
+billing permission it requires:
 
 - `GET /api/patient-accounts/patients/{patientId}/summary` — `Billing.View`
 - `GET /api/patient-accounts/patients/{patientId}/ledger` — `Billing.View`
