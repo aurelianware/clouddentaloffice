@@ -1,5 +1,6 @@
 using CloudDentalOffice.Portal.Data;
 using CloudDentalOffice.Portal.Models;
+using CloudDentalOffice.Portal.Utilities;
 using Microsoft.EntityFrameworkCore;
 using CloudDentalOffice.Portal.Services.Tenancy;
 
@@ -184,7 +185,8 @@ public class AuthService : IAuthService
 
         await _context.SaveChangesAsync();
         
-        _logger.LogInformation("Created new tenant {TenantId} with {ProviderCount} default providers", tenantId, defaultProviders.Count);
+        var safeTenantId = LogSanitizer.Sanitize(tenantId);
+        _logger.LogInformation("Created new tenant {TenantId} with {ProviderCount} default providers", safeTenantId, defaultProviders.Count);
         
         return true;
     }
