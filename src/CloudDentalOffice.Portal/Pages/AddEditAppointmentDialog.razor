@@ -146,7 +146,8 @@
     <DialogActions>
         <MudButton OnClick="Cancel" Color="Color.Default">Cancel</MudButton>
         <MudButton OnClick="Save" Color="Color.Primary" Variant="Variant.Filled" Disabled="@_saving"
-                   aria-busy="@_saving" aria-label="@(IsEditMode ? "Update appointment" : "Schedule appointment")">
+                   aria-busy="@(_saving ? "true" : "false")"
+                   aria-label="@(IsEditMode ? "Update appointment" : "Schedule appointment")">
             @if (_saving)
             {
                 <MudProgressCircular Size="Size.Small" Indeterminate="true" aria-label="Saving appointment" />

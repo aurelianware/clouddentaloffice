@@ -13,7 +13,8 @@
 <MudLayout>
     <MudAppBar Elevation="3" Dense="true" Style="border-bottom: 1px solid rgba(0, 255, 255, 0.3);" aria-label="Application header">
         <MudIconButton Icon="@Icons.Material.Filled.Menu" Color="Color.Primary" Edge="Edge.Start"
-                       OnClick="@ToggleDrawer" aria-label="Toggle navigation menu" aria-expanded="@_drawerOpen" />
+                       OnClick="@ToggleDrawer" aria-label="Toggle navigation menu"
+                       aria-expanded="@(_drawerOpen ? "true" : "false")" />
         
         <!-- The Sentinel Logo - Dental Edition -->
         <img src="/images/logo-clouddental-sentinel-primary.svg" 
