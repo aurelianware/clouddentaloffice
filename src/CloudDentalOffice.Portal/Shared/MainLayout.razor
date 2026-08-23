@@ -8,9 +8,12 @@
 <MudDialogProvider />
 <MudSnackbarProvider />
 
+<a class="skip-link" href="#main-content">Skip to main content</a>
+
 <MudLayout>
-    <MudAppBar Elevation="3" Dense="true" Style="border-bottom: 1px solid rgba(0, 255, 255, 0.3);">
-        <MudIconButton Icon="@Icons.Material.Filled.Menu" Color="Color.Primary" Edge="Edge.Start" OnClick="@ToggleDrawer" />
+    <MudAppBar Elevation="3" Dense="true" Style="border-bottom: 1px solid rgba(0, 255, 255, 0.3);" aria-label="Application header">
+        <MudIconButton Icon="@Icons.Material.Filled.Menu" Color="Color.Primary" Edge="Edge.Start"
+                       OnClick="@ToggleDrawer" aria-label="Toggle navigation menu" aria-expanded="@_drawerOpen" />
         
         <!-- The Sentinel Logo - Dental Edition -->
         <img src="/images/logo-clouddental-sentinel-primary.svg" 
@@ -23,9 +26,9 @@
         
         <MudSpacer />
         
-        <MudIconButton Icon="@Icons.Material.Filled.Notifications" Color="Color.Primary" />
-        <MudIconButton Icon="@Icons.Material.Filled.AccountCircle" Color="Color.Primary" />
-        <MudIconButton Icon="@Icons.Material.Filled.Logout" Color="Color.Primary" OnClick="Logout" title="Logout" />
+        <MudIconButton Icon="@Icons.Material.Filled.Notifications" Color="Color.Primary" aria-label="Notifications" />
+        <MudIconButton Icon="@Icons.Material.Filled.AccountCircle" Color="Color.Primary" aria-label="User account" />
+        <MudIconButton Icon="@Icons.Material.Filled.Logout" Color="Color.Primary" OnClick="Logout" aria-label="Log out" title="Log out" />
     </MudAppBar>
     
     <MudDrawer @bind-Open="_drawerOpen" Elevation="2" 
@@ -33,7 +36,7 @@
         <MudDrawerHeader Style="background: #000000; border-bottom: 2px solid #00ffff;">
             <MudText Typo="Typo.h6" Style="color: #00ffff; font-weight: bold;">The Sentinel</MudText>
         </MudDrawerHeader>
-        <MudNavMenu>
+        <MudNavMenu aria-label="Primary navigation">
             <AuthorizeView Roles="Patient">
                 <MudNavGroup Title="Patient Portal" Icon="@Icons.Material.Filled.AccountCircle" Expanded="true">
                     <MudNavLink Href="/patient/billing" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.ReceiptLong">Billing</MudNavLink>
@@ -162,16 +165,16 @@
         
         <!-- Footer branding in drawer -->
         <div style="position: absolute; bottom: 0; left: 0; right: 0; padding: 16px; border-top: 1px solid rgba(0, 255, 255, 0.2); text-align: center;">
-            <MudText Typo="Typo.caption" Style="color: rgba(255, 255, 255, 0.4);">
+            <MudText Typo="Typo.caption" Style="color: #b8c0c4;">
                 The Sentinel
             </MudText>
-            <MudText Typo="Typo.caption" Style="color: rgba(0, 255, 255, 0.6); margin-top: 4px;">
+            <MudText Typo="Typo.caption" Style="color: #53dfe3; margin-top: 4px;">
                 v1.0 Production
             </MudText>
         </div>
     </MudDrawer>
     
-    <MudMainContent>
+    <MudMainContent id="main-content" tabindex="-1" role="main">
         <MudContainer MaxWidth="MaxWidth.ExtraExtraLarge" Class="my-4">
             @Body
         </MudContainer>

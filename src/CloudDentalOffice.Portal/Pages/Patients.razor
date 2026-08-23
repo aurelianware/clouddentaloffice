@@ -29,7 +29,7 @@
 
     @if (!string.IsNullOrEmpty(_errorMessage))
     {
-        <MudAlert Severity="Severity.Error" Variant="Variant.Filled" Class="mt-4">
+        <MudAlert Severity="Severity.Error" Variant="Variant.Filled" Class="mt-4" role="alert" aria-live="assertive">
             <MudText Typo="Typo.body1" Style="font-family: monospace; white-space: pre-wrap;">@_errorMessage</MudText>
         </MudAlert>
     }
@@ -37,7 +37,7 @@
     <MudPaper Class="pa-4 mt-4" Style="background: #0a0a0a; border: 1px solid rgba(0, 255, 255, 0.3);">
         @if (_loading)
         {
-            <MudProgressLinear Color="Color.Primary" Indeterminate="true" />
+            <MudProgressLinear Color="Color.Primary" Indeterminate="true" aria-label="Loading patients" />
         }
         else
         {

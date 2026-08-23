@@ -137,7 +137,7 @@
                 @if (!string.IsNullOrEmpty(_validationMessage))
                 {
                     <MudItem xs="12">
-                        <MudAlert Severity="Severity.Warning" Variant="Variant.Filled">@_validationMessage</MudAlert>
+                        <MudAlert Severity="Severity.Warning" Variant="Variant.Filled" role="alert" aria-live="assertive">@_validationMessage</MudAlert>
                     </MudItem>
                 }
             </MudGrid>
@@ -145,10 +145,11 @@
     </DialogContent>
     <DialogActions>
         <MudButton OnClick="Cancel" Color="Color.Default">Cancel</MudButton>
-        <MudButton OnClick="Save" Color="Color.Primary" Variant="Variant.Filled" Disabled="@_saving">
+        <MudButton OnClick="Save" Color="Color.Primary" Variant="Variant.Filled" Disabled="@_saving"
+                   aria-busy="@_saving" aria-label="@(IsEditMode ? "Update appointment" : "Schedule appointment")">
             @if (_saving)
             {
-                <MudProgressCircular Size="Size.Small" Indeterminate="true" />
+                <MudProgressCircular Size="Size.Small" Indeterminate="true" aria-label="Saving appointment" />
             }
             else
             {
