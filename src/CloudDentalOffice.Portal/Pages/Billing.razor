@@ -3,6 +3,7 @@
 @using CloudDentalOffice.Portal.Models
 @using System.Security.Claims
 @inject IStaffPatientBillingService BillingAdminService
+@inject IPatientService PatientService
 @inject AuthenticationStateProvider AuthenticationState
 @inject ISnackbar Snackbar
 
@@ -24,7 +25,18 @@
             @if (_reconciliation is not null){<MudTable Items="_reconciliation.Diagnostics" Dense="true"><HeaderContent><MudTh>Detected</MudTh><MudTh>Issue</MudTh><MudTh>Code</MudTh><MudTh>Safe reference</MudTh></HeaderContent><RowTemplate><MudTd>@context.DetectedAt.ToString("g")</MudTd><MudTd>@context.Type</MudTd><MudTd>@context.Code</MudTd><MudTd>@context.SafeExternalReference</MudTd></RowTemplate></MudTable>}
         </MudPaper>
     }
-    <MudPaper Class="pa-4 mt-4" Outlined="true"><MudStack Row="true" AlignItems="AlignItems.End" Spacing="2"><MudNumericField T="int" @bind-Value="_patientId" Label="Patient ID" Min="1" Variant="Variant.Outlined" /><MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="LoadAccount" Disabled="_busy">Open patient account</MudButton></MudStack></MudPaper>
+    <MudPaper Class="pa-4 mt-4" Outlined="true">
+        <MudStack Row="true" AlignItems="AlignItems.End" Spacing="2">
+            <MudAutocomplete T="Patient" Value="_selectedPatient" ValueChanged="SelectPatient"
+                             Label="Patient" Placeholder="Search by patient name, email, or phone"
+                             SearchFunc="SearchPatients" ToStringFunc="@(patient => patient?.FullName ?? string.Empty)"
+                             Variant="Variant.Outlined" Clearable="true" MaxItems="@PatientSearchResultLimit" Dense="true"
+                             Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search"
+                             Style="flex: 1 1 32rem;" />
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="LoadAccount"
+                       Disabled="@(_busy || _selectedPatient is null)">Open patient account</MudButton>
+        </MudStack>
+    </MudPaper>
     @if (_account is not null)
     {
         <MudPaper Class="pa-4 mt-4" Outlined="true">
@@ -53,13 +65,55 @@
 </MudContainer>
 
 @code {
-    private ClaimsPrincipal _user = new(new ClaimsIdentity()); private StaffBillingDashboard? _dashboard; private StaffPatientBillingAccount? _account; private int _patientId = 1; private bool _busy;
+    private const int PatientSearchResultLimit = 20;
+    private ClaimsPrincipal _user = new(new ClaimsIdentity()); private StaffBillingDashboard? _dashboard; private StaffPatientBillingAccount? _account; private List<Patient> _patients = new(); private Patient? _selectedPatient; private int _patientId; private bool _busy;
     private decimal _paymentAmount, _adjustmentAmount, _allocationAmount, _refundAmount; private string _reference = "", _reason = "", _allocationPayment = "", _allocationLedger = "", _allocationId = "", _unapplyReason = "", _refundPayment = "", _refundReason = "requested_by_customer"; private StripeReconciliationSummary? _reconciliation;
     private PatientPaymentMethod _method = PatientPaymentMethod.Cash; private PatientLedgerEntryType _adjustmentType = PatientLedgerEntryType.Credit; private DateTime? _dueDate = DateTime.Today.AddDays(30);
-    protected override async Task OnInitializedAsync(){_user=(await AuthenticationState.GetAuthenticationStateAsync()).User;await RefreshDashboard();}
+    protected override async Task OnInitializedAsync()
+    {
+        _user = (await AuthenticationState.GetAuthenticationStateAsync()).User;
+        try
+        {
+            _patients = await PatientService.GetPatientsAsync();
+        }
+        catch (Exception)
+        {
+            Snackbar.Add("Patient search is temporarily unavailable. Please try again after reloading.", Severity.Error);
+        }
+
+        try
+        {
+            await RefreshDashboard();
+        }
+        catch (Exception)
+        {
+            Snackbar.Add("Billing dashboard is temporarily unavailable. Please try again after reloading.", Severity.Error);
+        }
+    }
     private bool Can(string permission)=>BillingPermissions.Has(_user,permission);
     private IEnumerable<(string Label,decimal Amount)> DashboardMetrics()=>new[]{("Today collected",_dashboard!.TodayCollected),("Online payments",_dashboard.OnlinePayments),("Office payments",_dashboard.OfficePayments),("Failed online",_dashboard.FailedOnlinePayments),("Refunds",_dashboard.Refunds)};
     private async Task RefreshDashboard()=>_dashboard=await BillingAdminService.GetDashboardAsync(_user,DateTime.UtcNow);
+    private Task<IEnumerable<Patient>> SearchPatients(string value, CancellationToken token)
+    {
+        token.ThrowIfCancellationRequested();
+        var search = value?.Trim();
+        if (string.IsNullOrWhiteSpace(search))
+        {
+            return Task.FromResult(Enumerable.Empty<Patient>());
+        }
+
+        return Task.FromResult(_patients.Where(patient => patient.FullName.Contains(search, StringComparison.OrdinalIgnoreCase)
+            || (patient.Email?.Contains(search, StringComparison.OrdinalIgnoreCase) ?? false)
+            || (patient.PrimaryPhone?.Contains(search, StringComparison.OrdinalIgnoreCase) ?? false))
+            .OrderBy(patient => patient.LastName).ThenBy(patient => patient.FirstName).Take(PatientSearchResultLimit).AsEnumerable());
+    }
+    private Task SelectPatient(Patient? patient)
+    {
+        _selectedPatient = patient;
+        _patientId = patient?.PatientId ?? 0;
+        _account = null;
+        return Task.CompletedTask;
+    }
     private async Task LoadAccount()=>await Run(async()=>_account=await BillingAdminService.GetAccountAsync(_user,_patientId));
     private async Task RecordPayment()=>await Run(async()=>{await BillingAdminService.RecordPaymentAsync(_user,new(_patientId,new Money(_paymentAmount),_method,_reference,DateTime.UtcNow));await Reload();});
     private async Task PostAdjustment()=>await Run(async()=>{await BillingAdminService.PostAdjustmentAsync(_user,new(_patientId,new Money(_adjustmentAmount),_adjustmentType,_reason,DateTime.UtcNow));await Reload();});
@@ -71,7 +125,7 @@
     private async Task RequestRefund()=>await Run(async()=>{await BillingAdminService.RequestRefundAsync(_user,RequiredGuid(_refundPayment,"payment"),new Money(_refundAmount),_refundReason);await Reload();});
     private async Task ReconcileStripe()=>await Run(async()=>_reconciliation=await BillingAdminService.ReconcileStripeAsync(_user,DateTime.UtcNow.AddDays(-30)));
     private async Task Reload(){_account=await BillingAdminService.GetAccountAsync(_user,_patientId);await RefreshDashboard();}
-    private async Task Run(Func<Task> action){try{_busy=true;await action();Snackbar.Add("Billing operation completed.",Severity.Success);}catch(Exception ex) when(ex is ArgumentException or InvalidOperationException or KeyNotFoundException or UnauthorizedAccessException){Snackbar.Add(ex.Message,Severity.Error);}finally{_busy=false;}}
+    private async Task Run(Func<Task> action){try{_busy=true;await action();Snackbar.Add("Billing operation completed.",Severity.Success);}catch(OperationCanceledException){}catch(Exception ex){Snackbar.Add(ex is ArgumentException or InvalidOperationException or KeyNotFoundException or UnauthorizedAccessException ? ex.Message : "The billing operation could not be completed. Please try again.",Severity.Error);}finally{_busy=false;}}
     private static Guid RequiredGuid(string value,string label)=>Guid.TryParse(value,out var id)?id:throw new ArgumentException($"Enter a valid {label} ID.");
     private static string Money(decimal amount,string currency)=>$"{amount:N2} {currency}";
 }
