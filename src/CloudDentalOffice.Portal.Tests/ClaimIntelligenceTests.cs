@@ -82,6 +82,21 @@ public sealed class ClaimIntelligenceClientTests
     }
 
     [Fact]
+    public async Task GetAsync_RejectsTenantIdsWithControlCharacters()
+    {
+        HttpRequestMessage? captured = null;
+        var client = Client(request =>
+        {
+            captured = request;
+            return Task.FromResult(Json(HttpStatusCode.OK, PaidJson()));
+        });
+
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(
+            () => client.GetAsync("tenant-a\r\ninjected", "cho-123"));
+        Assert.Null(captured);
+    }
+
+    [Fact]
     public async Task GetAsync_LogWarningDoesNotIncludeRawTenantNewlines()
     {
         var logger = new CapturingLogger<ClaimIntelligenceClient>();
@@ -96,12 +111,12 @@ public sealed class ClaimIntelligenceClientTests
             options, logger);
 
         await Assert.ThrowsAsync<ClaimIntelligenceUnavailableException>(
-            () => client.GetAsync("tenant-a\r\ninjected", "cho-123"));
+            () => client.GetAsync("tenant-a", "cho-123"));
 
         var message = Assert.Single(logger.Messages);
         Assert.DoesNotContain("\r", message);
         Assert.DoesNotContain("\n", message);
-        Assert.Contains("tenant-ainjected", message);
+        Assert.Contains("tenant-a", message);
     }
 
     private static ClaimIntelligenceClient Client(Func<HttpRequestMessage, Task<HttpResponseMessage>> send)
@@ -228,6 +243,15 @@ public sealed class ClaimLifecycleMapperTests
     }
 
     [Fact]
+    public void ToUtcOffset_TreatsUnspecifiedAsUtc()
+    {
+        var unspecified = new DateTime(2026, 8, 10, 12, 5, 0, DateTimeKind.Unspecified);
+        var offset = ClaimLifecycleMapper.ToUtcOffset(unspecified);
+        Assert.Equal(TimeSpan.Zero, offset.Offset);
+        Assert.Equal(new DateTime(2026, 8, 10, 12, 5, 0, DateTimeKind.Utc), offset.UtcDateTime);
+    }
+
+    [Fact]
     public void SanitizeForLog_StripsCarriageReturnAndLineFeed()
     {
         Assert.Equal("tenant-ainjected", ClaimLifecycleMapper.SanitizeForLog("tenant-a\r\ninjected"));
@@ -330,6 +354,7 @@ public sealed class ClaimLifecycleServiceTests : IDisposable
         var view = await service.RefreshAsync(claim.ClaimId);
 
         Assert.Equal("Draft", view!.StatusCode);
+        Assert.Equal(TimeSpan.Zero, view.GeneratedAtUtc.Offset);
         client.Verify(c => c.GetAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
         Assert.Empty(_db.PatientLedgerEntries);
     }

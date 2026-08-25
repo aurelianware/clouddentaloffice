@@ -74,7 +74,7 @@ public sealed class ClaimIntelligenceClient : IClaimIntelligenceClient
         var baseUrl = string.IsNullOrWhiteSpace(_options.IntelligenceBaseUrl) ? _options.BaseUrl : _options.IntelligenceBaseUrl;
         if (!_options.Enabled || string.IsNullOrWhiteSpace(baseUrl))
             throw new ClaimIntelligenceUnavailableException("Claim status is not configured for this environment.");
-        if (string.IsNullOrWhiteSpace(tenantId))
+        if (string.IsNullOrWhiteSpace(tenantId) || tenantId.Any(char.IsControl))
             throw new UnauthorizedAccessException("Tenant is required.");
         if (string.IsNullOrWhiteSpace(cloudHealthOfficeClaimId) ||
             cloudHealthOfficeClaimId.Contains('/', StringComparison.Ordinal) ||
@@ -85,9 +85,9 @@ public sealed class ClaimIntelligenceClient : IClaimIntelligenceClient
         var path = ResolvePath(cloudHealthOfficeClaimId);
         using var message = new HttpRequestMessage(HttpMethod.Get, new Uri(new Uri(baseUrl.TrimEnd('/') + "/"), path.TrimStart('/')));
         message.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
-        message.Headers.TryAddWithoutValidation("X-Tenant-ID", tenantId);
+        message.Headers.Add("X-Tenant-ID", tenantId);
         if (!string.IsNullOrWhiteSpace(_options.ApiKey))
-            message.Headers.TryAddWithoutValidation("X-API-Key", _options.ApiKey);
+            message.Headers.Add("X-API-Key", _options.ApiKey);
 
         try
         {
@@ -169,7 +169,7 @@ public sealed class ClaimLifecycleService : IClaimLifecycleService
     public async Task<ClaimLifecycleView?> RefreshAsync(int claimId, CancellationToken cancellationToken = default)
     {
         var tenantId = _tenantProvider.TenantId;
-        if (string.IsNullOrWhiteSpace(tenantId))
+        if (string.IsNullOrWhiteSpace(tenantId) || tenantId.Any(char.IsControl))
             throw new UnauthorizedAccessException("Tenant is required.");
 
         var claim = await _db.Claims.FirstOrDefaultAsync(c => c.ClaimId == claimId, cancellationToken);
@@ -303,7 +303,7 @@ public sealed class ClaimLifecycleService : IClaimLifecycleService
             false,
             claim.FinancialsPostedAt.HasValue,
             false,
-            claim.LastIntelligenceAt ?? claim.ModifiedDate ?? claim.CreatedDate,
+            ClaimLifecycleMapper.ToUtcOffset(claim.LastIntelligenceAt ?? claim.ModifiedDate ?? claim.CreatedDate),
             [],
             posted);
     }
@@ -337,6 +337,13 @@ public static class ClaimLifecycleMapper
     /// </summary>
     public static string SanitizeForLog(string? value) =>
         string.IsNullOrEmpty(value) ? string.Empty : value.Replace("\r", string.Empty).Replace("\n", string.Empty);
+
+    public static DateTimeOffset ToUtcOffset(DateTime value) => value.Kind switch
+    {
+        DateTimeKind.Utc => new DateTimeOffset(value, TimeSpan.Zero),
+        DateTimeKind.Local => value.ToUniversalTime(),
+        _ => new DateTimeOffset(DateTime.SpecifyKind(value, DateTimeKind.Utc), TimeSpan.Zero)
+    };
 
     public static ClaimLifecycleView ToView(Claim claim, ClaimIntelligenceWireView wire,
         IReadOnlyList<ClaimLifecyclePosting> posted)
