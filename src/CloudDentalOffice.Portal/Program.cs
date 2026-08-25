@@ -451,6 +451,12 @@ builder.Services.AddHttpClient<IInsuranceEstimateService, CloudHealthOfficeInsur
     client.Timeout = TimeSpan.FromSeconds(20);
     client.DefaultRequestHeaders.Add("Accept", "application/json");
 });
+builder.Services.AddHttpClient<IClaimIntelligenceClient, ClaimIntelligenceClient>(client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(20);
+    client.DefaultRequestHeaders.Add("Accept", "application/json");
+});
+builder.Services.AddScoped<IClaimLifecycleService, ClaimLifecycleService>();
 builder.Services.Configure<PayerConnectivityOptions>(builder.Configuration.GetSection("PayerConnectivity"));
 builder.Services.AddScoped<ITradingPartnerAdapter, CloudHealthOfficeTradingPartnerAdapter>();
 if (builder.Environment.IsDevelopment())
@@ -502,6 +508,7 @@ using (var scope = app.Services.CreateScope())
         // production database was provisioned. Reconcile the review-outreach
         // schema before the tenant bootstrap queries its settings table.
         await ReviewOutreachSchemaReconciliation.ApplyAsync(dbContext, databaseProvider, logger);
+        await ClaimLifecycleSchemaReconciliation.ApplyAsync(dbContext, databaseProvider, logger);
 
         await InitialTenantBootstrap.ApplyAsync(dbContext, builder.Configuration);
 

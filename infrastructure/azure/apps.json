@@ -455,6 +455,10 @@
                           "value": "/api/v1/adjudication/estimate"
                         },
                         {
+                          "name": "CloudHealthOffice__IntelligencePath",
+                          "value": "/api/claims/{claimId}/intelligence"
+                        },
+                        {
                           "name": "CloudHealthOffice__ApiKey",
                           "secretRef": "cloudhealthoffice-api-key"
                         },

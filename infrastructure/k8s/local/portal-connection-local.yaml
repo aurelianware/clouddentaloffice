@@ -30,3 +30,9 @@
       value: Sqlite
     - name: CloudHealthOffice__BaseUrl
       value: http://claims-service.cloudhealthoffice.svc.cluster.local/
+    - name: CloudHealthOffice__IntelligenceBaseUrl
+      value: http://eligibility-service.cloudhealthoffice.svc.cluster.local/
+    - name: CloudHealthOffice__IntelligencePath
+      value: /api/claims/{claimId}/intelligence
+    - name: CloudHealthOffice__Enabled
+      value: "true"

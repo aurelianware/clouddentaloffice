@@ -347,38 +347,38 @@ manifests remain under `infrastructure/k8s/clouddental` for cloud deployments.
 
 #### CloudHealthOffice claim flow
 
-The local portal configures the demo payer to submit to the CloudHealthOffice
-claims service in the separate `cloudhealthoffice` namespace:
+The local portal configures the demo payer to submit to CloudHealthOffice.
+Staff follow the claim in CloudDentalOffice through the **claim intelligence**
+API — timeline, lifecycle status, patient responsibility, and posted
+financials — without seeing X12 transactions or clearinghouse vendors.
 
 ```text
 CloudDentalOffice (clouddental)
-  -> generate ASC X12 005010X224A2 837D
-  -> POST multipart file to claims-service.cloudhealthoffice.svc.cluster.local
-  -> /api/v1/claims/import/raw837
-  -> CloudHealthOffice validation and adjudication pipeline
+  -> submit claim to CloudHealthOffice
+  -> GET /api/claims/{claimId}/intelligence
+  -> practice-facing lifecycle (status, timeline, patient responsibility)
+  -> post billed / insurance / contractual amounts to the patient ledger
 ```
 
-Override `CloudHealthOffice__BaseUrl` in the portal deployment when the payer
-platform uses a different namespace or an external URL. CloudHealthOffice must
-contain matching member, provider, and benefit configuration for the submitted
-claim to adjudicate successfully; otherwise its raw-837 response is shown as a
-claim-submission rejection in CloudDentalOffice.
+Configure `CloudHealthOffice__BaseUrl`, `CloudHealthOffice__IntelligencePath`
+(default `/api/claims/{claimId}/intelligence`), and `CloudHealthOffice__Enabled`.
+The browser never calls CloudHealthOffice. Override `CloudHealthOffice__BaseUrl`
+in the portal deployment when the payer platform uses a different namespace or
+an external URL.
 
 ---
 
-## EDI / Payer Interoperability
+## Claims and payer interoperability
 
-Cloud Dental Office provides native support for dental EDI transactions:
+Cloud Dental Office is the practice surface. **[Cloud Health Office](https://github.com/aurelianware/cloudhealthoffice)** owns payer connectivity and claim intelligence. Staff see lifecycle status, a timeline, patient responsibility, and posted financials — not X12 transactions or clearinghouse vendors.
 
-| Transaction | Standard | Status |
+| Capability | Surface | Status |
 |-------------|----------|--------|
-| 837D Claims | ASC X12 005010X224A2 | ✅ Generator implemented |
-| 270/271 Eligibility | ASC X12 005010X279A1 | 🔧 In progress |
-| 835 ERA | ASC X12 005010X221A1 | 🔧 In progress |
-| 276/277 Claim Status | ASC X12 005010X212 | 📋 Planned |
-| 278 Prior Auth | ASC X12 005010X217 | 📋 Planned |
-
-Designed to pair with **[Cloud Health Office](https://github.com/aurelianware/cloudhealthoffice)** for end-to-end provider ↔ payer automation.
+| Claim submission | CloudHealthOffice | ✅ Implemented |
+| Claim lifecycle (status, timeline, patient responsibility) | Claim Intelligence API | ✅ Implemented |
+| Posted financials | Patient ledger from remittance summary | ✅ Implemented |
+| Eligibility | Payer transaction router | 🔧 In progress |
+| Predetermination / Advanced EOB | Reserved | 📋 Planned |
 
 ---
 

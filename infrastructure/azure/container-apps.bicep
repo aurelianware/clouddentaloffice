@@ -134,6 +134,7 @@ resource portal 'Microsoft.App/containerApps@2023-05-01' = {
             { name: 'CloudHealthOffice__Enabled', value: 'true' }
             { name: 'CloudHealthOffice__BaseUrl', value: cloudHealthOfficeBaseUrl }
             { name: 'CloudHealthOffice__EstimatePath', value: '/api/v1/adjudication/estimate' }
+            { name: 'CloudHealthOffice__IntelligencePath', value: '/api/claims/{claimId}/intelligence' }
             { name: 'CloudHealthOffice__ApiKey', secretRef: 'cloudhealthoffice-api-key' }
             { name: 'CloudHealthOffice__BenefitPlanMappings__${cloudHealthOfficePayerId}', value: cloudHealthOfficeBenefitPlanId }
             { name: 'PayerConnectivity__Payers__${cloudHealthOfficePayerId}__PaymentEstimate__0', value: 'CloudHealthOffice' }

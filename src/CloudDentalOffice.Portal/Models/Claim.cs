@@ -4,7 +4,7 @@ using System.ComponentModel.DataAnnotations.Schema;
 namespace CloudDentalOffice.Portal.Models;
 
 /// <summary>
-/// Dental claim (837D) entity
+/// Dental claim. Payer lifecycle is read from Cloud Health Office claim intelligence.
 /// </summary>
 [Table("Claims")]
 public class Claim : ITenantEntity
@@ -52,7 +52,19 @@ public class Claim : ITenantEntity
     [Column(TypeName = "decimal(10,2)")]
     public decimal? PatientResponsibility { get; set; }
 
-    // EDI tracking
+    /// <summary>Cloud Health Office claim id returned on submission. Used to read claim intelligence.</summary>
+    [MaxLength(100)]
+    public string? CloudHealthOfficeClaimId { get; set; }
+
+    /// <summary>Practice-facing lifecycle from claim intelligence (not an X12 code).</summary>
+    [MaxLength(50)]
+    public string? LifecycleStatus { get; set; }
+
+    public DateTime? LastIntelligenceAt { get; set; }
+
+    public DateTime? FinancialsPostedAt { get; set; }
+
+    // Submission tracking
     [MaxLength(100)]
     public string? EdiControlNumber { get; set; }
 

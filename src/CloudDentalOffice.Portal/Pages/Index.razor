@@ -283,60 +283,38 @@
         </MudItem>
     </MudGrid>
 
-    <!-- EDI Integration Status -->
     <MudPaper Class="pa-4 mt-4" Style="background: #0a0a0a; border: 1px solid #00ffff;">
         <MudText Typo="Typo.h6" GutterBottom="true" Style="color: #00ffff; font-weight: bold;">
-            <MudIcon Icon="@Icons.Material.Filled.CloudSync" Class="mr-2" />
-            EDI Transactions (H IPAA-Compliant)
+            <MudIcon Icon="@Icons.Material.Filled.Timeline" Class="mr-2" />
+            Claim lifecycle
         </MudText>
         <MudDivider Style="background: rgba(0, 255, 255, 0.3);" Class="mb-3" />
-        
+        <MudText Typo="Typo.body2" Style="color: #b0b0b0;" Class="mb-3">
+            Status, patient responsibility, and posted payments come from Cloud Health Office claim intelligence.
+        </MudText>
         <MudGrid Class="mt-2">
-            <MudItem xs="12" sm="6" md="4" lg="2">
+            <MudItem xs="12" sm="6" md="3">
                 <div class="pa-2 text-center" style="background: rgba(0, 255, 255, 0.05); border: 1px solid rgba(0, 255, 255, 0.2); border-radius: 4px;">
-                    <MudText Typo="Typo.h6" Style="color: #00ffff; font-weight: bold;">837D</MudText>
-                    <MudText Typo="Typo.caption" Style="color: #b0b0b0;">Dental Claims</MudText>
-                    <MudChip T="string" Size="Size.Small" Color="Color.Success" Class="mt-1">Active</MudChip>
+                    <MudText Typo="Typo.h6" Style="color: #00ffff; font-weight: bold;">@_draftClaimCount</MudText>
+                    <MudText Typo="Typo.caption" Style="color: #b0b0b0;">Draft</MudText>
                 </div>
             </MudItem>
-            
-            <MudItem xs="12" sm="6" md="4" lg="2">
+            <MudItem xs="12" sm="6" md="3">
                 <div class="pa-2 text-center" style="background: rgba(0, 255, 136, 0.05); border: 1px solid rgba(0, 255, 136, 0.2); border-radius: 4px;">
-                    <MudText Typo="Typo.h6" Style="color: #00ff88; font-weight: bold;">270/271</MudText>
-                    <MudText Typo="Typo.caption" Style="color: #b0b0b0;">Eligibility</MudText>
-                    <MudChip T="string" Size="Size.Small" Color="Color.Success" Class="mt-1">Active</MudChip>
+                    <MudText Typo="Typo.h6" Style="color: #00ff88; font-weight: bold;">@_submittedClaimCount</MudText>
+                    <MudText Typo="Typo.caption" Style="color: #b0b0b0;">In process</MudText>
                 </div>
             </MudItem>
-            
-            <MudItem xs="12" sm="6" md="4" lg="2">
+            <MudItem xs="12" sm="6" md="3">
                 <div class="pa-2 text-center" style="background: rgba(0, 255, 255, 0.05); border: 1px solid rgba(0, 255, 255, 0.2); border-radius: 4px;">
-                    <MudText Typo="Typo.h6" Style="color: #00ffff; font-weight: bold;">276/277</MudText>
-                    <MudText Typo="Typo.caption" Style="color: #b0b0b0;">Claim Status</MudText>
-                    <MudChip T="string" Size="Size.Small" Color="Color.Success" Class="mt-1">Active</MudChip>
+                    <MudText Typo="Typo.h6" Style="color: #00ffff; font-weight: bold;">@_paidClaimCount</MudText>
+                    <MudText Typo="Typo.caption" Style="color: #b0b0b0;">Paid</MudText>
                 </div>
             </MudItem>
-            
-            <MudItem xs="12" sm="6" md="4" lg="2">
-                <div class="pa-2 text-center" style="background: rgba(0, 255, 136, 0.05); border: 1px solid rgba(0, 255, 136, 0.2); border-radius: 4px;">
-                    <MudText Typo="Typo.h6" Style="color: #00ff88; font-weight: bold;">278</MudText>
-                    <MudText Typo="Typo.caption" Style="color: #b0b0b0;">Prior Auth</MudText>
-                    <MudChip T="string" Size="Size.Small" Color="Color.Success" Class="mt-1">Active</MudChip>
-                </div>
-            </MudItem>
-            
-            <MudItem xs="12" sm="6" md="4" lg="2">
-                <div class="pa-2 text-center" style="background: rgba(0, 255, 255, 0.05); border: 1px solid rgba(0, 255, 255, 0.2); border-radius: 4px;">
-                    <MudText Typo="Typo.h6" Style="color: #00ffff; font-weight: bold;">834</MudText>
-                    <MudText Typo="Typo.caption" Style="color: #b0b0b0;">Enrollment</MudText>
-                    <MudChip T="string" Size="Size.Small" Color="Color.Success" Class="mt-1">Active</MudChip>
-                </div>
-            </MudItem>
-            
-            <MudItem xs="12" sm="6" md="4" lg="2">
-                <div class="pa-2 text-center" style="background: rgba(0, 255, 136, 0.05); border: 1px solid rgba(0, 255, 136, 0.2); border-radius: 4px;">
-                    <MudText Typo="Typo.h6" Style="color: #00ff88; font-weight: bold;">835</MudText>
-                    <MudText Typo="Typo.caption" Style="color: #b0b0b0;">Remittance</MudText>
-                    <MudChip T="string" Size="Size.Small" Color="Color.Success" Class="mt-1">Active</MudChip>
+            <MudItem xs="12" sm="6" md="3">
+                <div class="pa-2 text-center" style="background: rgba(255, 165, 0, 0.08); border: 1px solid rgba(255, 165, 0, 0.3); border-radius: 4px;">
+                    <MudText Typo="Typo.h6" Style="color: #ffa500; font-weight: bold;">@_outstandingAmount.ToString("C")</MudText>
+                    <MudText Typo="Typo.caption" Style="color: #b0b0b0;">Patient responsibility outstanding</MudText>
                 </div>
             </MudItem>
         </MudGrid>
@@ -416,11 +394,11 @@
             
             // Claims
             _draftClaimCount = claims.Count(c => c.Status == "Draft");
-            _submittedClaimCount = claims.Count(c => c.Status == "Submitted");
-            _paidClaimCount = claims.Count(c => c.Status == "Paid");
-            _pendingClaimCount = claims.Count(c => c.Status == "Draft" || c.Status == "Ready" || c.Status == "Submitted");
+            _submittedClaimCount = claims.Count(c => c.Status is "Submitted" or "Accepted" or "Processing" or "Pending");
+            _paidClaimCount = claims.Count(c => c.Status is "Paid" or "PartiallyPaid");
+            _pendingClaimCount = claims.Count(c => c.Status is "Draft" or "Ready" or "Submitted" or "Accepted" or "Processing" or "Pending");
             _pendingClaimValue = claims
-                .Where(c => c.Status == "Draft" || c.Status == "Ready" || c.Status == "Submitted")
+                .Where(c => c.Status is "Draft" or "Ready" or "Submitted" or "Accepted" or "Processing" or "Pending")
                 .Sum(c => c.TotalChargeAmount);
             
             // Revenue calculations
