@@ -16,6 +16,9 @@ public sealed class CloudHealthOfficeOptions
 {
     public string BaseUrl { get; set; } = string.Empty;
     public string EstimatePath { get; set; } = "/api/v1/adjudication/estimate";
+    public string IntelligencePath { get; set; } = "/api/claims/{claimId}/intelligence";
+    /// <summary>Optional host for claim intelligence when it is not served from BaseUrl.</summary>
+    public string? IntelligenceBaseUrl { get; set; }
     public bool Enabled { get; set; }
     public string? ApiKey { get; set; }
     public Dictionary<string, Guid> BenefitPlanMappings { get; set; } = new(StringComparer.OrdinalIgnoreCase);

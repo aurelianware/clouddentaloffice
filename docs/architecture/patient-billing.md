@@ -66,7 +66,7 @@ A negative amount due is a patient credit balance. A transfer into an account is
 
 The unique key `(TenantId, SourceType, SourceId, EntryType)` prevents a procedure, ERA component, payment, or staff operation from posting the same financial effect twice. One ERA can legitimately produce both an insurance payment and a contractual adjustment because their entry types differ. Source references are identifiers only, avoiding tight database coupling to clinical, claim, and ERA stores.
 
-Posting currently supports `Procedure`, `Encounter`, `Claim`, `Era`, `StaffAdjustment`, `PatientPayment`, `Refund`, `Transfer`, and `SystemReversal` sources. Integration from those producer workflows is deliberately follow-up work; this PR establishes the accounting system of record without silently changing existing claim/ERA behavior.
+Posting currently supports `Procedure`, `Encounter`, `Claim`, `Era`, `StaffAdjustment`, `PatientPayment`, `Refund`, `Transfer`, and `SystemReversal` sources. When Cloud Health Office claim intelligence reports a remittance, CloudDentalOffice posts the billed charge, insurance payment, and contractual adjustment with `SourceType.Claim` and `SourceId` `claim:{claimId}`. Duplicate deliveries replay. CDO does not parse remittance files to do this; it posts from the intelligence financial summary.
 
 ## Patient responsibility
 

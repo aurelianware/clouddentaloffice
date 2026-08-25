@@ -1,4 +1,5 @@
 @using CloudDentalOffice.Portal.Models
+@using CloudDentalOffice.Portal.Services
 @using MudBlazor
 @inject IClaimService ClaimService
 @inject ISnackbar Snackbar
@@ -58,8 +59,8 @@
                                 <MudText Typo="Typo.body2" Style="color: #b0b0b0;">
                                     <strong>Status:</strong>
                                 </MudText>
-                                <MudChip T="string" Color="@GetStatusColor(Claim.Status)" Size="Size.Small" Class="mt-1">
-                                    @Claim.Status
+                                <MudChip T="string" Color="@GetStatusColor(_lifecycle?.StatusCode ?? Claim.Status)" Size="Size.Small" Class="mt-1">
+                                    @(_lifecycle?.Status ?? Claim.Status)
                                 </MudChip>
                             </MudItem>
                             <MudItem xs="12" md="3">
@@ -171,67 +172,140 @@
                             <MudIcon Icon="@Icons.Material.Filled.AttachMoney" Size="Size.Small" /> Financial Summary
                         </MudText>
                         <MudGrid>
-                            <MudItem xs="12" md="4">
+                            <MudItem xs="12" md="3">
                                 <MudText Typo="Typo.body2" Style="color: #b0b0b0;">
-                                    <strong>Total Charge:</strong>
+                                    <strong>Billed:</strong>
                                 </MudText>
                                 <MudText Typo="Typo.h5" Style="color: #00ff88;" Class="mt-1">
-                                    @Claim.TotalChargeAmount.ToString("C")
+                                    @((_lifecycle?.SubmittedAmount ?? Claim.TotalChargeAmount).ToString("C"))
                                 </MudText>
                             </MudItem>
-                            <MudItem xs="12" md="4">
+                            <MudItem xs="12" md="3">
                                 <MudText Typo="Typo.body2" Style="color: #b0b0b0;">
-                                    <strong>Paid Amount:</strong>
+                                    <strong>Allowed:</strong>
                                 </MudText>
                                 <MudText Typo="Typo.h5" Style="color: #00ffff;" Class="mt-1">
-                                    @(Claim.PaidAmount?.ToString("C") ?? "$0.00")
+                                    @(_lifecycle?.AllowedAmount?.ToString("C") ?? "—")
                                 </MudText>
                             </MudItem>
-                            <MudItem xs="12" md="4">
+                            <MudItem xs="12" md="3">
                                 <MudText Typo="Typo.body2" Style="color: #b0b0b0;">
-                                    <strong>Patient Responsibility:</strong>
+                                    <strong>Insurance paid:</strong>
+                                </MudText>
+                                <MudText Typo="Typo.h5" Style="color: #00ffff;" Class="mt-1">
+                                    @((_lifecycle?.PaidAmount ?? Claim.PaidAmount)?.ToString("C") ?? "$0.00")
+                                </MudText>
+                            </MudItem>
+                            <MudItem xs="12" md="3">
+                                <MudText Typo="Typo.body2" Style="color: #b0b0b0;">
+                                    <strong>Patient responsibility:</strong>
                                 </MudText>
                                 <MudText Typo="Typo.h5" Style="color: #ffa500;" Class="mt-1">
-                                    @(Claim.PatientResponsibility?.ToString("C") ?? "$0.00")
+                                    @((_lifecycle?.PatientResponsibility ?? Claim.PatientResponsibility)?.ToString("C") ?? "$0.00")
                                 </MudText>
                             </MudItem>
                         </MudGrid>
+                        @if (!string.IsNullOrWhiteSpace(_lifecycle?.NextAction))
+                        {
+                            <MudAlert Severity="@(_lifecycle.ActionRequired ? Severity.Warning : Severity.Info)" Dense="true" Class="mt-3">
+                                @_lifecycle.NextAction
+                            </MudAlert>
+                        }
                     </MudPaper>
                 </MudItem>
 
-                <!-- EDI Tracking -->
-                @if (!string.IsNullOrEmpty(Claim.EdiControlNumber) || Claim.SubmittedDate.HasValue)
+                <!-- Claim timeline -->
+                <MudItem xs="12">
+                    <MudPaper Class="pa-3" Style="background: #1a1a1a; border: 1px solid rgba(0, 255, 255, 0.2);">
+                        <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-2">
+                            <MudText Typo="Typo.h6" Style="color: #00ffff;">
+                                <MudIcon Icon="@Icons.Material.Filled.Timeline" Size="Size.Small" /> Claim timeline
+                            </MudText>
+                            <MudButton Variant="Variant.Text" Color="Color.Primary" Size="Size.Small"
+                                       StartIcon="@Icons.Material.Filled.Refresh" OnClick="RefreshLifecycle"
+                                       Disabled="@_refreshing">
+                                Refresh status
+                            </MudButton>
+                        </MudStack>
+                        @if (_refreshing && _lifecycle is null)
+                        {
+                            <MudProgressLinear Color="Color.Primary" Indeterminate="true" />
+                        }
+                        else if (_lifecycle?.Timeline.Count > 0)
+                        {
+                            <MudTimeline TimelinePosition="TimelinePosition.Start">
+                                @foreach (var evt in _lifecycle.Timeline)
+                                {
+                                    <MudTimelineItem Color="Color.Primary" Size="Size.Small">
+                                        <ItemContent>
+                                            <MudText Typo="Typo.subtitle2" Style="color: #e0e0e0;">@evt.Title</MudText>
+                                            @if (!string.IsNullOrWhiteSpace(evt.Detail))
+                                            {
+                                                <MudText Typo="Typo.caption" Style="color: #b0b0b0;">@evt.Detail</MudText>
+                                            }
+                                            <MudText Typo="Typo.caption" Style="color: #808080;">
+                                                @evt.Timestamp.ToLocalTime().ToString("MM/dd/yyyy h:mm tt")
+                                            </MudText>
+                                        </ItemContent>
+                                    </MudTimelineItem>
+                                }
+                            </MudTimeline>
+                        }
+                        else
+                        {
+                            <MudText Typo="Typo.body2" Style="color: #b0b0b0;">
+                                @(Claim.SubmittedDate.HasValue
+                                    ? "No payer updates yet. Refresh to check for the latest status."
+                                    : "Submit the claim to start tracking payer status.")
+                            </MudText>
+                        }
+                    </MudPaper>
+                </MudItem>
+
+                <!-- Posted financials -->
+                @if (_lifecycle?.PostedFinancials.Count > 0 || Claim.FinancialsPostedAt.HasValue)
                 {
                     <MudItem xs="12">
                         <MudPaper Class="pa-3" Style="background: #1a1a1a; border: 1px solid rgba(0, 255, 255, 0.2);">
                             <MudText Typo="Typo.h6" Style="color: #00ffff;" Class="mb-2">
-                                <MudIcon Icon="@Icons.Material.Filled.CloudUpload" Size="Size.Small" /> EDI Tracking
+                                <MudIcon Icon="@Icons.Material.Filled.AccountBalance" Size="Size.Small" /> Posted to patient account
                             </MudText>
-                            <MudGrid>
-                                <MudItem xs="12" md="4">
-                                    <MudText Typo="Typo.body2" Style="color: #b0b0b0;">
-                                        <strong>Control Number:</strong> @(Claim.EdiControlNumber ?? "N/A")
-                                    </MudText>
-                                </MudItem>
-                                <MudItem xs="12" md="4">
-                                    <MudText Typo="Typo.body2" Style="color: #b0b0b0;">
-                                        <strong>Submitted Date:</strong> @(Claim.SubmittedDate?.ToString("MM/dd/yyyy hh:mm tt") ?? "N/A")
-                                    </MudText>
-                                </MudItem>
-                                <MudItem xs="12" md="4">
-                                    <MudText Typo="Typo.body2" Style="color: #b0b0b0;">
-                                        <strong>Submitted By:</strong> @(Claim.SubmittedBy ?? "N/A")
-                                    </MudText>
-                                </MudItem>
-                                @if (Claim.ProcessedDate.HasValue)
+                            @if (_lifecycle?.PostedFinancials.Count > 0)
+                            {
+                                <MudTable Items="@_lifecycle.PostedFinancials" Dense="true" Hover="true">
+                                    <HeaderContent>
+                                        <MudTh Style="color: #00ffff;">Type</MudTh>
+                                        <MudTh Style="color: #00ffff;">Amount</MudTh>
+                                        <MudTh Style="color: #00ffff;">Posted</MudTh>
+                                    </HeaderContent>
+                                    <RowTemplate>
+                                        <MudTd DataLabel="Type">@context.Type</MudTd>
+                                        <MudTd DataLabel="Amount">@context.Amount.ToString("C")</MudTd>
+                                        <MudTd DataLabel="Posted">@context.PostedAt.ToLocalTime().ToString("MM/dd/yyyy h:mm tt")</MudTd>
+                                    </RowTemplate>
+                                </MudTable>
+                            }
+                            else
+                            {
+                                <MudText Typo="Typo.body2" Style="color: #00ff88;">
+                                    Posted @Claim.FinancialsPostedAt!.Value.ToLocalTime().ToString("MM/dd/yyyy h:mm tt")
+                                </MudText>
+                            }
+                        </MudPaper>
+                    </MudItem>
+                }
+
+                @if (Claim.SubmittedDate.HasValue)
+                {
+                    <MudItem xs="12">
+                        <MudPaper Class="pa-3" Style="background: #1a1a1a; border: 1px solid rgba(0, 255, 255, 0.2);">
+                            <MudText Typo="Typo.body2" Style="color: #b0b0b0;">
+                                Submitted @(Claim.SubmittedDate?.ToString("MM/dd/yyyy h:mm tt"))
+                                @if (!string.IsNullOrWhiteSpace(Claim.SubmittedBy))
                                 {
-                                    <MudItem xs="12">
-                                        <MudText Typo="Typo.body2" Style="color: #b0b0b0;">
-                                            <strong>Processed Date:</strong> @Claim.ProcessedDate.Value.ToString("MM/dd/yyyy hh:mm tt")
-                                        </MudText>
-                                    </MudItem>
+                                    <text> by @Claim.SubmittedBy</text>
                                 }
-                            </MudGrid>
+                            </MudText>
                         </MudPaper>
                     </MudItem>
                 }
@@ -268,7 +342,7 @@
                                     }
                                     else
                                     {
-                                        <text>Submit to EDI</text>
+                                        <text>Submit claim</text>
                                     }
                                 </MudButton>
                             </MudStack>
@@ -291,6 +365,13 @@
     public Claim Claim { get; set; } = null!;
 
     private bool _submitting = false;
+    private bool _refreshing = false;
+    private ClaimLifecycleView? _lifecycle;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await RefreshLifecycle();
+    }
 
     private Color GetStatusColor(string status)
     {
@@ -299,12 +380,38 @@
             "Draft" => Color.Default,
             "Ready" => Color.Info,
             "Submitted" => Color.Primary,
-            "Accepted" => Color.Success,
-            "Rejected" => Color.Error,
-            "Paid" => Color.Success,
-            "Denied" => Color.Error,
+            "Accepted" or "AcceptedByPayer" => Color.Info,
+            "Processing" => Color.Primary,
+            "PendingInformation" => Color.Warning,
+            "Rejected" or "Denied" => Color.Error,
+            "Paid" or "PartiallyPaid" or "Completed" => Color.Success,
             _ => Color.Default
         };
+    }
+
+    private async Task RefreshLifecycle()
+    {
+        try
+        {
+            _refreshing = true;
+            _lifecycle = await ClaimService.RefreshLifecycleAsync(Claim.ClaimId.ToString());
+            if (_lifecycle is not null)
+            {
+                Claim.Status = _lifecycle.StatusCode is "AcceptedByPayer" ? "Accepted" : _lifecycle.StatusCode;
+                Claim.PaidAmount = _lifecycle.PaidAmount;
+                Claim.PatientResponsibility = _lifecycle.PatientResponsibility;
+                if (_lifecycle.FinancialsPosted)
+                    Claim.FinancialsPostedAt ??= DateTime.UtcNow;
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Could not refresh claim status: {ex.Message}", Severity.Warning);
+        }
+        finally
+        {
+            _refreshing = false;
+        }
     }
 
     private async Task SubmitClaim()

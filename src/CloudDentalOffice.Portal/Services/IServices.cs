@@ -38,6 +38,7 @@ public interface IClaimService
     Task<Claim> CreateClaimAsync(Claim claim);
     Task<Claim> UpdateClaimStatusAsync(string claimId, string status);
     Task<Claim> SubmitClaimAsync(string claimId);
+    Task<ClaimLifecycleView?> RefreshLifecycleAsync(string claimId, CancellationToken cancellationToken = default);
 }
 
 public interface IProviderService

@@ -38,4 +38,6 @@ Eligibility results normalize coverage status, effective dates, plan details, de
 
 When a real 270/271 adapter is added, HIPAA syntax must remain behind dedicated `270 mapper → adapter → 271 parser` boundaries. ISA/GS/ST/EB knowledge must not enter the portal UI or business services. Operational audit records contain correlation ID, tenant, payer, adapter, transaction type, timestamps, status, and elapsed time; they never contain member IDs, names, or raw X12.
 
-Future capability flags reserve architectural space for 837D claim submission, 276/277 claim status, 835 remittance, predetermination, and Advanced EOB. Those transactions are not implemented by this change.
+Claim lifecycle is read from Cloud Health Office claim intelligence (`GET /api/claims/{claimId}/intelligence`). CloudDentalOffice does not inquire 276/277, parse 277CA, or ingest 835 files. Staff see a practice-facing timeline, status, patient responsibility, and posted patient-ledger financials. Clearinghouse vendor names never appear in the portal.
+
+See [architecture/claim-lifecycle.md](architecture/claim-lifecycle.md).

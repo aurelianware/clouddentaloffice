@@ -1,5 +1,12 @@
 # Architecture
 
+## Claim lifecycle
+
+Staff follow submitted claims through Cloud Health Office **claim intelligence**
+(timeline, status, patient responsibility, posted patient-ledger financials).
+CloudDentalOffice does not render X12 transactions or clearinghouse vendors.
+See [claim-lifecycle.md](claim-lifecycle.md).
+
 ## Create-appointment flow
 
 ![Create-appointment flow: a website booking crosses the trust boundary once as a published event and becomes a staff-reviewed booking request on the private network](./create-appointment-flow.svg)

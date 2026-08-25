@@ -400,6 +400,7 @@ public class CloudDentalDbContext : DbContext
             entity.HasIndex(e => e.Status);
             entity.HasIndex(e => e.SubmittedDate);
             entity.HasIndex(e => e.TenantId);
+            entity.HasIndex(e => new { e.TenantId, e.CloudHealthOfficeClaimId });
             entity.HasQueryFilter(e => e.TenantId == CurrentTenantId);
         });
 

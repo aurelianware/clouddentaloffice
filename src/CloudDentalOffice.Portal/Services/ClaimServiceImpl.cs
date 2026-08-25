@@ -11,15 +11,18 @@ public class ClaimServiceImpl : IClaimService
 {
     private readonly CloudDentalDbContext _context;
     private readonly IEdiSubmissionService _ediSubmissionService;
+    private readonly IClaimLifecycleService _lifecycle;
     private readonly ILogger<ClaimServiceImpl> _logger;
 
     public ClaimServiceImpl(
         CloudDentalDbContext context,
         IEdiSubmissionService ediSubmissionService,
+        IClaimLifecycleService lifecycle,
         ILogger<ClaimServiceImpl> logger)
     {
         _context = context;
         _ediSubmissionService = ediSubmissionService;
+        _lifecycle = lifecycle;
         _logger = logger;
     }
 
@@ -168,20 +171,31 @@ public class ClaimServiceImpl : IClaimService
             if (submissionResult.Success)
             {
                 claim.Status = "Submitted";
+                claim.LifecycleStatus = "Submitted";
                 claim.SubmittedDate = DateTime.UtcNow;
                 claim.ModifiedDate = DateTime.UtcNow;
 
-                // Store EDI control number if available (from API submission)
+                if (!string.IsNullOrEmpty(submissionResult.ApiTrackingId))
+                    claim.CloudHealthOfficeClaimId = submissionResult.ApiTrackingId;
+
                 if (!string.IsNullOrEmpty(submissionResult.EdiControlNumber))
-                {
                     claim.EdiControlNumber = submissionResult.EdiControlNumber;
-                }
 
                 await _context.SaveChangesAsync();
 
                 _logger.LogInformation(
-                    "Successfully submitted claim {ClaimNumber} via {SubmissionType}. SFTP: {SftpPath}, API Tracking: {TrackingId}",
-                    claim.ClaimNumber, submissionResult.SubmissionType, submissionResult.SftpFilePath, submissionResult.ApiTrackingId);
+                    "Successfully submitted claim {ClaimNumber} tracking {TrackingId}",
+                    claim.ClaimNumber, submissionResult.ApiTrackingId);
+
+                try
+                {
+                    await _lifecycle.RefreshAsync(claim.ClaimId);
+                    await _context.Entry(claim).ReloadAsync();
+                }
+                catch (Exception refreshEx)
+                {
+                    _logger.LogWarning(refreshEx, "Claim {ClaimId} submitted; lifecycle refresh deferred", claim.ClaimId);
+                }
             }
             else
             {
@@ -219,6 +233,13 @@ public class ClaimServiceImpl : IClaimService
         }
 
         return $"CLM-{year}-{nextNumber:D4}";
+    }
+
+    public Task<ClaimLifecycleView?> RefreshLifecycleAsync(string claimId, CancellationToken cancellationToken = default)
+    {
+        if (!int.TryParse(claimId, out var id))
+            throw new ArgumentException("Invalid claim ID", nameof(claimId));
+        return _lifecycle.RefreshAsync(id, cancellationToken);
     }
 
     private DateTime NormalizeToUtc(DateTime dateTime)
