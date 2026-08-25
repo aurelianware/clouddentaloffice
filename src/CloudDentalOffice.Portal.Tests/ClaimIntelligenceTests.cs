@@ -8,6 +8,7 @@ using CloudDentalOffice.Portal.Services.Tenancy;
 using ClaimEntity = CloudDentalOffice.Portal.Models.Claim;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Moq;
@@ -80,6 +81,29 @@ public sealed class ClaimIntelligenceClientTests
         await Assert.ThrowsAsync<ClaimIntelligenceUnavailableException>(() => client.GetAsync("tenant-a", "cho-123"));
     }
 
+    [Fact]
+    public async Task GetAsync_LogWarningDoesNotIncludeRawTenantNewlines()
+    {
+        var logger = new CapturingLogger<ClaimIntelligenceClient>();
+        var options = Options.Create(new CloudHealthOfficeOptions
+        {
+            Enabled = true,
+            BaseUrl = "https://cloudhealthoffice.example",
+            IntelligencePath = "/api/claims/{claimId}/intelligence"
+        });
+        var client = new ClaimIntelligenceClient(
+            new HttpClient(new Handler(_ => Task.FromResult(new HttpResponseMessage(HttpStatusCode.InternalServerError)))),
+            options, logger);
+
+        await Assert.ThrowsAsync<ClaimIntelligenceUnavailableException>(
+            () => client.GetAsync("tenant-a\r\ninjected", "cho-123"));
+
+        var message = Assert.Single(logger.Messages);
+        Assert.DoesNotContain("\r", message);
+        Assert.DoesNotContain("\n", message);
+        Assert.Contains("tenant-ainjected", message);
+    }
+
     private static ClaimIntelligenceClient Client(Func<HttpRequestMessage, Task<HttpResponseMessage>> send)
     {
         var options = Options.Create(new CloudHealthOfficeOptions
@@ -99,6 +123,20 @@ public sealed class ClaimIntelligenceClientTests
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
             send(request);
+    }
+
+    private sealed class CapturingLogger<T> : ILogger<T>
+    {
+        public List<string> Messages { get; } = [];
+        public IDisposable BeginScope<TState>(TState state) where TState : notnull => NullScope.Instance;
+        public bool IsEnabled(LogLevel logLevel) => true;
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter) =>
+            Messages.Add(formatter(state, exception));
+        private sealed class NullScope : IDisposable
+        {
+            public static readonly NullScope Instance = new();
+            public void Dispose() { }
+        }
     }
 
     internal static string PaidJson() => """
@@ -187,6 +225,14 @@ public sealed class ClaimLifecycleMapperTests
             PatientResponsibility = 100m, HasRemittance = true
         };
         Assert.Equal(0m, ClaimLifecycleMapper.ContractualAdjustment(financial, 500m, 400m));
+    }
+
+    [Fact]
+    public void SanitizeForLog_StripsCarriageReturnAndLineFeed()
+    {
+        Assert.Equal("tenant-ainjected", ClaimLifecycleMapper.SanitizeForLog("tenant-a\r\ninjected"));
+        Assert.Equal("PaidDenied", ClaimLifecycleMapper.SanitizeForLog("Paid\nDenied"));
+        Assert.Equal("", ClaimLifecycleMapper.SanitizeForLog(null));
     }
 
     [Fact]

@@ -99,7 +99,7 @@ public sealed class ClaimIntelligenceClient : IClaimIntelligenceClient
             if (!response.IsSuccessStatusCode)
             {
                 _logger.LogWarning("Claim intelligence returned HTTP {StatusCode} for tenant {TenantId}",
-                    (int)response.StatusCode, tenantId);
+                    (int)response.StatusCode, ClaimLifecycleMapper.SanitizeForLog(tenantId));
                 throw new ClaimIntelligenceUnavailableException("Claim status is temporarily unavailable. Try again later.");
             }
 
@@ -111,7 +111,8 @@ public sealed class ClaimIntelligenceClient : IClaimIntelligenceClient
         }
         catch (HttpRequestException ex)
         {
-            _logger.LogWarning(ex, "Claim intelligence could not be reached for tenant {TenantId}", tenantId);
+            _logger.LogWarning(ex, "Claim intelligence could not be reached for tenant {TenantId}",
+                ClaimLifecycleMapper.SanitizeForLog(tenantId));
             throw new ClaimIntelligenceUnavailableException("Claim status is temporarily unavailable. Try again later.", ex);
         }
     }
@@ -205,7 +206,8 @@ public sealed class ClaimLifecycleService : IClaimLifecycleService
 
         _logger.LogInformation(
             "Claim lifecycle refreshed tenant={TenantId} claim={ClaimId} status={Status} posted={Posted}",
-            tenantId, claim.ClaimId, claim.LifecycleStatus, posted);
+            ClaimLifecycleMapper.SanitizeForLog(tenantId), claim.ClaimId,
+            ClaimLifecycleMapper.SanitizeForLog(claim.LifecycleStatus), posted);
 
         return await BuildViewAsync(claim, wire, cancellationToken);
     }
@@ -330,6 +332,12 @@ public sealed class ClaimLifecycleService : IClaimLifecycleService
 
 public static class ClaimLifecycleMapper
 {
+    /// <summary>
+    /// Strips CR/LF so tenant and status tokens cannot forge additional log lines.
+    /// </summary>
+    public static string SanitizeForLog(string? value) =>
+        string.IsNullOrEmpty(value) ? string.Empty : value.Replace("\r", string.Empty).Replace("\n", string.Empty);
+
     public static ClaimLifecycleView ToView(Claim claim, ClaimIntelligenceWireView wire,
         IReadOnlyList<ClaimLifecyclePosting> posted)
     {
