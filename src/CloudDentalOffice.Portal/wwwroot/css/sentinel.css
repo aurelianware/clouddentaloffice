@@ -75,6 +75,60 @@ a:hover {
   text-shadow: 0 0 8px var(--cyan-glow);
 }
 
+/* === KEYBOARD AND ASSISTIVE TECHNOLOGY === */
+.skip-link {
+  position: fixed;
+  top: 0.75rem;
+  left: 0.75rem;
+  z-index: 2000;
+  padding: 0.75rem 1rem;
+  border: 2px solid var(--neon-cyan);
+  border-radius: var(--radius-sm);
+  background: #000000;
+  color: #ffffff;
+  font-weight: 700;
+  transform: translateY(-200%);
+  transition: transform 0.15s ease;
+}
+
+.skip-link:focus {
+  transform: translateY(0);
+}
+
+:where(a, button, input, select, textarea, [tabindex]:not([tabindex="-1"])):focus-visible,
+.mud-button-root:focus-visible,
+.mud-icon-button:focus-visible,
+.mud-nav-link:focus-visible,
+.mud-input-control:focus-within {
+  outline: 3px solid #ffdf5d !important;
+  outline-offset: 3px !important;
+  box-shadow: none !important;
+}
+
+/* Keep form instructions and states readable against the dark theme. */
+.mud-input-label,
+.mud-input-helper-text,
+.mud-form-helper-text,
+.mud-table-cell,
+.mud-typography-body1,
+.mud-typography-body2 {
+  color: #d7dce0;
+}
+
+.mud-disabled,
+.mud-input-control.mud-disabled,
+.mud-input-control.mud-disabled .mud-input,
+.mud-input-control.mud-disabled .mud-input-label {
+  color: #aeb6bc !important;
+  opacity: 1 !important;
+}
+
+.mud-input-error .mud-input-helper-text,
+.mud-input-error .mud-input-label {
+  color: #ff8b98 !important;
+  font-weight: 600;
+}
+
 /* === NAVIGATION READABILITY === */
 .mud-drawer .mud-nav-link,
 .mud-drawer .mud-nav-group .mud-nav-link,
@@ -335,8 +389,20 @@ a:hover {
   color: var(--light-gray);
 }
 
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
 #blazor-error-ui .dismiss {
+  background: transparent;
+  border: 0;
   cursor: pointer;
+  font-size: 1.25rem;
   position: absolute;
   right: 0.75rem;
   top: 0.5rem;

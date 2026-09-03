@@ -17,20 +17,21 @@
 <body>
     <component type="typeof(App)" render-mode="ServerPrerendered" />
 
-    <div id="blazor-error-ui">
+    <div id="blazor-error-ui" role="alert" aria-live="assertive">
         <environment include="Staging,Production">
             An error has occurred. This application may no longer respond until reloaded.
         </environment>
         <environment include="Development">
             An unhandled exception has occurred. See browser dev tools for details.
         </environment>
-        <a href="" class="reload">Reload</a>
-        <a class="dismiss">🗙</a>
+        <a href="" class="reload">Reload application</a>
+        <button type="button" class="dismiss" aria-label="Dismiss error message">&#x2715;</button>
     </div>
 
-    <div id="components-reconnect-modal" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.7); z-index: 9999; align-items: center; justify-content: center;">
+    <div id="components-reconnect-modal" role="alertdialog" aria-modal="true" aria-labelledby="reconnect-title"
+         aria-live="assertive" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.7); z-index: 9999; align-items: center; justify-content: center;">
         <div style="background: #0a0a0a; border: 2px solid #00ffff; padding: 2rem; border-radius: 8px; text-align: center; color: #00ffff; max-width: 90%;">
-            <h3>Connection Lost</h3>
+            <h3 id="reconnect-title">Connection Lost</h3>
             <div data-reconnect-state="retrying">
                 <p>Reconnecting&hellip; your work is being kept.</p>
                 <div style="margin-top: 1rem;">
