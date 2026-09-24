@@ -316,23 +316,25 @@ else
     builder.Services.AddScoped<IPatientService, PatientServiceImpl>();
 }
 
-// Prescription service: always use microservice mode (no monolith fallback)
+// Prescription service: always use microservice mode (no monolith fallback).
+// The service takes the tenant only from the forwarded staff bearer token.
 var prescriptionGatewayUrl = builder.Configuration.GetValue<string>("ApiGateway:BaseUrl") ?? "http://localhost:5200";
 builder.Services.AddHttpClient<CloudDentalOffice.Contracts.Prescriptions.IPrescriptionService, PrescriptionServiceHttpClient>(client =>
 {
     client.BaseAddress = new Uri(prescriptionGatewayUrl);
     client.DefaultRequestHeaders.Add("Accept", "application/json");
     client.Timeout = TimeSpan.FromSeconds(30);
-});
+}).AddHttpMessageHandler<SchedulingTenantAuthorizationHandler>();
 
-// Vision service: always use microservice mode
+// Vision service: always use microservice mode.
+// The service takes the tenant only from the forwarded staff bearer token.
 var visionGatewayUrl = builder.Configuration.GetValue<string>("ApiGateway:BaseUrl") ?? "http://localhost:5200";
 builder.Services.AddHttpClient<CloudDentalOffice.Contracts.Vision.IVisionService, VisionServiceHttpClient>(client =>
 {
     client.BaseAddress = new Uri(visionGatewayUrl);
     client.DefaultRequestHeaders.Add("Accept", "application/json");
     client.Timeout = TimeSpan.FromSeconds(30);
-});
+}).AddHttpMessageHandler<SchedulingTenantAuthorizationHandler>();
 
 builder.Services.AddTransient<SchedulingTenantAuthorizationHandler>();
 builder.Services.AddHttpClient<IBookingRequestService, BookingRequestServiceHttpClient>(client =>

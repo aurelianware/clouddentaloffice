@@ -437,6 +437,21 @@ spec:
                 secretKeyRef:
                   name: cdo-app-secrets
                   key: ConnectionStrings__PrescriptionDb
+            - name: Jwt__Key
+              valueFrom:
+                secretKeyRef:
+                  name: cdo-app-secrets
+                  key: Jwt__Key
+            - name: Jwt__Issuer
+              valueFrom:
+                secretKeyRef:
+                  name: cdo-app-secrets
+                  key: Jwt__Issuer
+            - name: Jwt__Audience
+              valueFrom:
+                secretKeyRef:
+                  name: cdo-app-secrets
+                  key: Jwt__Audience
             - name: ErxProvider
               value: Mock
           livenessProbe:
@@ -499,6 +514,34 @@ spec:
                 secretKeyRef:
                   name: cdo-app-secrets
                   key: ConnectionStrings__VisionDb
+            - name: Jwt__Key
+              valueFrom:
+                secretKeyRef:
+                  name: cdo-app-secrets
+                  key: Jwt__Key
+            - name: Jwt__Issuer
+              valueFrom:
+                secretKeyRef:
+                  name: cdo-app-secrets
+                  key: Jwt__Issuer
+            - name: Jwt__Audience
+              valueFrom:
+                secretKeyRef:
+                  name: cdo-app-secrets
+                  key: Jwt__Audience
+            # Per-tenant edge-device key. Optional: without it every device request is rejected.
+            - name: DeviceApi__Clients__0__TenantId
+              valueFrom:
+                secretKeyRef:
+                  name: cdo-app-secrets
+                  key: VisionDevice__TenantId
+                  optional: true
+            - name: DeviceApi__Clients__0__ApiKey
+              valueFrom:
+                secretKeyRef:
+                  name: cdo-app-secrets
+                  key: VisionDevice__ApiKey
+                  optional: true
             - name: OcrProvider
               value: Mock
             - name: CorrelationProvider

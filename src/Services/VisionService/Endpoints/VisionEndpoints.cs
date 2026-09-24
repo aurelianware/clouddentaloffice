@@ -1,11 +1,13 @@
 // Copyright (c) Aurelianware, Inc. All rights reserved.
 // Licensed under the Apache License, Version 2.0.
 
+using System.Security.Claims;
 using System.Text.Json;
 using CloudDentalOffice.Contracts.Vision;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using VisionService.Adapters;
+using VisionService.Auth;
 using VisionService.Domain;
 using VisionService.Hubs;
 
@@ -15,34 +17,42 @@ public static class VisionEndpoints
 {
     public static void MapVisionEndpoints(this WebApplication app)
     {
+        // Staff routes take the Portal's bearer token; device routes take the per-tenant
+        // device key. The tenant comes only from the credential, and records belonging
+        // to another tenant are reported as 404.
+
         // ── Devices ─────────────────────────────────────────────────────────
         var devices = app.MapGroup("/api/vision/devices").WithTags("Devices");
 
-        devices.MapPost("/", RegisterDevice);
-        devices.MapGet("/", GetDevices);
-        devices.MapGet("/{id:guid}", GetDevice);
-        devices.MapPut("/{id:guid}/status", UpdateDeviceStatus);
-        devices.MapPost("/{id:guid}/heartbeat", DeviceHeartbeat);
+        devices.MapPost("/", RegisterDevice).RequireAuthorization(VisionAuth.StaffPolicy);
+        devices.MapGet("/", GetDevices).RequireAuthorization(VisionAuth.StaffPolicy);
+        devices.MapGet("/{id:guid}", GetDevice).RequireAuthorization(VisionAuth.StaffPolicy);
+        devices.MapPut("/{id:guid}/status", UpdateDeviceStatus).RequireAuthorization(VisionAuth.StaffPolicy);
+        devices.MapPost("/{id:guid}/heartbeat", DeviceHeartbeat).RequireAuthorization(VisionAuth.DevicePolicy);
 
         // ── Detection Ingestion ─────────────────────────────────────────────
-        var detections = app.MapGroup("/api/vision/detections").WithTags("Detections");
+        var detections = app.MapGroup("/api/vision/detections").WithTags("Detections")
+            .RequireAuthorization(VisionAuth.DevicePolicy);
 
         detections.MapPost("/", IngestDetections);
 
         // ── Vision Events ───────────────────────────────────────────────────
-        var events = app.MapGroup("/api/vision/events").WithTags("Events");
+        var events = app.MapGroup("/api/vision/events").WithTags("Events")
+            .RequireAuthorization(VisionAuth.StaffPolicy);
 
         events.MapGet("/", GetEvents);
         events.MapGet("/{id:guid}", GetEvent);
 
         // ── Insurance Card OCR ──────────────────────────────────────────────
-        var insurance = app.MapGroup("/api/vision/insurance").WithTags("Insurance Card OCR");
+        var insurance = app.MapGroup("/api/vision/insurance").WithTags("Insurance Card OCR")
+            .RequireAuthorization(VisionAuth.StaffPolicy);
 
         insurance.MapPost("/scan", ScanInsuranceCard);
         insurance.MapGet("/scans", GetInsuranceScans);
 
         // ── Consent Recordings ──────────────────────────────────────────────
-        var consent = app.MapGroup("/api/vision/consent").WithTags("Consent Recording");
+        var consent = app.MapGroup("/api/vision/consent").WithTags("Consent Recording")
+            .RequireAuthorization(VisionAuth.StaffPolicy);
 
         consent.MapPost("/start", StartConsentRecording);
         consent.MapPost("/{id:guid}/complete", CompleteConsentRecording);
@@ -51,11 +61,12 @@ public static class VisionEndpoints
         // ── Narcotics Cabinet ───────────────────────────────────────────────
         var cabinet = app.MapGroup("/api/vision/cabinet").WithTags("Narcotics Cabinet");
 
-        cabinet.MapPost("/access", LogCabinetAccess);
-        cabinet.MapGet("/access-log", GetCabinetAccessLogs);
+        cabinet.MapPost("/access", LogCabinetAccess).RequireAuthorization(VisionAuth.DevicePolicy);
+        cabinet.MapGet("/access-log", GetCabinetAccessLogs).RequireAuthorization(VisionAuth.StaffPolicy);
 
         // ── Clinical Notes ──────────────────────────────────────────────────
-        var notes = app.MapGroup("/api/vision/clinical-notes").WithTags("Clinical Notes");
+        var notes = app.MapGroup("/api/vision/clinical-notes").WithTags("Clinical Notes")
+            .RequireAuthorization(VisionAuth.StaffPolicy);
 
         notes.MapPost("/generate", GenerateClinicalNote);
         notes.MapPost("/{id:guid}/approve", ApproveClinicalNote);
@@ -67,7 +78,7 @@ public static class VisionEndpoints
     // ═══════════════════════════════════════════════════════════════════════
 
     private static async Task<IResult> RegisterDevice(
-        RegisterDeviceRequest request, VisionDbContext db, IHubContext<VisionHub> hub)
+        RegisterDeviceRequest request, VisionDbContext db, IHubContext<VisionHub> hub, ClaimsPrincipal user)
     {
         var device = new VisionDevice
         {
@@ -80,7 +91,7 @@ public static class VisionEndpoints
             MacAddress = request.MacAddress,
             SupportsOcr = request.SupportsOcr,
             Status = DeviceStatus.Online,
-            TenantId = Guid.Empty // TODO: from auth context
+            TenantId = user.Tenant()
         };
 
         db.Devices.Add(device);
@@ -91,9 +102,11 @@ public static class VisionEndpoints
         return Results.Created($"/api/vision/devices/{device.Id}", MapDeviceDto(device));
     }
 
-    private static async Task<IResult> GetDevices(VisionDbContext db)
+    private static async Task<IResult> GetDevices(VisionDbContext db, ClaimsPrincipal user)
     {
+        var tenantId = user.Tenant();
         var devices = await db.Devices
+            .Where(d => d.TenantId == tenantId)
             .OrderBy(d => d.Location)
             .ThenBy(d => d.Name)
             .ToListAsync();
@@ -101,16 +114,16 @@ public static class VisionEndpoints
         return Results.Ok(devices.Select(MapDeviceDto).ToList());
     }
 
-    private static async Task<IResult> GetDevice(Guid id, VisionDbContext db)
+    private static async Task<IResult> GetDevice(Guid id, VisionDbContext db, ClaimsPrincipal user)
     {
-        var device = await db.Devices.FindAsync(id);
+        var device = await FindDeviceAsync(db, id, user.Tenant());
         return device == null ? Results.NotFound() : Results.Ok(MapDeviceDto(device));
     }
 
     private static async Task<IResult> UpdateDeviceStatus(
-        Guid id, DeviceStatus status, VisionDbContext db, IHubContext<VisionHub> hub)
+        Guid id, DeviceStatus status, VisionDbContext db, IHubContext<VisionHub> hub, ClaimsPrincipal user)
     {
-        var device = await db.Devices.FindAsync(id);
+        var device = await FindDeviceAsync(db, id, user.Tenant());
         if (device == null) return Results.NotFound();
 
         device.Status = status;
@@ -123,9 +136,9 @@ public static class VisionEndpoints
     }
 
     private static async Task<IResult> DeviceHeartbeat(
-        Guid id, VisionDbContext db, IHubContext<VisionHub> hub)
+        Guid id, VisionDbContext db, IHubContext<VisionHub> hub, ClaimsPrincipal user)
     {
-        var device = await db.Devices.FindAsync(id);
+        var device = await FindDeviceAsync(db, id, user.Tenant());
         if (device == null) return Results.NotFound();
 
         device.LastHeartbeat = DateTime.UtcNow;
@@ -144,9 +157,10 @@ public static class VisionEndpoints
         IngestDetectionRequest request,
         VisionDbContext db,
         IContextCorrelationEngine correlator,
-        IHubContext<VisionHub> hub)
+        IHubContext<VisionHub> hub,
+        ClaimsPrincipal user)
     {
-        var device = await db.Devices.FindAsync(request.DeviceId);
+        var device = await FindDeviceAsync(db, request.DeviceId, user.Tenant());
         if (device == null) return Results.NotFound("Device not registered");
 
         // Correlate with CDO context
@@ -190,11 +204,12 @@ public static class VisionEndpoints
     private static async Task<IResult> GetEvents(
         DateTime? from, DateTime? to, CameraLocation? location,
         AlertSeverity? minSeverity, int limit,
-        VisionDbContext db)
+        VisionDbContext db, ClaimsPrincipal user)
     {
+        var tenantId = user.Tenant();
         var query = db.Events
             .Include(e => e.Device)
-            .AsQueryable();
+            .Where(e => e.TenantId == tenantId);
 
         if (from.HasValue) query = query.Where(e => e.Timestamp >= from.Value);
         if (to.HasValue) query = query.Where(e => e.Timestamp <= to.Value);
@@ -209,9 +224,10 @@ public static class VisionEndpoints
         return Results.Ok(events.Select(e => MapEventDto(e, e.Device)).ToList());
     }
 
-    private static async Task<IResult> GetEvent(Guid id, VisionDbContext db)
+    private static async Task<IResult> GetEvent(Guid id, VisionDbContext db, ClaimsPrincipal user)
     {
-        var ev = await db.Events.Include(e => e.Device).FirstOrDefaultAsync(e => e.Id == id);
+        var tenantId = user.Tenant();
+        var ev = await db.Events.Include(e => e.Device).FirstOrDefaultAsync(e => e.Id == id && e.TenantId == tenantId);
         return ev == null ? Results.NotFound() : Results.Ok(MapEventDto(ev, ev.Device));
     }
 
@@ -223,8 +239,13 @@ public static class VisionEndpoints
         ScanInsuranceCardRequest request,
         IOcrGateway ocr,
         VisionDbContext db,
-        IHubContext<VisionHub> hub)
+        IHubContext<VisionHub> hub,
+        ClaimsPrincipal user)
     {
+        var tenantId = user.Tenant();
+        if (request.DeviceId != Guid.Empty && await FindDeviceAsync(db, request.DeviceId, tenantId) is null)
+            return Results.NotFound("Device not registered");
+
         var imageBytes = Convert.FromBase64String(request.ImageBase64);
         byte[]? backBytes = request.BackImageBase64 != null
             ? Convert.FromBase64String(request.BackImageBase64) : null;
@@ -247,7 +268,7 @@ public static class VisionEndpoints
             CopayAmount = ocrResult.CopayAmount,
             PhoneNumber = ocrResult.PhoneNumber,
             MatchedPatientId = request.PatientId,
-            TenantId = Guid.Empty // TODO: from auth context
+            TenantId = tenantId
         };
 
         // TODO: Trigger eligibility check via CDO EligibilityService :5104
@@ -264,9 +285,10 @@ public static class VisionEndpoints
     }
 
     private static async Task<IResult> GetInsuranceScans(
-        Guid? patientId, int limit, VisionDbContext db)
+        Guid? patientId, int limit, VisionDbContext db, ClaimsPrincipal user)
     {
-        var query = db.InsuranceCardScans.AsQueryable();
+        var tenantId = user.Tenant();
+        var query = db.InsuranceCardScans.Where(s => s.TenantId == tenantId);
         if (patientId.HasValue)
             query = query.Where(s => s.MatchedPatientId == patientId.Value);
 
@@ -283,8 +305,12 @@ public static class VisionEndpoints
     // ═══════════════════════════════════════════════════════════════════════
 
     private static async Task<IResult> StartConsentRecording(
-        StartConsentRecordingRequest request, VisionDbContext db)
+        StartConsentRecordingRequest request, VisionDbContext db, ClaimsPrincipal user)
     {
+        var tenantId = user.Tenant();
+        if (request.DeviceId != Guid.Empty && await FindDeviceAsync(db, request.DeviceId, tenantId) is null)
+            return Results.NotFound("Device not registered");
+
         var recording = new ConsentRecording
         {
             DeviceId = request.DeviceId,
@@ -293,7 +319,7 @@ public static class VisionEndpoints
             AppointmentId = request.AppointmentId,
             ConsentType = request.ConsentType,
             Status = ConsentStatus.InProgress,
-            TenantId = Guid.Empty // TODO: from auth context
+            TenantId = tenantId
         };
 
         db.ConsentRecordings.Add(recording);
@@ -302,9 +328,10 @@ public static class VisionEndpoints
         return Results.Created($"/api/vision/consent/{recording.Id}", MapConsentDto(recording));
     }
 
-    private static async Task<IResult> CompleteConsentRecording(Guid id, VisionDbContext db)
+    private static async Task<IResult> CompleteConsentRecording(Guid id, VisionDbContext db, ClaimsPrincipal user)
     {
-        var recording = await db.ConsentRecordings.FindAsync(id);
+        var tenantId = user.Tenant();
+        var recording = await db.ConsentRecordings.FirstOrDefaultAsync(c => c.Id == id && c.TenantId == tenantId);
         if (recording == null) return Results.NotFound();
 
         recording.Status = ConsentStatus.Captured;
@@ -317,9 +344,10 @@ public static class VisionEndpoints
     }
 
     private static async Task<IResult> GetConsentRecordings(
-        Guid? patientId, int limit, VisionDbContext db)
+        Guid? patientId, int limit, VisionDbContext db, ClaimsPrincipal user)
     {
-        var query = db.ConsentRecordings.AsQueryable();
+        var tenantId = user.Tenant();
+        var query = db.ConsentRecordings.Where(c => c.TenantId == tenantId);
         if (patientId.HasValue)
             query = query.Where(c => c.PatientId == patientId.Value);
 
@@ -339,9 +367,10 @@ public static class VisionEndpoints
         LogCabinetAccessRequest request,
         IContextCorrelationEngine correlator,
         VisionDbContext db,
-        IHubContext<VisionHub> hub)
+        IHubContext<VisionHub> hub,
+        ClaimsPrincipal user)
     {
-        var device = await db.Devices.FindAsync(request.DeviceId);
+        var device = await FindDeviceAsync(db, request.DeviceId, user.Tenant());
         if (device == null) return Results.NotFound("Device not registered");
 
         // Cross-reference with CDO services
@@ -384,9 +413,10 @@ public static class VisionEndpoints
 
     private static async Task<IResult> GetCabinetAccessLogs(
         DateTime? from, DateTime? to, AlertSeverity? minSeverity, int limit,
-        VisionDbContext db)
+        VisionDbContext db, ClaimsPrincipal user)
     {
-        var query = db.CabinetAccessLogs.AsQueryable();
+        var tenantId = user.Tenant();
+        var query = db.CabinetAccessLogs.Where(l => l.TenantId == tenantId);
 
         if (from.HasValue) query = query.Where(l => l.Timestamp >= from.Value);
         if (to.HasValue) query = query.Where(l => l.Timestamp <= to.Value);
@@ -405,11 +435,12 @@ public static class VisionEndpoints
     // ═══════════════════════════════════════════════════════════════════════
 
     private static async Task<IResult> GenerateClinicalNote(
-        GenerateClinicalNoteRequest request, VisionDbContext db)
+        GenerateClinicalNoteRequest request, VisionDbContext db, ClaimsPrincipal user)
     {
-        // Gather procedure observations from vision events for this appointment
+        // Gather procedure observations from this tenant's vision events for the appointment
+        var tenantId = user.Tenant();
         var observations = await db.Events
-            .Where(e => e.AppointmentId == request.AppointmentId
+            .Where(e => e.TenantId == tenantId && e.AppointmentId == request.AppointmentId
                 && e.EventType == VisionEventType.Detection)
             .OrderBy(e => e.Timestamp)
             .ToListAsync();
@@ -429,7 +460,7 @@ public static class VisionEndpoints
             })),
             // TODO: Call Azure OpenAI to generate note text from observations
             DraftNoteText = GenerateMockNote(request.CdtCode, observations.Count),
-            TenantId = Guid.Empty // TODO: from auth context
+            TenantId = tenantId
         };
 
         db.ClinicalNoteDrafts.Add(note);
@@ -438,9 +469,10 @@ public static class VisionEndpoints
         return Results.Ok(MapClinicalNoteDto(note));
     }
 
-    private static async Task<IResult> ApproveClinicalNote(Guid id, VisionDbContext db)
+    private static async Task<IResult> ApproveClinicalNote(Guid id, VisionDbContext db, ClaimsPrincipal user)
     {
-        var note = await db.ClinicalNoteDrafts.FindAsync(id);
+        var tenantId = user.Tenant();
+        var note = await db.ClinicalNoteDrafts.FirstOrDefaultAsync(n => n.Id == id && n.TenantId == tenantId);
         if (note == null) return Results.NotFound();
 
         note.ReviewedByProvider = true;
@@ -452,9 +484,10 @@ public static class VisionEndpoints
     }
 
     private static async Task<IResult> GetClinicalNotes(
-        Guid? appointmentId, int limit, VisionDbContext db)
+        Guid? appointmentId, int limit, VisionDbContext db, ClaimsPrincipal user)
     {
-        var query = db.ClinicalNoteDrafts.AsQueryable();
+        var tenantId = user.Tenant();
+        var query = db.ClinicalNoteDrafts.Where(n => n.TenantId == tenantId);
         if (appointmentId.HasValue)
             query = query.Where(n => n.AppointmentId == appointmentId.Value);
 
@@ -465,6 +498,9 @@ public static class VisionEndpoints
 
         return Results.Ok(notes.Select(MapClinicalNoteDto).ToList());
     }
+
+    private static Task<VisionDevice?> FindDeviceAsync(VisionDbContext db, Guid id, string tenantId) =>
+        db.Devices.FirstOrDefaultAsync(d => d.Id == id && d.TenantId == tenantId);
 
     // ═══════════════════════════════════════════════════════════════════════
     //  MAPPERS
