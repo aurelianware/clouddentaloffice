@@ -72,7 +72,7 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJw
 builder.Services.AddAuthorization(options =>
     options.AddPolicy(PatientTenant.Policy, policy => policy
         .RequireAuthenticatedUser()
-        .RequireAssertion(context => !string.IsNullOrWhiteSpace(PatientTenant.Of(context.User)))));
+        .RequireAssertion(context => PatientTenant.IsStaff(context.User))));
 
 var app = builder.Build();
 
@@ -98,8 +98,7 @@ patientsApi.MapGet("", async (PatientDbContext db, ClaimsPrincipal user) =>
 {
     var tenantId = PatientTenant.Of(user);
     var patients = await db.Patients
-        .Include(p => p.Insurances)
-            .ThenInclude(pi => pi.InsurancePlan)
+        .WithTenantInsurances(tenantId)
         .Where(p => p.TenantId == tenantId && p.Status != "Archived")
         .OrderBy(p => p.LastName).ThenBy(p => p.FirstName)
         .Select(p => p.ToDto())
@@ -113,8 +112,7 @@ patientsApi.MapGet("/{id:int}", async (int id, PatientDbContext db, ClaimsPrinci
 {
     var tenantId = PatientTenant.Of(user);
     var patient = await db.Patients
-        .Include(p => p.Insurances)
-            .ThenInclude(pi => pi.InsurancePlan)
+        .WithTenantInsurances(tenantId)
         .FirstOrDefaultAsync(p => p.PatientId == id && p.TenantId == tenantId);
     return patient is not null ? Results.Ok(patient.ToDto()) : Results.NotFound();
 })
@@ -220,7 +218,7 @@ patientsApi.MapPut("/{id:int}", async (int id, UpdatePatientRequest request, Pat
 
     // Reload with insurance
     var updated = await db.Patients
-        .Include(p => p.Insurances).ThenInclude(pi => pi.InsurancePlan)
+        .WithTenantInsurances(tenantId)
         .FirstAsync(p => p.PatientId == id && p.TenantId == tenantId);
     return Results.Ok(updated.ToDto());
 })
@@ -246,7 +244,7 @@ patientsApi.MapGet("/search", async (string q, PatientDbContext db, ClaimsPrinci
 {
     var tenantId = PatientTenant.Of(user);
     var patients = await db.Patients
-        .Include(p => p.Insurances).ThenInclude(pi => pi.InsurancePlan)
+        .WithTenantInsurances(tenantId)
         .Where(p => p.TenantId == tenantId && p.Status != "Archived")
         .Where(p => p.LastName.Contains(q) || p.FirstName.Contains(q) ||
                     (p.Email != null && p.Email.Contains(q)))
@@ -608,6 +606,24 @@ public static class PatientTenant
 
     // Portal-issued staff tokens (TokenService, SchedulingTenantAuthorizationHandler) carry tenant_id.
     public static string? Of(ClaimsPrincipal user) => user.FindFirstValue("tenant_id");
+
+    // Staff roles are open-ended (Admin, Staff, Dentist, FrontDesk, ...), but the
+    // Portal also signs tokens for patient-portal users with the same tenant_id.
+    // Require a tenant and at least one role, and keep Patient principals out.
+    public static bool IsStaff(ClaimsPrincipal user) =>
+        !string.IsNullOrWhiteSpace(Of(user)) &&
+        user.HasClaim(claim => claim.Type == ClaimTypes.Role && !string.IsNullOrWhiteSpace(claim.Value)) &&
+        !user.IsInRole("Patient");
+}
+
+public static class PatientQueries
+{
+    // Loads only insurance rows, and plans, that belong to the caller's tenant, so
+    // a legacy cross-tenant association never discloses another tenant's plan.
+    public static IQueryable<PatientEntity> WithTenantInsurances(this IQueryable<PatientEntity> patients, string? tenantId) =>
+        patients
+            .Include(p => p.Insurances.Where(pi => pi.TenantId == tenantId && pi.InsurancePlan.TenantId == tenantId))
+            .ThenInclude(pi => pi.InsurancePlan);
 }
 
 public static class InternalPatientApiAuth

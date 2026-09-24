@@ -65,6 +65,47 @@ public sealed class PatientRouteSecurityTests : IClassFixture<PatientSecurityFac
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
+    [Theory]
+    [MemberData(nameof(PublicRoutes))]
+    public async Task Public_routes_forbid_patient_portal_tokens(string method, string route)
+    {
+        var client = _factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", PatientSecurityFactory.Token("tenant-a", role: "Patient"));
+
+        var response = await client.SendAsync(Request(method, route));
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Tokens_without_a_role_are_forbidden()
+    {
+        var client = _factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", PatientSecurityFactory.Token("tenant-a", role: null));
+
+        var response = await client.GetAsync("/api/patients");
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Responses_exclude_insurance_rows_linked_to_another_tenant_plan()
+    {
+        var seed = await _factory.SeedTwoTenantsAsync();
+        await _factory.AddInsuranceAsync("tenant-a", seed.PatientA, seed.PlanA);
+        await _factory.AddInsuranceAsync("tenant-a", seed.PatientA, seed.PlanB); // legacy cross-tenant link
+        var client = _factory.ClientFor("tenant-a");
+
+        var list = (await client.GetFromJsonAsync<List<PatientDto>>("/api/patients"))!.Single(p => p.PatientId == seed.PatientA);
+        var search = (await client.GetFromJsonAsync<List<PatientDto>>($"/api/patients/search?q={seed.Surname}"))!.Single();
+        var get = (await client.GetFromJsonAsync<PatientDto>($"/api/patients/{seed.PatientA}"))!;
+        var put = await (await client.PutAsJsonAsync($"/api/patients/{seed.PatientA}", new UpdatePatientRequest { City = "Austin" }))
+            .Content.ReadFromJsonAsync<PatientDto>();
+
+        foreach (var patient in new[] { list, search, get, put! })
+            Assert.Equal([seed.PlanA], patient.Insurances.Select(i => i.InsurancePlanId));
+    }
+
     [Fact]
     public async Task Lists_and_search_return_only_the_token_tenant()
     {
@@ -260,9 +301,10 @@ public sealed class PatientSecurityFactory : WebApplicationFactory<Program>
     }
 
     // Mirrors the Portal's staff tokens: HMAC-SHA256 with the shared key and a tenant_id claim.
-    public static string Token(string? tenantId, string key = JwtKey)
+    public static string Token(string? tenantId, string key = JwtKey, string? role = "Staff")
     {
-        var claims = new List<Claim> { new(JwtRegisteredClaimNames.Sub, "staff-user"), new(ClaimTypes.Role, "Staff") };
+        var claims = new List<Claim> { new(JwtRegisteredClaimNames.Sub, "staff-user") };
+        if (role is not null) claims.Add(new(ClaimTypes.Role, role));
         if (tenantId is not null) claims.Add(new("tenant_id", tenantId));
         return new JwtSecurityTokenHandler().WriteToken(new JwtSecurityToken(
             Issuer, Audience, claims, expires: DateTime.UtcNow.AddMinutes(5),
@@ -290,6 +332,18 @@ public sealed class PatientSecurityFactory : WebApplicationFactory<Program>
         db.AddRange(patientA, patientB, planA, planB);
         await db.SaveChangesAsync();
         return new(patientA.PatientId, patientB.PatientId, planA.InsurancePlanId, planB.InsurancePlanId, surname);
+    }
+
+    public async Task AddInsuranceAsync(string tenantId, int patientId, int planId)
+    {
+        await using var scope = Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<PatientDbContext>();
+        db.PatientInsurances.Add(new PatientInsuranceEntity
+        {
+            TenantId = tenantId, PatientId = patientId, InsurancePlanId = planId, MemberId = $"M-{planId}",
+            SequenceNumber = 1, EffectiveDate = new DateTime(2024, 1, 1, 0, 0, 0, DateTimeKind.Utc)
+        });
+        await db.SaveChangesAsync();
     }
 
     public async Task<PatientEntity> PatientAsync(int id)
