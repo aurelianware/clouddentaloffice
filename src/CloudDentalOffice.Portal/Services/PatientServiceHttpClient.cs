@@ -11,29 +11,28 @@ namespace CloudDentalOffice.Portal.Services;
 /// The Portal's Razor pages inject IPatientService and call methods like
 /// GetPatientsAsync() — they don't know or care whether the implementation
 /// hits a DbContext or an HTTP endpoint. This is the strangler fig pattern.
+///
+/// The tenant is carried only by the staff bearer token that
+/// SchedulingTenantAuthorizationHandler attaches to every request.
 /// </summary>
 public class PatientServiceHttpClient : IPatientService
 {
     private readonly HttpClient _http;
     private readonly ILogger<PatientServiceHttpClient> _logger;
-    private readonly string? _tenantId;
 
     public PatientServiceHttpClient(
         HttpClient http,
-        ILogger<PatientServiceHttpClient> logger,
-        Tenancy.ITenantProvider tenantProvider)
+        ILogger<PatientServiceHttpClient> logger)
     {
         _http = http;
         _logger = logger;
-        _tenantId = tenantProvider.TenantId;
     }
 
     public async Task<List<Patient>> GetPatientsAsync()
     {
         try
         {
-            var qs = !string.IsNullOrEmpty(_tenantId) ? $"?tenantId={_tenantId}" : "";
-            var dtos = await _http.GetFromJsonAsync<List<PatientDto>>($"/api/patients{qs}");
+            var dtos = await _http.GetFromJsonAsync<List<PatientDto>>("/api/patients");
             return dtos?.Select(MapToModel).ToList() ?? [];
         }
         catch (Exception ex)
@@ -84,8 +83,7 @@ public class PatientServiceHttpClient : IPatientService
                 ZipCode = patient.ZipCode,
             };
 
-            var qs = !string.IsNullOrEmpty(_tenantId) ? $"?tenantId={_tenantId}" : "";
-            var response = await _http.PostAsJsonAsync($"/api/patients{qs}", request);
+            var response = await _http.PostAsJsonAsync("/api/patients", request);
             response.EnsureSuccessStatusCode();
 
             var dto = await response.Content.ReadFromJsonAsync<PatientDto>();
