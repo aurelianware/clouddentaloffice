@@ -257,6 +257,10 @@ Portal: http://localhost:5000
 API Gateway: http://localhost:5200
 Swagger (per service): http://localhost:510x/swagger
 
+Compose gives the Portal and SchedulingService a shared development-only JWT
+signing key; set `CDO_JWT_KEY` to override it. Outside Development the Portal
+refuses to start unless `Jwt__Key` is a unique secret of at least 32 bytes.
+
 ### Local Development
 
 ```bash

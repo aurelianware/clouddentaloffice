@@ -5,8 +5,6 @@ using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.Identity.Web;
 using Microsoft.Identity.Web.UI;
-using Microsoft.IdentityModel.Tokens;
-using System.Text;
 using System.Security.Claims;
 using CloudDentalOffice.Portal.Services;
 using CloudDentalOffice.Portal.Services.Tenancy;
@@ -68,10 +66,6 @@ builder.Services.AddHttpContextAccessor();
 
 // Configure Authentication: Azure AD Multi-tenant (primary) + JWT Bearer (fallback for APIs)
 var azureAdEnabled = builder.Configuration.GetValue("AzureAd:Enabled", false);
-var jwtKey = builder.Configuration["Jwt:Key"] ?? "ThisIsASecretKeyForDevelopmentOnly_DoNotUseInProduction_MakeItLonger";
-var jwtIssuer = builder.Configuration["Jwt:Issuer"] ?? "CloudDentalOffice";
-var jwtAudience = builder.Configuration["Jwt:Audience"] ?? "CloudDentalOffice";
-
 var authBuilder = builder.Services.AddAuthentication(options =>
 {
     if (azureAdEnabled)
@@ -104,19 +98,10 @@ if (!azureAdEnabled)
     });
 }
 
-authBuilder.AddJwtBearer(options =>
-{
-    options.TokenValidationParameters = new TokenValidationParameters
-    {
-        ValidateIssuer = true,
-        ValidateAudience = true,
-        ValidateLifetime = true,
-        ValidateIssuerSigningKey = true,
-        ValidIssuer = jwtIssuer,
-        ValidAudience = jwtAudience,
-        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey))
-    };
-});
+authBuilder.AddJwtBearer();
+builder.Services.AddOptions<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme)
+    .Configure<JwtSettings>((options, jwtSettings) =>
+        options.TokenValidationParameters = jwtSettings.CreateValidationParameters());
 
 // Configure Azure AD Multi-tenant (if enabled)
 if (azureAdEnabled)
@@ -470,7 +455,18 @@ builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IOrganizationService, OrganizationService>();
 builder.Services.AddScoped<AuthenticationStateProvider, PortalAuthStateProvider>();
 
+// Resolved after every configuration source (including Key Vault) is registered.
+// Fails startup outside Development when Jwt:Key is missing, weak, or a published dev key.
+var jwtSettings = JwtSettings.Resolve(builder.Configuration, builder.Environment);
+builder.Services.AddSingleton(jwtSettings);
+
 var app = builder.Build();
+
+if (jwtSettings.UsesEphemeralKey)
+{
+    app.Logger.LogWarning(
+        "Jwt:Key is not configured; using a random per-process signing key. Portal bearer tokens will not validate across restarts or in other services.");
+}
 
 // Ensure database is created and migrations are applied
 using (var scope = app.Services.CreateScope())
@@ -583,3 +579,6 @@ app.MapBlazorHub();
 app.MapFallbackToPage("/_Host");
 
 app.Run();
+
+// Exposes the entry point to WebApplicationFactory in CloudDentalOffice.Portal.Tests.
+public partial class Program { }
