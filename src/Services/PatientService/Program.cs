@@ -1,7 +1,10 @@
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.IdentityModel.Tokens;
 using CloudDentalOffice.Contracts.Patients;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
+using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
 
@@ -40,6 +43,37 @@ builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c => c.SwaggerDoc("v1", new() { Title = "Patient Service", Version = "v1" }));
 builder.Services.AddHealthChecks();
 
+// Patient and insurance-plan APIs accept the same staff bearer tokens as the
+// portal; the tenant comes only from the token's tenant_id claim. Outside
+// Development a missing or weak Jwt:Key fails startup. In Development a missing
+// key becomes a per-process random key, so every request stays unauthorized.
+var configuredJwtKey = builder.Configuration["Jwt:Key"];
+if (!builder.Environment.IsDevelopment() &&
+    (string.IsNullOrWhiteSpace(configuredJwtKey) || Encoding.UTF8.GetByteCount(configuredJwtKey) < 32))
+    throw new InvalidOperationException(
+        "PatientService requires Jwt:Key (at least 32 bytes) outside Development. Supply a secret-backed Jwt__Key.");
+var signingKey = string.IsNullOrWhiteSpace(configuredJwtKey)
+    ? RandomNumberGenerator.GetBytes(32)
+    : Encoding.UTF8.GetBytes(configuredJwtKey);
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJwtBearer(options =>
+{
+    options.TokenValidationParameters = new TokenValidationParameters
+    {
+        ValidateIssuerSigningKey = true,
+        IssuerSigningKey = new SymmetricSecurityKey(signingKey),
+        ValidateIssuer = !string.IsNullOrWhiteSpace(builder.Configuration["Jwt:Issuer"]),
+        ValidIssuer = builder.Configuration["Jwt:Issuer"],
+        ValidateAudience = !string.IsNullOrWhiteSpace(builder.Configuration["Jwt:Audience"]),
+        ValidAudience = builder.Configuration["Jwt:Audience"],
+        ValidateLifetime = true,
+        ClockSkew = TimeSpan.FromMinutes(2)
+    };
+});
+builder.Services.AddAuthorization(options =>
+    options.AddPolicy(PatientTenant.Policy, policy => policy
+        .RequireAuthenticatedUser()
+        .RequireAssertion(context => !string.IsNullOrWhiteSpace(PatientTenant.Of(context.User)))));
+
 var app = builder.Build();
 
 if (app.Environment.IsDevelopment())
@@ -48,21 +82,25 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
+app.UseAuthentication();
+app.UseAuthorization();
+
 app.MapHealthChecks("/health");
+
+// Every tenant-facing route requires a staff token carrying tenant_id. Records
+// belonging to another tenant are reported as 404 so their existence is not revealed.
+var patientsApi = app.MapGroup("/api/patients").RequireAuthorization(PatientTenant.Policy);
+var insurancePlansApi = app.MapGroup("/api/insurance-plans").RequireAuthorization(PatientTenant.Policy);
 
 // ── Patient Endpoints ──
 
-app.MapGet("/api/patients", async (PatientDbContext db, string? tenantId) =>
+patientsApi.MapGet("", async (PatientDbContext db, ClaimsPrincipal user) =>
 {
-    var query = db.Patients
+    var tenantId = PatientTenant.Of(user);
+    var patients = await db.Patients
         .Include(p => p.Insurances)
             .ThenInclude(pi => pi.InsurancePlan)
-        .Where(p => p.Status != "Archived");
-
-    if (!string.IsNullOrEmpty(tenantId))
-        query = query.Where(p => p.TenantId == tenantId);
-
-    var patients = await query
+        .Where(p => p.TenantId == tenantId && p.Status != "Archived")
         .OrderBy(p => p.LastName).ThenBy(p => p.FirstName)
         .Select(p => p.ToDto())
         .ToListAsync();
@@ -71,22 +109,23 @@ app.MapGet("/api/patients", async (PatientDbContext db, string? tenantId) =>
 .WithName("GetPatients")
 .WithTags("Patients");
 
-app.MapGet("/api/patients/{id:int}", async (int id, PatientDbContext db) =>
+patientsApi.MapGet("/{id:int}", async (int id, PatientDbContext db, ClaimsPrincipal user) =>
 {
+    var tenantId = PatientTenant.Of(user);
     var patient = await db.Patients
         .Include(p => p.Insurances)
             .ThenInclude(pi => pi.InsurancePlan)
-        .FirstOrDefaultAsync(p => p.PatientId == id);
+        .FirstOrDefaultAsync(p => p.PatientId == id && p.TenantId == tenantId);
     return patient is not null ? Results.Ok(patient.ToDto()) : Results.NotFound();
 })
 .WithName("GetPatient")
 .WithTags("Patients");
 
-app.MapPost("/api/patients", async (CreatePatientRequest request, PatientDbContext db, string? tenantId) =>
+patientsApi.MapPost("", async (CreatePatientRequest request, PatientDbContext db, ClaimsPrincipal user) =>
 {
     var patient = new PatientEntity
     {
-        TenantId = tenantId ?? "default",
+        TenantId = PatientTenant.Of(user)!,
         FirstName = request.FirstName,
         LastName = request.LastName,
         MiddleName = request.MiddleName,
@@ -154,9 +193,10 @@ app.MapPost("/api/internal/patients/match-or-create", async (
     return Results.Ok(new MatchOrCreateExternalPatientResult(patient.PatientId, true));
 }).WithTags("Patients");
 
-app.MapPut("/api/patients/{id:int}", async (int id, UpdatePatientRequest request, PatientDbContext db) =>
+patientsApi.MapPut("/{id:int}", async (int id, UpdatePatientRequest request, PatientDbContext db, ClaimsPrincipal user) =>
 {
-    var patient = await db.Patients.FindAsync(id);
+    var tenantId = PatientTenant.Of(user);
+    var patient = await db.Patients.FirstOrDefaultAsync(p => p.PatientId == id && p.TenantId == tenantId);
     if (patient is null) return Results.NotFound();
 
     if (request.FirstName is not null) patient.FirstName = request.FirstName;
@@ -181,15 +221,16 @@ app.MapPut("/api/patients/{id:int}", async (int id, UpdatePatientRequest request
     // Reload with insurance
     var updated = await db.Patients
         .Include(p => p.Insurances).ThenInclude(pi => pi.InsurancePlan)
-        .FirstAsync(p => p.PatientId == id);
+        .FirstAsync(p => p.PatientId == id && p.TenantId == tenantId);
     return Results.Ok(updated.ToDto());
 })
 .WithName("UpdatePatient")
 .WithTags("Patients");
 
-app.MapDelete("/api/patients/{id:int}", async (int id, PatientDbContext db) =>
+patientsApi.MapDelete("/{id:int}", async (int id, PatientDbContext db, ClaimsPrincipal user) =>
 {
-    var patient = await db.Patients.FindAsync(id);
+    var tenantId = PatientTenant.Of(user);
+    var patient = await db.Patients.FirstOrDefaultAsync(p => p.PatientId == id && p.TenantId == tenantId);
     if (patient is null) return Results.NotFound();
 
     // Soft delete
@@ -201,18 +242,15 @@ app.MapDelete("/api/patients/{id:int}", async (int id, PatientDbContext db) =>
 .WithName("DeletePatient")
 .WithTags("Patients");
 
-app.MapGet("/api/patients/search", async (string q, PatientDbContext db, string? tenantId) =>
+patientsApi.MapGet("/search", async (string q, PatientDbContext db, ClaimsPrincipal user) =>
 {
-    var query = db.Patients
+    var tenantId = PatientTenant.Of(user);
+    var patients = await db.Patients
         .Include(p => p.Insurances).ThenInclude(pi => pi.InsurancePlan)
-        .Where(p => p.Status != "Archived")
+        .Where(p => p.TenantId == tenantId && p.Status != "Archived")
         .Where(p => p.LastName.Contains(q) || p.FirstName.Contains(q) ||
-                    (p.Email != null && p.Email.Contains(q)));
-
-    if (!string.IsNullOrEmpty(tenantId))
-        query = query.Where(p => p.TenantId == tenantId);
-
-    var patients = await query.Take(50).Select(p => p.ToDto()).ToListAsync();
+                    (p.Email != null && p.Email.Contains(q)))
+        .Take(50).Select(p => p.ToDto()).ToListAsync();
     return Results.Ok(patients);
 })
 .WithName("SearchPatients")
@@ -220,32 +258,30 @@ app.MapGet("/api/patients/search", async (string q, PatientDbContext db, string?
 
 // ── Insurance Plan Endpoints ──
 
-app.MapGet("/api/insurance-plans", async (PatientDbContext db, string? tenantId) =>
+insurancePlansApi.MapGet("", async (PatientDbContext db, ClaimsPrincipal user) =>
 {
-    var query = db.InsurancePlans.AsQueryable();
-    if (!string.IsNullOrEmpty(tenantId))
-        query = query.Where(p => p.TenantId == tenantId);
-
-    var plans = await query.OrderBy(p => p.PayerName)
+    var tenantId = PatientTenant.Of(user);
+    var plans = await db.InsurancePlans.Where(p => p.TenantId == tenantId).OrderBy(p => p.PayerName)
         .Select(p => p.ToDto()).ToListAsync();
     return Results.Ok(plans);
 })
 .WithName("GetInsurancePlans")
 .WithTags("Insurance");
 
-app.MapGet("/api/insurance-plans/{id:int}", async (int id, PatientDbContext db) =>
+insurancePlansApi.MapGet("/{id:int}", async (int id, PatientDbContext db, ClaimsPrincipal user) =>
 {
-    var plan = await db.InsurancePlans.FindAsync(id);
+    var tenantId = PatientTenant.Of(user);
+    var plan = await db.InsurancePlans.FirstOrDefaultAsync(p => p.InsurancePlanId == id && p.TenantId == tenantId);
     return plan is not null ? Results.Ok(plan.ToDto()) : Results.NotFound();
 })
 .WithName("GetInsurancePlan")
 .WithTags("Insurance");
 
-app.MapPost("/api/insurance-plans", async (CreateInsurancePlanRequest request, PatientDbContext db, string? tenantId) =>
+insurancePlansApi.MapPost("", async (CreateInsurancePlanRequest request, PatientDbContext db, ClaimsPrincipal user) =>
 {
     var plan = new InsurancePlanEntity
     {
-        TenantId = tenantId ?? "default",
+        TenantId = PatientTenant.Of(user)!,
         PayerId = request.PayerId,
         PayerName = request.PayerName,
         PlanName = request.PlanName,
@@ -272,11 +308,14 @@ app.MapPost("/api/insurance-plans", async (CreateInsurancePlanRequest request, P
 
 // ── Patient Insurance Endpoints ──
 
-app.MapPost("/api/patients/{patientId:int}/insurances", async (
-    int patientId, CreatePatientInsuranceRequest request, PatientDbContext db) =>
+patientsApi.MapPost("/{patientId:int}/insurances", async (
+    int patientId, CreatePatientInsuranceRequest request, PatientDbContext db, ClaimsPrincipal user) =>
 {
-    var patient = await db.Patients.FindAsync(patientId);
+    var tenantId = PatientTenant.Of(user);
+    var patient = await db.Patients.FirstOrDefaultAsync(p => p.PatientId == patientId && p.TenantId == tenantId);
     if (patient is null) return Results.NotFound("Patient not found");
+    if (!await db.InsurancePlans.AnyAsync(p => p.InsurancePlanId == request.InsurancePlanId && p.TenantId == tenantId))
+        return Results.NotFound("Insurance plan not found");
 
     var insurance = new PatientInsuranceEntity
     {
@@ -318,6 +357,10 @@ using (var scope = app.Services.CreateScope())
 }
 
 app.Run();
+
+// Exposes the entry point to WebApplicationFactory in PatientService.Tests.
+public partial class Program { }
+
 // ── Entities ──
 
 [Table("Patients")]
@@ -557,6 +600,14 @@ public class InsurancePlanEntity
         EdiSubmissionType = EdiSubmissionType,
         IsActive = IsActive,
     };
+}
+
+public static class PatientTenant
+{
+    public const string Policy = "PatientTenant";
+
+    // Portal-issued staff tokens (TokenService, SchedulingTenantAuthorizationHandler) carry tenant_id.
+    public static string? Of(ClaimsPrincipal user) => user.FindFirstValue("tenant_id");
 }
 
 public static class InternalPatientApiAuth

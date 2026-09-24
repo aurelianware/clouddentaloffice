@@ -303,12 +303,13 @@ var usePatientMicroservice = builder.Configuration.GetValue("Microservices:Patie
 if (usePatientMicroservice)
 {
     var gatewayUrl = builder.Configuration.GetValue<string>("ApiGateway:BaseUrl") ?? "http://localhost:5200";
+    // PatientService takes the tenant only from the forwarded staff bearer token.
     builder.Services.AddHttpClient<IPatientService, PatientServiceHttpClient>(client =>
     {
         client.BaseAddress = new Uri(gatewayUrl);
         client.DefaultRequestHeaders.Add("Accept", "application/json");
         client.Timeout = TimeSpan.FromSeconds(30);
-    });
+    }).AddHttpMessageHandler<SchedulingTenantAuthorizationHandler>();
 }
 else
 {

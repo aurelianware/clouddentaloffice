@@ -250,6 +250,7 @@ resource patientService 'Microsoft.App/containerApps@2023-05-01' = {
       secrets: [
         { name: 'conn-patient', value: connPatient }
         { name: 'internal-api-key', value: patientServiceApiKey }
+        { name: 'jwt-key', value: jwtKey }
       ]
     }
     template: {
@@ -264,6 +265,9 @@ resource patientService 'Microsoft.App/containerApps@2023-05-01' = {
             { name: 'ConnectionStrings__PatientDb', secretRef: 'conn-patient' }
             { name: 'InternalApi__Clients__0__TenantId', value: initialTenantId }
             { name: 'InternalApi__Clients__0__ApiKey', secretRef: 'internal-api-key' }
+            { name: 'Jwt__Key', secretRef: 'jwt-key' }
+            { name: 'Jwt__Issuer', value: jwtIssuer }
+            { name: 'Jwt__Audience', value: jwtAudience }
           ]
         }
       ]
