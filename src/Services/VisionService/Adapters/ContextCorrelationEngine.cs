@@ -28,7 +28,7 @@ public interface IContextCorrelationEngine
     /// Check narcotics cabinet access against CDO PrescriptionService and SchedulingService.
     /// </summary>
     Task<CabinetAccessCorrelation> CorrelateCabinetAccessAsync(
-        string? badgeId, DateTime accessTime, Guid tenantId);
+        string? badgeId, DateTime accessTime, string tenantId);
 }
 
 public class CorrelationResult
@@ -139,7 +139,7 @@ public class ContextCorrelationEngine : IContextCorrelationEngine
     }
 
     public async Task<CabinetAccessCorrelation> CorrelateCabinetAccessAsync(
-        string? badgeId, DateTime accessTime, Guid tenantId)
+        string? badgeId, DateTime accessTime, string tenantId)
     {
         var result = new CabinetAccessCorrelation
         {
@@ -337,7 +337,7 @@ public class MockContextCorrelationEngine : IContextCorrelationEngine
     }
 
     public Task<CabinetAccessCorrelation> CorrelateCabinetAccessAsync(
-        string? badgeId, DateTime accessTime, Guid tenantId)
+        string? badgeId, DateTime accessTime, string tenantId)
     {
         return Task.FromResult(new CabinetAccessCorrelation
         {

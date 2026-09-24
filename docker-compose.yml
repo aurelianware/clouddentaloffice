@@ -33,7 +33,7 @@ services:
     environment:
       - ASPNETCORE_ENVIRONMENT=Development
       - ApiGateway__BaseUrl=http://api-gateway:5200
-      # Shared with scheduling-service and patient-service so staff tokens validate across them.
+      # Shared with the scheduling, patient, prescription and vision services so staff tokens validate across them.
       # Override with CDO_JWT_KEY; the default is a published development-only key.
       - Jwt__Key=${CDO_JWT_KEY:-CloudDentalOffice-Local-DevelopmentOnly-Key-ChangeMe!}
     depends_on:
@@ -152,6 +152,7 @@ services:
       - ASPNETCORE_ENVIRONMENT=Development
       - DatabaseProvider=PostgreSQL
       - ConnectionStrings__PrescriptionDb=Host=postgres;Database=cdo_prescriptions;Username=cdo;Password=cdo_dev_password
+      - Jwt__Key=${CDO_JWT_KEY:-CloudDentalOffice-Local-DevelopmentOnly-Key-ChangeMe!}
       - ErxProvider=Mock
     depends_on:
       - postgres
@@ -168,6 +169,7 @@ services:
       - ASPNETCORE_ENVIRONMENT=Development
       - DatabaseProvider=PostgreSQL
       - ConnectionStrings__VisionDb=Host=postgres;Database=cdo_vision;Username=cdo;Password=cdo_dev_password
+      - Jwt__Key=${CDO_JWT_KEY:-CloudDentalOffice-Local-DevelopmentOnly-Key-ChangeMe!}
       - OcrProvider=Mock
       - CorrelationProvider=Mock
       - ApiGatewayUrl=http://api-gateway:5200

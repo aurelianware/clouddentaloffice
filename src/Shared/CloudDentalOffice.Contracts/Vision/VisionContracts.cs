@@ -179,7 +179,7 @@ public class VisionDeviceDto
     public string? ActiveModelVersion { get; set; }
 
     // Tenant
-    public Guid TenantId { get; set; }
+    public string TenantId { get; set; } = string.Empty;
 }
 
 /// <summary>
@@ -237,7 +237,7 @@ public class VisionEventDto
     public string? ImageUrl { get; set; }
     public string? VideoUrl { get; set; }
 
-    public Guid TenantId { get; set; }
+    public string TenantId { get; set; } = string.Empty;
 }
 
 /// <summary>
@@ -274,7 +274,7 @@ public class CabinetAccessLogDto
     public AlertSeverity Severity { get; set; }
     public string? AlertMessage { get; set; }
 
-    public Guid TenantId { get; set; }
+    public string TenantId { get; set; } = string.Empty;
 }
 
 /// <summary>
@@ -309,7 +309,7 @@ public class InsuranceCardScanDto
     public bool EligibilityCheckTriggered { get; set; }
     public string? EligibilityResult { get; set; }
 
-    public Guid TenantId { get; set; }
+    public string TenantId { get; set; } = string.Empty;
 }
 
 /// <summary>
@@ -339,7 +339,7 @@ public class ConsentRecordingDto
     public bool ConsentFormDetected { get; set; }
     public bool ProviderDetected { get; set; }
 
-    public Guid TenantId { get; set; }
+    public string TenantId { get; set; } = string.Empty;
 }
 
 /// <summary>
@@ -367,7 +367,7 @@ public class ClinicalNoteDraftDto
     public bool ApprovedByProvider { get; set; }
     public DateTime? ApprovedAt { get; set; }
 
-    public Guid TenantId { get; set; }
+    public string TenantId { get; set; } = string.Empty;
 }
 
 public class ProcedureObservationDto

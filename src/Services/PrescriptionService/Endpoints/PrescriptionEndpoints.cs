@@ -1,9 +1,11 @@
 // Copyright (c) Aurelianware, Inc. All rights reserved.
 // Licensed under the Apache License, Version 2.0.
 
+using System.Security.Claims;
 using CloudDentalOffice.Contracts.Prescriptions;
 using Microsoft.EntityFrameworkCore;
 using PrescriptionService.Adapters;
+using PrescriptionService.Auth;
 using PrescriptionService.Domain;
 
 namespace PrescriptionService.Endpoints;
@@ -12,10 +14,16 @@ public static class PrescriptionEndpoints
 {
     public static void MapPrescriptionEndpoints(this WebApplication app)
     {
-        var group = app.MapGroup("/api/prescriptions").WithTags("Prescriptions");
-        var prescriberGroup = app.MapGroup("/api/prescribers").WithTags("Prescribers");
-        var pharmacyGroup = app.MapGroup("/api/pharmacies").WithTags("Pharmacies");
-        var allergyGroup = app.MapGroup("/api/patients/{patientId}/allergies").WithTags("Allergies");
+        // Every route requires a staff token; the tenant comes only from its tenant_id
+        // claim. Records belonging to another tenant are reported as 404.
+        var group = app.MapGroup("/api/prescriptions").WithTags("Prescriptions")
+            .RequireAuthorization(StaffAuth.Policy);
+        var prescriberGroup = app.MapGroup("/api/prescribers").WithTags("Prescribers")
+            .RequireAuthorization(StaffAuth.Policy);
+        var pharmacyGroup = app.MapGroup("/api/pharmacies").WithTags("Pharmacies")
+            .RequireAuthorization(StaffAuth.Policy);
+        var allergyGroup = app.MapGroup("/api/patients/{patientId}/allergies").WithTags("Allergies")
+            .RequireAuthorization(StaffAuth.Policy);
 
         // ── Prescriptions ──────────────────────────────────────────────────
 
@@ -105,13 +113,20 @@ public static class PrescriptionEndpoints
     private static async Task<IResult> CreatePrescription(
         CreatePrescriptionRequest request,
         PrescriptionDbContext db,
+        ClaimsPrincipal user,
         CancellationToken ct)
     {
+        var tenantId = user.Tenant();
+        if (!await db.Prescribers.AnyAsync(p => p.ProviderId == request.PrescriberId && p.TenantId == tenantId, ct))
+            return Results.NotFound("Prescriber not found");
+        if (await BelongsToAnotherTenantAsync(db, request.PatientId, tenantId, ct))
+            return Results.NotFound("Patient not found");
+
         var prescription = new Prescription
         {
             PatientId = request.PatientId,
             PrescriberId = request.PrescriberId,
-            TenantId = "default", // TODO: resolve from auth context
+            TenantId = tenantId,
             DrugName = request.DrugName,
             RxNormCode = request.RxNormCode,
             NdcCode = request.NdcCode,
@@ -148,11 +163,12 @@ public static class PrescriptionEndpoints
     }
 
     private static async Task<IResult> GetPrescription(
-        Guid id, PrescriptionDbContext db, CancellationToken ct)
+        Guid id, PrescriptionDbContext db, ClaimsPrincipal user, CancellationToken ct)
     {
+        var tenantId = user.Tenant();
         var prescription = await db.Prescriptions
             .AsNoTracking()
-            .FirstOrDefaultAsync(p => p.Id == id, ct);
+            .FirstOrDefaultAsync(p => p.Id == id && p.TenantId == tenantId, ct);
 
         return prescription is null
             ? Results.NotFound()
@@ -160,11 +176,12 @@ public static class PrescriptionEndpoints
     }
 
     private static async Task<IResult> GetPatientPrescriptions(
-        Guid patientId, bool includeExpired, PrescriptionDbContext db, CancellationToken ct)
+        Guid patientId, bool includeExpired, PrescriptionDbContext db, ClaimsPrincipal user, CancellationToken ct)
     {
+        var tenantId = user.Tenant();
         var query = db.Prescriptions
             .AsNoTracking()
-            .Where(p => p.PatientId == patientId);
+            .Where(p => p.PatientId == patientId && p.TenantId == tenantId);
 
         if (!includeExpired)
             query = query.Where(p => p.Status != "Expired" && p.Status != "Cancelled");
@@ -182,35 +199,44 @@ public static class PrescriptionEndpoints
         PrescriptionDbContext db,
         IErxGateway erxGateway,
         EpcsAuthProviderFactory epcsFactory,
+        ClaimsPrincipal user,
         CancellationToken ct)
     {
+        var tenantId = user.Tenant();
         var prescription = await db.Prescriptions
             .Include(p => p.AuditTrail)
-            .FirstOrDefaultAsync(p => p.Id == id, ct);
+            .FirstOrDefaultAsync(p => p.Id == id && p.TenantId == tenantId, ct);
 
         if (prescription is null)
             return Results.NotFound();
 
-        // For controlled substances, verify EPCS authentication
+        // For controlled substances, verify EPCS authentication. A prescriber that
+        // cannot be found in this tenant fails closed instead of skipping the check.
         if (prescription.Schedule >= 2)
         {
             var prescriber = await db.Prescribers
-                .FirstOrDefaultAsync(p => p.ProviderId == prescription.PrescriberId, ct);
+                .FirstOrDefaultAsync(p => p.ProviderId == prescription.PrescriberId && p.TenantId == tenantId, ct);
 
-            if (prescriber != null)
+            if (prescriber is null)
             {
-                var epcsProvider = epcsFactory.GetProvider(prescriber.EpcsAuthMethod);
-                var isProofed = await epcsProvider.IsIdentityProofedAsync(
-                    prescriber.ProviderId.ToString(), ct);
-
-                if (!isProofed)
+                return Results.BadRequest(new
                 {
-                    return Results.BadRequest(new
-                    {
-                        Error = "EPCS identity proofing required",
-                        Message = "Provider must complete identity proofing before prescribing controlled substances."
-                    });
-                }
+                    Error = "EPCS prescriber not registered",
+                    Message = "Controlled substances require a prescriber registered in this practice."
+                });
+            }
+
+            var epcsProvider = epcsFactory.GetProvider(prescriber.EpcsAuthMethod);
+            var isProofed = await epcsProvider.IsIdentityProofedAsync(
+                prescriber.ProviderId.ToString(), ct);
+
+            if (!isProofed)
+            {
+                return Results.BadRequest(new
+                {
+                    Error = "EPCS identity proofing required",
+                    Message = "Provider must complete identity proofing before prescribing controlled substances."
+                });
             }
         }
 
@@ -290,11 +316,12 @@ public static class PrescriptionEndpoints
     }
 
     private static async Task<IResult> CancelPrescription(
-        Guid id, string reason, PrescriptionDbContext db, IErxGateway erxGateway, CancellationToken ct)
+        Guid id, string reason, PrescriptionDbContext db, IErxGateway erxGateway, ClaimsPrincipal user, CancellationToken ct)
     {
+        var tenantId = user.Tenant();
         var prescription = await db.Prescriptions
             .Include(p => p.AuditTrail)
-            .FirstOrDefaultAsync(p => p.Id == id, ct);
+            .FirstOrDefaultAsync(p => p.Id == id && p.TenantId == tenantId, ct);
 
         if (prescription is null)
             return Results.NotFound();
@@ -329,11 +356,12 @@ public static class PrescriptionEndpoints
 
     private static async Task<IResult> RespondToRefill(
         Guid id, RefillRequestResponse response,
-        PrescriptionDbContext db, IErxGateway erxGateway, CancellationToken ct)
+        PrescriptionDbContext db, IErxGateway erxGateway, ClaimsPrincipal user, CancellationToken ct)
     {
+        var tenantId = user.Tenant();
         var prescription = await db.Prescriptions
             .Include(p => p.AuditTrail)
-            .FirstOrDefaultAsync(p => p.Id == id, ct);
+            .FirstOrDefaultAsync(p => p.Id == id && p.TenantId == tenantId, ct);
 
         if (prescription is null)
             return Results.NotFound();
@@ -364,8 +392,12 @@ public static class PrescriptionEndpoints
     }
 
     private static async Task<IResult> CheckInteractions(
-        Guid patientId, string rxNormCode, IErxGateway erxGateway, CancellationToken ct)
+        Guid patientId, string rxNormCode, IErxGateway erxGateway,
+        PrescriptionDbContext db, ClaimsPrincipal user, CancellationToken ct)
     {
+        if (await BelongsToAnotherTenantAsync(db, patientId, user.Tenant(), ct))
+            return Results.NotFound();
+
         var payload = new ErxInteractionCheckPayload
         {
             ErxPatientId = patientId.ToString(),
@@ -377,8 +409,12 @@ public static class PrescriptionEndpoints
     }
 
     private static async Task<IResult> CheckBenefits(
-        CheckBenefitsRequest request, IErxGateway erxGateway, CancellationToken ct)
+        CheckBenefitsRequest request, IErxGateway erxGateway,
+        PrescriptionDbContext db, ClaimsPrincipal user, CancellationToken ct)
     {
+        if (await BelongsToAnotherTenantAsync(db, request.PatientId, user.Tenant(), ct))
+            return Results.NotFound();
+
         var benefits = await erxGateway.CheckBenefitsAsync(
             request.PatientId.ToString(),
             request.RxNormCode ?? request.DrugName,
@@ -388,8 +424,12 @@ public static class PrescriptionEndpoints
     }
 
     private static async Task<IResult> GetMedicationHistory(
-        Guid patientId, bool includeInactive, IErxGateway erxGateway, CancellationToken ct)
+        Guid patientId, bool includeInactive, IErxGateway erxGateway,
+        PrescriptionDbContext db, ClaimsPrincipal user, CancellationToken ct)
     {
+        if (await BelongsToAnotherTenantAsync(db, patientId, user.Tenant(), ct))
+            return Results.NotFound();
+
         var history = await erxGateway.GetMedicationHistoryAsync(patientId.ToString(), ct);
 
         if (!includeInactive)
@@ -400,12 +440,16 @@ public static class PrescriptionEndpoints
 
     private static async Task<IResult> GetDoseSpotSsoUrl(
         Guid providerId, Guid? patientId, IErxGateway erxGateway,
-        PrescriptionDbContext db, CancellationToken ct)
+        PrescriptionDbContext db, ClaimsPrincipal user, CancellationToken ct)
     {
+        var tenantId = user.Tenant();
         var prescriber = await db.Prescribers
-            .FirstOrDefaultAsync(p => p.ProviderId == providerId, ct);
+            .FirstOrDefaultAsync(p => p.ProviderId == providerId && p.TenantId == tenantId, ct);
 
-        if (prescriber?.DoseSpotClinicianId is null)
+        if (prescriber is null)
+            return Results.NotFound();
+
+        if (prescriber.DoseSpotClinicianId is null)
             return Results.BadRequest(new { Error = "Provider not registered with DoseSpot" });
 
         var url = await erxGateway.GetSsoUrlAsync(
@@ -415,8 +459,13 @@ public static class PrescriptionEndpoints
     }
 
     private static async Task<IResult> GetNotifications(
-        string clinicianId, IErxGateway erxGateway, CancellationToken ct)
+        string clinicianId, IErxGateway erxGateway, PrescriptionDbContext db, ClaimsPrincipal user, CancellationToken ct)
     {
+        // The DoseSpot clinician must belong to a prescriber registered in this tenant.
+        var tenantId = user.Tenant();
+        if (!await db.Prescribers.AnyAsync(p => p.DoseSpotClinicianId == clinicianId && p.TenantId == tenantId, ct))
+            return Results.NotFound();
+
         var notifications = await erxGateway.GetNotificationsAsync(clinicianId, ct);
         return Results.Ok(notifications);
     }
@@ -425,6 +474,7 @@ public static class PrescriptionEndpoints
         RegisterPrescriberRequest request,
         PrescriptionDbContext db,
         IErxGateway erxGateway,
+        ClaimsPrincipal user,
         CancellationToken ct)
     {
         // Register with DoseSpot
@@ -443,7 +493,7 @@ public static class PrescriptionEndpoints
         var prescriber = new Prescriber
         {
             ProviderId = request.ProviderId,
-            TenantId = "default", // TODO: resolve from auth context
+            TenantId = user.Tenant(),
             FirstName = request.FirstName,
             LastName = request.LastName,
             Npi = request.Npi,
@@ -465,11 +515,12 @@ public static class PrescriptionEndpoints
     }
 
     private static async Task<IResult> GetPrescriber(
-        Guid providerId, PrescriptionDbContext db, CancellationToken ct)
+        Guid providerId, PrescriptionDbContext db, ClaimsPrincipal user, CancellationToken ct)
     {
+        var tenantId = user.Tenant();
         var prescriber = await db.Prescribers
             .AsNoTracking()
-            .FirstOrDefaultAsync(p => p.ProviderId == providerId, ct);
+            .FirstOrDefaultAsync(p => p.ProviderId == providerId && p.TenantId == tenantId, ct);
 
         return prescriber is null
             ? Results.NotFound()
@@ -480,10 +531,12 @@ public static class PrescriptionEndpoints
         Guid providerId,
         PrescriptionDbContext db,
         EpcsAuthProviderFactory epcsFactory,
+        ClaimsPrincipal user,
         CancellationToken ct)
     {
+        var tenantId = user.Tenant();
         var prescriber = await db.Prescribers
-            .FirstOrDefaultAsync(p => p.ProviderId == providerId, ct);
+            .FirstOrDefaultAsync(p => p.ProviderId == providerId && p.TenantId == tenantId, ct);
 
         if (prescriber is null)
             return Results.NotFound();
@@ -512,11 +565,12 @@ public static class PrescriptionEndpoints
     }
 
     private static async Task<IResult> GetPatientAllergies(
-        Guid patientId, PrescriptionDbContext db, CancellationToken ct)
+        Guid patientId, PrescriptionDbContext db, ClaimsPrincipal user, CancellationToken ct)
     {
+        var tenantId = user.Tenant();
         var allergies = await db.PatientAllergies
             .AsNoTracking()
-            .Where(a => a.PatientId == patientId)
+            .Where(a => a.PatientId == patientId && a.TenantId == tenantId)
             .ToListAsync(ct);
 
         return Results.Ok(allergies.Select(a => new PatientAllergyDto
@@ -533,12 +587,16 @@ public static class PrescriptionEndpoints
 
     private static async Task<IResult> AddPatientAllergy(
         Guid patientId, PatientAllergyDto allergyDto,
-        PrescriptionDbContext db, CancellationToken ct)
+        PrescriptionDbContext db, ClaimsPrincipal user, CancellationToken ct)
     {
+        var tenantId = user.Tenant();
+        if (await BelongsToAnotherTenantAsync(db, patientId, tenantId, ct))
+            return Results.NotFound();
+
         var allergy = new PatientAllergy
         {
             PatientId = patientId,
-            TenantId = "default",
+            TenantId = tenantId,
             AllergyName = allergyDto.AllergyName,
             RxNormCode = allergyDto.RxNormCode,
             Reaction = allergyDto.Reaction,
@@ -550,6 +608,20 @@ public static class PrescriptionEndpoints
         await db.SaveChangesAsync(ct);
 
         return Results.Created($"/api/patients/{patientId}/allergies", allergyDto with { Id = allergy.Id });
+    }
+
+    // PrescriptionService has no patient registry, and new patients are checked
+    // (interactions, benefits) before their first prescription exists. A patient is
+    // therefore treated as another tenant's when only another tenant holds local
+    // records for them; such patients are reported as 404 and cannot be claimed.
+    private static async Task<bool> BelongsToAnotherTenantAsync(
+        PrescriptionDbContext db, Guid patientId, string tenantId, CancellationToken ct)
+    {
+        var ownedHere = await db.Prescriptions.AnyAsync(p => p.PatientId == patientId && p.TenantId == tenantId, ct) ||
+            await db.PatientAllergies.AnyAsync(a => a.PatientId == patientId && a.TenantId == tenantId, ct);
+        if (ownedHere) return false;
+        return await db.Prescriptions.AnyAsync(p => p.PatientId == patientId, ct) ||
+            await db.PatientAllergies.AnyAsync(a => a.PatientId == patientId, ct);
     }
 
     // ─── Mappers ────────────────────────────────────────────────────────────

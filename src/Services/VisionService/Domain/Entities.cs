@@ -53,7 +53,7 @@ public class VisionDevice
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 
     // Tenant
-    public Guid TenantId { get; set; }
+    [MaxLength(64)] public string TenantId { get; set; } = string.Empty;
 
     // Navigation
     public List<VisionEvent> Events { get; set; } = new();
@@ -102,7 +102,7 @@ public class VisionEvent
     public bool NotificationSent { get; set; }
 
     // Tenant
-    public Guid TenantId { get; set; }
+    [MaxLength(64)] public string TenantId { get; set; } = string.Empty;
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -163,7 +163,7 @@ public class CabinetAccessLog
     public string? AlertMessage { get; set; }
 
     // Tenant
-    public Guid TenantId { get; set; }
+    [MaxLength(64)] public string TenantId { get; set; } = string.Empty;
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -199,7 +199,7 @@ public class InsuranceCardScan
     public bool EligibilityCheckTriggered { get; set; }
     [MaxLength(50)] public string? EligibilityResult { get; set; }
 
-    public Guid TenantId { get; set; }
+    [MaxLength(64)] public string TenantId { get; set; } = string.Empty;
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -232,7 +232,7 @@ public class ConsentRecording
     public bool ProviderDetected { get; set; }
 
     public Guid DeviceId { get; set; }
-    public Guid TenantId { get; set; }
+    [MaxLength(64)] public string TenantId { get; set; } = string.Empty;
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -265,5 +265,5 @@ public class ClinicalNoteDraft
     public DateTime? ApprovedAt { get; set; }
 
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
-    public Guid TenantId { get; set; }
+    [MaxLength(64)] public string TenantId { get; set; } = string.Empty;
 }

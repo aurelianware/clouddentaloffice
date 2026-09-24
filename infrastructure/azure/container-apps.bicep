@@ -639,6 +639,7 @@ resource prescriptionService 'Microsoft.App/containerApps@2023-05-01' = {
       }
       secrets: [
         { name: 'conn-prescription', value: connPrescription }
+        { name: 'jwt-key', value: jwtKey }
       ]
     }
     template: {
@@ -652,6 +653,9 @@ resource prescriptionService 'Microsoft.App/containerApps@2023-05-01' = {
             { name: 'DatabaseProvider', value: 'PostgreSQL' }
             { name: 'ConnectionStrings__PrescriptionDb', secretRef: 'conn-prescription' }
             { name: 'ErxProvider', value: 'Mock' }
+            { name: 'Jwt__Key', secretRef: 'jwt-key' }
+            { name: 'Jwt__Issuer', value: jwtIssuer }
+            { name: 'Jwt__Audience', value: jwtAudience }
           ]
           probes: [
             {

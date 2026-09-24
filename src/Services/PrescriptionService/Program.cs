@@ -3,6 +3,7 @@
 
 using Microsoft.EntityFrameworkCore;
 using PrescriptionService.Adapters;
+using PrescriptionService.Auth;
 using PrescriptionService.Domain;
 using PrescriptionService.Endpoints;
 
@@ -85,6 +86,10 @@ else
 
 builder.Services.AddSingleton<EpcsAuthProviderFactory>();
 
+// ── Staff authentication ────────────────────────────────────────────────────
+
+builder.AddStaffAuthentication();
+
 // ── OpenAPI ─────────────────────────────────────────────────────────────────
 
 builder.Services.AddEndpointsApiExplorer();
@@ -138,16 +143,12 @@ if (app.Environment.IsDevelopment())
     app.UseSwagger();
     app.UseSwaggerUI();
 }
-else
-{
-    // Enable Swagger in production for API documentation
-    app.UseSwagger();
-    app.UseSwaggerUI();
-}
 
 // ── Middleware ───────────────────────────────────────────────────────────────
 
 app.UseCors();
+app.UseAuthentication();
+app.UseAuthorization();
 app.MapHealthChecks("/health");
 
 // ── Endpoints ───────────────────────────────────────────────────────────────
@@ -155,3 +156,6 @@ app.MapHealthChecks("/health");
 app.MapPrescriptionEndpoints();
 
 app.Run();
+
+// Exposes the entry point to WebApplicationFactory in PrescriptionService.Tests.
+public partial class Program { }

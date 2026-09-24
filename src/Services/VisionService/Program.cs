@@ -3,6 +3,7 @@
 
 using Microsoft.EntityFrameworkCore;
 using VisionService.Adapters;
+using VisionService.Auth;
 using VisionService.Domain;
 using VisionService.Endpoints;
 using VisionService.Hubs;
@@ -82,6 +83,10 @@ switch (correlationProvider)
         break;
 }
 
+// ── Authentication (staff JWT + per-tenant device key) ──────────────────────
+
+builder.AddVisionAuthentication();
+
 // ── SignalR ─────────────────────────────────────────────────────────────────
 
 builder.Services.AddSignalR(options =>
@@ -137,11 +142,13 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseCors();
+app.UseAuthentication();
+app.UseAuthorization();
 
 // ── Map Endpoints ───────────────────────────────────────────────────────────
 
 app.MapVisionEndpoints();
-app.MapHub<VisionHub>("/hubs/vision");
+app.MapHub<VisionHub>(VisionAuth.HubPath).RequireAuthorization(VisionAuth.HubPolicy);
 app.MapHealthChecks("/health");
 
 // ── Database Init ───────────────────────────────────────────────────────────
@@ -163,3 +170,6 @@ catch (Exception ex)
 }
 
 app.Run();
+
+// Exposes the entry point to WebApplicationFactory in VisionService.Tests.
+public partial class Program { }
