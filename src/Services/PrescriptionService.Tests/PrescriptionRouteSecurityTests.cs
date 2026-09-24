@@ -137,6 +137,42 @@ public sealed class PrescriptionRouteSecurityTests : IClassFixture<PrescriptionS
     }
 
     [Fact]
+    public async Task Another_tenants_patient_is_404_for_erx_checks_and_cannot_be_claimed()
+    {
+        var a = await _factory.SeedTenantAsync("tenant-a");
+        var b = await _factory.SeedTenantAsync("tenant-b");
+        var client = _factory.ClientFor("tenant-a");
+
+        var interactions = await client.PostAsync($"/api/prescriptions/check-interactions?patientId={b.PatientId}&rxNormCode=723", null);
+        var benefits = await client.PostAsJsonAsync("/api/prescriptions/check-benefits", new { PatientId = b.PatientId, DrugName = "Amoxicillin" });
+        var history = await client.GetAsync($"/api/prescriptions/patient/{b.PatientId}/medication-history?includeInactive=true");
+        var created = await client.PostAsJsonAsync("/api/prescriptions", NewPrescription(b.PatientId, a.ProviderId));
+        var allergy = await client.PostAsJsonAsync($"/api/patients/{b.PatientId}/allergies", new { AllergyName = "Latex", Severity = 0 });
+
+        Assert.Equal(HttpStatusCode.NotFound, interactions.StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, benefits.StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, history.StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, created.StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, allergy.StatusCode);
+    }
+
+    [Fact]
+    public async Task Erx_checks_work_for_own_and_brand_new_patients()
+    {
+        var a = await _factory.SeedTenantAsync("tenant-a");
+        var client = _factory.ClientFor("tenant-a");
+        var newPatient = Guid.NewGuid();
+
+        var own = await client.GetAsync($"/api/prescriptions/patient/{a.PatientId}/medication-history?includeInactive=true");
+        var fresh = await client.PostAsJsonAsync("/api/prescriptions/check-benefits", new { PatientId = newPatient, DrugName = "Amoxicillin" });
+        var freshInteractions = await client.PostAsync($"/api/prescriptions/check-interactions?patientId={newPatient}&rxNormCode=723", null);
+
+        Assert.Equal(HttpStatusCode.OK, own.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, fresh.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, freshInteractions.StatusCode);
+    }
+
+    [Fact]
     public async Task Controlled_substance_send_fails_closed_when_prescriber_is_not_in_tenant()
     {
         var b = await _factory.SeedTenantAsync("tenant-b");

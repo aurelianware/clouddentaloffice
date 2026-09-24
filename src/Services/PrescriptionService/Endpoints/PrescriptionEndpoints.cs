@@ -119,6 +119,8 @@ public static class PrescriptionEndpoints
         var tenantId = user.Tenant();
         if (!await db.Prescribers.AnyAsync(p => p.ProviderId == request.PrescriberId && p.TenantId == tenantId, ct))
             return Results.NotFound("Prescriber not found");
+        if (await BelongsToAnotherTenantAsync(db, request.PatientId, tenantId, ct))
+            return Results.NotFound("Patient not found");
 
         var prescription = new Prescription
         {
@@ -390,8 +392,12 @@ public static class PrescriptionEndpoints
     }
 
     private static async Task<IResult> CheckInteractions(
-        Guid patientId, string rxNormCode, IErxGateway erxGateway, CancellationToken ct)
+        Guid patientId, string rxNormCode, IErxGateway erxGateway,
+        PrescriptionDbContext db, ClaimsPrincipal user, CancellationToken ct)
     {
+        if (await BelongsToAnotherTenantAsync(db, patientId, user.Tenant(), ct))
+            return Results.NotFound();
+
         var payload = new ErxInteractionCheckPayload
         {
             ErxPatientId = patientId.ToString(),
@@ -403,8 +409,12 @@ public static class PrescriptionEndpoints
     }
 
     private static async Task<IResult> CheckBenefits(
-        CheckBenefitsRequest request, IErxGateway erxGateway, CancellationToken ct)
+        CheckBenefitsRequest request, IErxGateway erxGateway,
+        PrescriptionDbContext db, ClaimsPrincipal user, CancellationToken ct)
     {
+        if (await BelongsToAnotherTenantAsync(db, request.PatientId, user.Tenant(), ct))
+            return Results.NotFound();
+
         var benefits = await erxGateway.CheckBenefitsAsync(
             request.PatientId.ToString(),
             request.RxNormCode ?? request.DrugName,
@@ -414,8 +424,12 @@ public static class PrescriptionEndpoints
     }
 
     private static async Task<IResult> GetMedicationHistory(
-        Guid patientId, bool includeInactive, IErxGateway erxGateway, CancellationToken ct)
+        Guid patientId, bool includeInactive, IErxGateway erxGateway,
+        PrescriptionDbContext db, ClaimsPrincipal user, CancellationToken ct)
     {
+        if (await BelongsToAnotherTenantAsync(db, patientId, user.Tenant(), ct))
+            return Results.NotFound();
+
         var history = await erxGateway.GetMedicationHistoryAsync(patientId.ToString(), ct);
 
         if (!includeInactive)
@@ -575,10 +589,14 @@ public static class PrescriptionEndpoints
         Guid patientId, PatientAllergyDto allergyDto,
         PrescriptionDbContext db, ClaimsPrincipal user, CancellationToken ct)
     {
+        var tenantId = user.Tenant();
+        if (await BelongsToAnotherTenantAsync(db, patientId, tenantId, ct))
+            return Results.NotFound();
+
         var allergy = new PatientAllergy
         {
             PatientId = patientId,
-            TenantId = user.Tenant(),
+            TenantId = tenantId,
             AllergyName = allergyDto.AllergyName,
             RxNormCode = allergyDto.RxNormCode,
             Reaction = allergyDto.Reaction,
@@ -590,6 +608,20 @@ public static class PrescriptionEndpoints
         await db.SaveChangesAsync(ct);
 
         return Results.Created($"/api/patients/{patientId}/allergies", allergyDto with { Id = allergy.Id });
+    }
+
+    // PrescriptionService has no patient registry, and new patients are checked
+    // (interactions, benefits) before their first prescription exists. A patient is
+    // therefore treated as another tenant's when only another tenant holds local
+    // records for them; such patients are reported as 404 and cannot be claimed.
+    private static async Task<bool> BelongsToAnotherTenantAsync(
+        PrescriptionDbContext db, Guid patientId, string tenantId, CancellationToken ct)
+    {
+        var ownedHere = await db.Prescriptions.AnyAsync(p => p.PatientId == patientId && p.TenantId == tenantId, ct) ||
+            await db.PatientAllergies.AnyAsync(a => a.PatientId == patientId && a.TenantId == tenantId, ct);
+        if (ownedHere) return false;
+        return await db.Prescriptions.AnyAsync(p => p.PatientId == patientId, ct) ||
+            await db.PatientAllergies.AnyAsync(a => a.PatientId == patientId, ct);
     }
 
     // ─── Mappers ────────────────────────────────────────────────────────────

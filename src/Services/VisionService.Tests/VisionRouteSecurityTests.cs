@@ -239,6 +239,12 @@ public sealed class VisionHubSecurityTests : IClassFixture<VisionSecurityFactory
         spoofing.On<VisionEventDto>("VisionEvent", e => { lock (receivedBySpoofer) receivedBySpoofer.Add(e); });
         await spoofing.StartAsync();
 
+        // Device credentials ingest only; they never receive the tenant-wide broadcasts.
+        var deviceB = _factory.HubConnection(deviceTenant: "tenant-b");
+        var receivedByDevice = new List<VisionEventDto>();
+        deviceB.On<VisionEventDto>("VisionEvent", e => { lock (receivedByDevice) receivedByDevice.Add(e); });
+        await deviceB.StartAsync();
+
         var ingest = await _factory.DeviceClient("tenant-b").PostAsJsonAsync("/api/vision/detections", new IngestDetectionRequest
         {
             DeviceId = b.DeviceId, Timestamp = DateTime.UtcNow,
@@ -251,10 +257,12 @@ public sealed class VisionHubSecurityTests : IClassFixture<VisionSecurityFactory
         Assert.Equal("tenant-b", delivered.TenantId);
         lock (receivedByA) Assert.DoesNotContain(receivedByA, e => e.TenantId == "tenant-b");
         lock (receivedBySpoofer) Assert.DoesNotContain(receivedBySpoofer, e => e.TenantId == "tenant-b");
+        lock (receivedByDevice) Assert.Empty(receivedByDevice);
 
         await staffA.DisposeAsync();
         await staffB.DisposeAsync();
         await spoofing.DisposeAsync();
+        await deviceB.DisposeAsync();
         _ = a;
     }
 

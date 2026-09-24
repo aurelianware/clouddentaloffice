@@ -18,7 +18,7 @@ namespace VisionService.Hubs;
 /// to receive live updates for dashboards.
 /// 
 /// Every group is scoped to the caller's tenant, which comes only from its credential:
-///   - "tenant:{tenantId}" — all events for a tenant (joined on connect)
+///   - "tenant:{tenantId}" — all events for a tenant (joined on connect by staff only)
 ///   - "tenant:{tenantId}:device:{deviceId}" — events from a specific device
 ///   - "tenant:{tenantId}:location:{location}" — events from cameras in a location category
 ///   - "tenant:{tenantId}:alerts" — high-severity alerts only
@@ -41,7 +41,10 @@ public class VisionHub : Hub
 
     public override async Task OnConnectedAsync()
     {
-        await Groups.AddToGroupAsync(Context.ConnectionId, VisionGroups.Tenant(TenantId));
+        // Only staff receive the tenant-wide broadcasts (events, scans, cabinet logs).
+        // Device connections are limited to their ingestion methods.
+        if (VisionAuth.IsStaff(Context.User!))
+            await Groups.AddToGroupAsync(Context.ConnectionId, VisionGroups.Tenant(TenantId));
 
         _logger.LogInformation("Vision client connected: {ConnectionId} (device={IsDevice}, tenant={TenantId})",
             Context.ConnectionId, VisionAuth.IsDevice(Context.User!), TenantId);
