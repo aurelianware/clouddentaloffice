@@ -1,6 +1,6 @@
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
-using System.Text;
+using CloudDentalOffice.Portal.Services.Auth;
 using Microsoft.IdentityModel.Tokens;
 
 namespace CloudDentalOffice.Portal.Services;
@@ -12,22 +12,17 @@ public interface ITokenService
 
 public class TokenService : ITokenService
 {
-    private readonly IConfiguration _configuration;
+    private readonly JwtSettings _jwtSettings;
 
-    public TokenService(IConfiguration configuration)
+    public TokenService(JwtSettings jwtSettings)
     {
-        _configuration = configuration;
+        _jwtSettings = jwtSettings;
     }
 
     public string GenerateToken(string userId, string email, string tenantId, string role)
     {
         var effectiveRole = string.IsNullOrWhiteSpace(role) ? "Staff" : role.Trim();
-        var key = _configuration["Jwt:Key"] ?? "ThisIsASecretKeyForDevelopmentOnly_DoNotUseInProduction_MakeItLonger";
-        var issuer = _configuration["Jwt:Issuer"] ?? "CloudDentalOffice";
-        var audience = _configuration["Jwt:Audience"] ?? "CloudDentalOffice";
-
-        var securityKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(key));
-        var credentials = new SigningCredentials(securityKey, SecurityAlgorithms.HmacSha256);
+        var credentials = new SigningCredentials(_jwtSettings.SigningKey, SecurityAlgorithms.HmacSha256);
 
         var claims = new[]
         {
@@ -39,8 +34,8 @@ public class TokenService : ITokenService
         };
 
         var token = new JwtSecurityToken(
-            issuer: issuer,
-            audience: audience,
+            issuer: _jwtSettings.Issuer,
+            audience: _jwtSettings.Audience,
             claims: claims,
             expires: DateTime.Now.AddMinutes(120),
             signingCredentials: credentials);
