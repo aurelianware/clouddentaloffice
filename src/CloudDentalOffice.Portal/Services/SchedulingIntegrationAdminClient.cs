@@ -5,6 +5,7 @@ using System.Security.Claims;
 using System.Text;
 using System.Text.Json;
 using CloudDentalOffice.Contracts.Scheduling;
+using CloudDentalOffice.Portal.Services.Auth;
 using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.IdentityModel.Tokens;
 
@@ -192,7 +193,7 @@ public sealed class SchedulingTenantAuthorizationHandler(
             ?? user.FindFirst("tenantId")?.Value;
         if (string.IsNullOrWhiteSpace(tenantId)) throw new UnauthorizedAccessException("Tenant context is required.");
         var key = configuration["Jwt:Key"];
-        if (string.IsNullOrWhiteSpace(key) || key.Length < 32)
+        if (string.IsNullOrWhiteSpace(key) || Encoding.UTF8.GetByteCount(key) < JwtSettings.MinimumKeyBytes)
             throw new InvalidOperationException("Scheduling authentication is not configured.");
         var claims = new List<Claim> { new("tenant_id", tenantId) };
         claims.AddRange(user.FindAll(ClaimTypes.Role).Select(role => new Claim(ClaimTypes.Role, role.Value)));

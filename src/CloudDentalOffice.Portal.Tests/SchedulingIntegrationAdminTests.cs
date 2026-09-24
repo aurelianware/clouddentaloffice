@@ -55,6 +55,23 @@ public sealed class SchedulingIntegrationAdminTests
     }
 
     [Fact]
+    public async Task StaffAuthorizationHandler_AcceptsMultiByteKeyMeetingByteMinimum()
+    {
+        // 20 characters, 40 UTF-8 bytes: accepted by JwtSettings, so the handler must accept it too.
+        var key = new string('\u00e9', 20);
+        var terminal = new CaptureHandler();
+        var identity = new ClaimsIdentity([new(ClaimTypes.Name, "staff"), new("TenantId", "tenant-a")], "test");
+        var handler = new SchedulingTenantAuthorizationHandler(
+            new FixedAuthenticationStateProvider(new(new ClaimsPrincipal(identity))),
+            new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?> { ["Jwt:Key"] = key }).Build());
+        handler.InnerHandler = terminal;
+
+        await new HttpClient(handler).GetAsync("https://gateway.test/api/booking-requests");
+
+        Assert.NotEmpty(terminal.Authorization);
+    }
+
+    [Fact]
     public async Task StaffAuthorizationHandler_FailsClosedWithoutTenantOrJwtKey()
     {
         var noTenant = new SchedulingTenantAuthorizationHandler(
