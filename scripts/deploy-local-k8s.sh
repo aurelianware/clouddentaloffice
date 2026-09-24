@@ -9,7 +9,6 @@ SKIP_BUILD="${SKIP_BUILD:-false}"
 services=(
   "portal:Portal"
   "api-gateway:ApiGateway"
-  "patient-service:PatientService"
   "scheduling-service:SchedulingService"
   "claims-service:ClaimsService"
   "eligibility-service:EligibilityService"

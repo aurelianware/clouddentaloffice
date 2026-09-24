@@ -15,8 +15,6 @@ param imageTag string = 'latest'
 @secure()
 param connPortal string
 @secure()
-param connPatient string
-@secure()
 param connScheduling string
 @secure()
 param connIntake string
@@ -78,9 +76,12 @@ var identityObj = {
 }
 
 // ── portal ────────────────────────────────────────────────────────────────────
-// External HTTPS ingress — public-facing Blazor Server UI
+// External HTTPS ingress — public-facing Blazor Server UI.
+// Port 5091 is published only inside the environment (external: false) for
+// SchedulingService's service-key-protected patient match-or-create call.
+// (additionalPortMappings needs API version 2024-03-01 or later.)
 
-resource portal 'Microsoft.App/containerApps@2023-05-01' = {
+resource portal 'Microsoft.App/containerApps@2024-03-01' = {
   name: 'portal'
   location: location
   identity: identityObj
@@ -93,9 +94,13 @@ resource portal 'Microsoft.App/containerApps@2023-05-01' = {
         targetPort: 5000
         transport: 'http'
         allowInsecure: false
+        additionalPortMappings: [
+          { external: false, targetPort: 5091, exposedPort: 5091 }
+        ]
       }
       secrets: [
         { name: 'conn-default', value: connPortal }
+        { name: 'internal-api-key', value: patientServiceApiKey }
         { name: 'jwt-key', value: jwtKey }
         { name: 'google-oauth-client-secret', value: googleOAuthClientSecret }
         { name: 'cloudhealthoffice-api-key', value: cloudHealthOfficeApiKey }
@@ -113,8 +118,10 @@ resource portal 'Microsoft.App/containerApps@2023-05-01' = {
             { name: 'Database__UseMigrations', value: 'false' }
             // ACA internal ingress: api-gateway is reachable at http://api-gateway (port 80)
             { name: 'ApiGateway__BaseUrl', value: 'http://api-gateway' }
-            { name: 'Microservices__Patient__Enabled', value: 'true' }
             { name: 'ConnectionStrings__DefaultConnection', secretRef: 'conn-default' }
+            { name: 'InternalApi__Port', value: '5091' }
+            { name: 'InternalApi__Clients__0__TenantId', value: initialTenantId }
+            { name: 'InternalApi__Clients__0__ApiKey', secretRef: 'internal-api-key' }
             { name: 'Jwt__Key', secretRef: 'jwt-key' }
             { name: 'Jwt__Issuer', value: jwtIssuer }
             { name: 'Jwt__Audience', value: jwtAudience }
@@ -166,6 +173,9 @@ resource portalGoogleAuth 'Microsoft.App/containerApps/authConfigs@2024-03-01' =
     globalValidation: {
       unauthenticatedClientAction: 'RedirectToLoginPage'
       redirectToProvider: 'google'
+      // Service-to-service call on the internal port; it authenticates with a service key.
+      // On the public ingress the Portal answers this path with 404.
+      excludedPaths: [ '/api/internal/patients/match-or-create' ]
     }
     identityProviders: {
       google: {
@@ -215,7 +225,6 @@ resource apiGateway 'Microsoft.App/containerApps@2023-05-01' = {
           env: [
             { name: 'ASPNETCORE_ENVIRONMENT', value: 'Production' }
             // YARP cluster destinations override — internal ACA services use http://<name> (port 80)
-            { name: 'ReverseProxy__Clusters__patient-cluster__Destinations__primary__Address', value: 'http://patient-service' }
             { name: 'ReverseProxy__Clusters__scheduling-cluster__Destinations__primary__Address', value: 'http://scheduling-service' }
             { name: 'ReverseProxy__Clusters__claims-cluster__Destinations__primary__Address', value: 'http://claims-service' }
             { name: 'ReverseProxy__Clusters__eligibility-cluster__Destinations__primary__Address', value: 'http://eligibility-service' }
@@ -228,50 +237,6 @@ resource apiGateway 'Microsoft.App/containerApps@2023-05-01' = {
       ]
       // Portal calls this on every private API request, so keep one warm.
       scale: { minReplicas: 1, maxReplicas: 3 }
-    }
-  }
-}
-
-// ── patient-service ───────────────────────────────────────────────────────────
-
-resource patientService 'Microsoft.App/containerApps@2023-05-01' = {
-  name: 'patient-service'
-  location: location
-  identity: identityObj
-  properties: {
-    environmentId: environmentId
-    configuration: {
-      registries: registry
-      ingress: {
-        external: false
-        targetPort: 5101
-        transport: 'http'
-      }
-      secrets: [
-        { name: 'conn-patient', value: connPatient }
-        { name: 'internal-api-key', value: patientServiceApiKey }
-        { name: 'jwt-key', value: jwtKey }
-      ]
-    }
-    template: {
-      containers: [
-        {
-          name: 'patient-service'
-          image: '${acrLoginServer}/patient-service:${imageTag}'
-          resources: { cpu: json('0.25'), memory: '0.5Gi' }
-          env: [
-            { name: 'ASPNETCORE_ENVIRONMENT', value: 'Production' }
-            { name: 'DatabaseProvider', value: 'PostgreSQL' }
-            { name: 'ConnectionStrings__PatientDb', secretRef: 'conn-patient' }
-            { name: 'InternalApi__Clients__0__TenantId', value: initialTenantId }
-            { name: 'InternalApi__Clients__0__ApiKey', secretRef: 'internal-api-key' }
-            { name: 'Jwt__Key', secretRef: 'jwt-key' }
-            { name: 'Jwt__Issuer', value: jwtIssuer }
-            { name: 'Jwt__Audience', value: jwtAudience }
-          ]
-        }
-      ]
-      scale: { minReplicas: 0, maxReplicas: 3 }
     }
   }
 }
@@ -295,7 +260,7 @@ resource schedulingService 'Microsoft.App/containerApps@2023-05-01' = {
         { name: 'conn-scheduling', value: connScheduling }
         { name: 'servicebus-listen', value: serviceBusListenConnection }
         { name: 'jwt-key', value: jwtKey }
-        { name: 'patient-service-api-key', value: patientServiceApiKey }
+        { name: 'patient-service-api-key', value: patientServiceApiKey } // Portal internal match-or-create key
         { name: 'public-intake-api-key', value: publicSchedulingServiceApiKey }
         { name: 'public-slot-key', value: publicAvailabilitySlotKey }
       ], empty(searchConsoleServiceAccountEmail) || empty(searchConsolePrivateKey) ? [] : [
@@ -313,7 +278,8 @@ resource schedulingService 'Microsoft.App/containerApps@2023-05-01' = {
             { name: 'DatabaseProvider', value: 'PostgreSQL' }
             { name: 'ConnectionStrings__SchedulingDb', secretRef: 'conn-scheduling' }
             { name: 'ServiceBus__ConnectionString', secretRef: 'servicebus-listen' }
-            { name: 'Services__PatientService', value: 'http://patient-service' }
+            // Patient match-or-create is served by the Portal on its internal-only port.
+            { name: 'Services__PatientService', value: 'http://portal:5091' }
             { name: 'InternalApi__PublicIntakeClients__0__TenantId', value: initialTenantId }
             { name: 'InternalApi__PublicIntakeClients__0__ApiKey', secretRef: 'public-intake-api-key' }
             { name: 'PublicAvailability__SlotTokenKey', secretRef: 'public-slot-key' }

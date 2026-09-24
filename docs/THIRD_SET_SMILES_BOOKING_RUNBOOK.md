@@ -112,7 +112,8 @@ and `PUBLIC_AVAILABILITY_SLOT_KEY` for authenticated encryption. Do not reuse th
 `PUBLIC_BOOKING_API_KEY` for either purpose.
 
 It also requires an independent `PATIENT_SERVICE_API_KEY` for the private
-SchedulingService→PatientService tenant boundary. The Azure templates make this
+SchedulingService→Portal tenant boundary (the Portal's internal-only patient
+match-or-create port). The Azure templates make this
 parameter mandatory so a deployment fails before creating an unusable empty
 Container Apps secret.
 

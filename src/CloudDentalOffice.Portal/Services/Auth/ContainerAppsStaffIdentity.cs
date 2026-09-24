@@ -102,6 +102,14 @@ public sealed class StaffAccessMiddleware(RequestDelegate next, IConfiguration c
             return;
         }
 
+        // Service-to-service endpoints on the internal port authenticate with a service key,
+        // not an EasyAuth staff identity.
+        if (InternalPatientApi.IsInternalServiceRequest(context))
+        {
+            await next(context);
+            return;
+        }
+
         if (!configuration.GetValue("StaffAuth:Enabled", false))
         {
             await next(context);

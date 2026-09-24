@@ -46,10 +46,6 @@ jobs:
           docker push $REGISTRY/api-gateway:$IMAGE_TAG
           docker push $REGISTRY/api-gateway:latest
 
-          docker build -f infrastructure/docker/PatientService.Dockerfile -t $REGISTRY/patient-service:$IMAGE_TAG -t $REGISTRY/patient-service:latest .
-          docker push $REGISTRY/patient-service:$IMAGE_TAG
-          docker push $REGISTRY/patient-service:latest
-
           docker build -f infrastructure/docker/SchedulingService.Dockerfile -t $REGISTRY/scheduling-service:$IMAGE_TAG -t $REGISTRY/scheduling-service:latest .
           docker push $REGISTRY/scheduling-service:$IMAGE_TAG
           docker push $REGISTRY/scheduling-service:latest
@@ -95,7 +91,6 @@ jobs:
           set -euo pipefail
           kubectl -n $NAMESPACE set image deployment/portal portal=$REGISTRY/portal:$IMAGE_TAG
           kubectl -n $NAMESPACE set image deployment/api-gateway api-gateway=$REGISTRY/api-gateway:$IMAGE_TAG
-          kubectl -n $NAMESPACE set image deployment/patient-service patient-service=$REGISTRY/patient-service:$IMAGE_TAG
           kubectl -n $NAMESPACE set image deployment/scheduling-service scheduling-service=$REGISTRY/scheduling-service:$IMAGE_TAG
           kubectl -n $NAMESPACE set image deployment/claims-service claims-service=$REGISTRY/claims-service:$IMAGE_TAG
           kubectl -n $NAMESPACE set image deployment/eligibility-service eligibility-service=$REGISTRY/eligibility-service:$IMAGE_TAG
@@ -109,7 +104,6 @@ jobs:
           set -euo pipefail
           kubectl -n $NAMESPACE rollout status deployment/portal
           kubectl -n $NAMESPACE rollout status deployment/api-gateway
-          kubectl -n $NAMESPACE rollout status deployment/patient-service
           kubectl -n $NAMESPACE rollout status deployment/scheduling-service
           kubectl -n $NAMESPACE rollout status deployment/claims-service
           kubectl -n $NAMESPACE rollout status deployment/eligibility-service

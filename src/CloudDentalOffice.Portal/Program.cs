@@ -298,23 +298,10 @@ if (!builder.Environment.IsDevelopment())
 }
 
 // Add application services
-// Patient service: configurable between monolith (DbContext) and microservice (HTTP) mode
-var usePatientMicroservice = builder.Configuration.GetValue("Microservices:Patient:Enabled", false);
-if (usePatientMicroservice)
-{
-    var gatewayUrl = builder.Configuration.GetValue<string>("ApiGateway:BaseUrl") ?? "http://localhost:5200";
-    // PatientService takes the tenant only from the forwarded staff bearer token.
-    builder.Services.AddHttpClient<IPatientService, PatientServiceHttpClient>(client =>
-    {
-        client.BaseAddress = new Uri(gatewayUrl);
-        client.DefaultRequestHeaders.Add("Accept", "application/json");
-        client.Timeout = TimeSpan.FromSeconds(30);
-    }).AddHttpMessageHandler<SchedulingTenantAuthorizationHandler>();
-}
-else
-{
-    builder.Services.AddScoped<IPatientService, PatientServiceImpl>();
-}
+// Patients live only in the Portal database. SchedulingService resolves Zocdoc patients
+// through the Portal's internal match-or-create endpoint (InternalPatientApi).
+builder.Services.AddScoped<IPatientService, PatientServiceImpl>();
+builder.AddInternalPatientApi();
 
 // Prescription service: always use microservice mode (no monolith fallback).
 // The service takes the tenant only from the forwarded staff bearer token.
@@ -574,6 +561,7 @@ app.MapHealthChecks("/health/ready", new HealthCheckOptions
     Predicate = check => check.Tags.Contains("ready")
 });
 
+app.MapInternalPatientApi();
 app.MapPatientAccountApi();
 app.MapPatientStatementApi();
 app.MapPatientBillingApi();

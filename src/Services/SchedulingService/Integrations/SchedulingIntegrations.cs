@@ -324,7 +324,8 @@ public static class SchedulingIntegrationServiceCollectionExtensions
         services.AddHttpClient<IExternalPatientResolver, ExternalPatientResolver>((provider, client) =>
         {
             var configuration = provider.GetRequiredService<IConfiguration>();
-            client.BaseAddress = new Uri(configuration["Services:PatientService"] ?? "http://patient-service:5101/");
+            // Patient match-or-create is served by the Portal on its internal-only port.
+            client.BaseAddress = new Uri(configuration["Services:PatientService"] ?? "http://portal:5091/");
             client.Timeout = TimeSpan.FromSeconds(30);
         }).AddStandardResilienceHandler();
         return services;

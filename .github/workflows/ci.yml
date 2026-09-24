@@ -76,11 +76,18 @@ jobs:
       - name: Restore
         run: dotnet restore CloudDentalOffice.sln
 
+      - name: Build
+        run: dotnet build CloudDentalOffice.sln --configuration Release --no-restore
+
+      # The Portal circuit test drives a real browser against the running Portal.
+      - name: Install Playwright Chromium
+        run: pwsh src/CloudDentalOffice.Portal.Tests/bin/Release/net8.0/playwright.ps1 install --with-deps chromium
+
       - name: Run deterministic test suite
         run: >-
           dotnet test CloudDentalOffice.sln
           --configuration Release
-          --no-restore
+          --no-build
           --logger "trx;LogFilePrefix=ci"
           --results-directory "${{ github.workspace }}/TestResults"
 

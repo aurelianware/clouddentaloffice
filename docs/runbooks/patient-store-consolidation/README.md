@@ -83,12 +83,27 @@ reassigned to the practice's tenant.
    Required: counts equal, `patient_checksum = MATCH`, every `sequence_ok = t`, and every
    `unresolved` count `0`. The spot check shows the known patient with their insurance, claims and account.
 6. **Deploy the Option 1 build** (the `deploy-aca.yml` workflow). It creates new active
-   revisions of `portal` and `scheduling-service`. PatientService is no longer deployed or called.
+   revisions of `portal` and `scheduling-service`. PatientService is no longer built, deployed or
+   called. Bicep deployments are incremental, so the existing `patient-service` container app is
+   **not deleted**: leave it deactivated (step 2) until the PatientService retirement pass removes it.
 7. **Smoke-test with the known patient**, signed in as staff:
    * **Patients**: the patient is listed and opens with correct demographics.
    * **Billing**: selecting the patient loads their account and ledger (no "Patient was not found").
    * **Claim Wizard**: selecting the patient shows their insurance.
    * Optionally, approve a test booking request and confirm the appointment shows the right patient.
+   * **Zocdoc path (SchedulingService → Portal internal port).** From inside the environment, send
+     the known patient's own name and date of birth, so it matches instead of creating a patient.
+     The runtime image has no curl, so this uses bash's `/dev/tcp`:
+     ```bash
+     az containerapp exec -g "$RG" -n scheduling-service --command "bash -c '
+       body={\"firstName\":\"<First>\",\"lastName\":\"<Last>\",\"dateOfBirth\":\"<YYYY-MM-DD>\"}
+       exec 3<>/dev/tcp/portal/5091
+       printf \"POST /api/internal/patients/match-or-create?tenantId=<tenant> HTTP/1.1\r\nHost: portal:5091\r\nX-CDO-Service-Key: <PATIENT_SERVICE_API_KEY>\r\nContent-Type: application/json\r\nContent-Length: \${#body}\r\nConnection: close\r\n\r\n\$body\" >&3
+       head -c 400 <&3'"
+     ```
+     Expect `HTTP/1.1 200` with `{"patientId":<known id>,"created":false}`. A `302` means EasyAuth is
+     intercepting the internal port (roll back and report); `401` means the key or tenant is wrong.
+     From outside, `https://<portal host>/api/internal/patients/match-or-create` must return `404`.
 8. **Reopen:** confirm the new revisions are active and healthy (`/health/ready`), then announce the end of maintenance.
 
 ## Rollback

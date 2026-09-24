@@ -14,7 +14,7 @@ name: Deploy to Azure Container Apps
 #   POSTGRES_ADMIN_PASSWORD – PostgreSQL administrator password
 #   JWT_KEY                – Portal signing key
 #   PUBLIC_BOOKING_API_KEY – 32+ character website-to-IntakeService credential
-#   PATIENT_SERVICE_API_KEY – 32+ character SchedulingService-to-PatientService credential
+#   PATIENT_SERVICE_API_KEY – 32+ character SchedulingService-to-Portal (internal patient match-or-create) credential
 #   GOOGLE_OAUTH_CLIENT_ID – Google OAuth web client for the Portal ACA hostname
 #   GOOGLE_OAUTH_CLIENT_SECRET – matching Google OAuth client secret
 #   CHO_ESTIMATE_API_KEY   – API key for the estimate-only CloudHealthOffice endpoint
@@ -127,14 +127,6 @@ jobs:
             -t ${{ secrets.ACR_LOGIN_SERVER }}/api-gateway:latest .
           docker push ${{ secrets.ACR_LOGIN_SERVER }}/api-gateway:${{ env.IMAGE_TAG }}
           docker push ${{ secrets.ACR_LOGIN_SERVER }}/api-gateway:latest
-
-      - name: Build and push patient-service
-        run: |
-          docker build -f infrastructure/docker/PatientService.Dockerfile \
-            -t ${{ secrets.ACR_LOGIN_SERVER }}/patient-service:${{ env.IMAGE_TAG }} \
-            -t ${{ secrets.ACR_LOGIN_SERVER }}/patient-service:latest .
-          docker push ${{ secrets.ACR_LOGIN_SERVER }}/patient-service:${{ env.IMAGE_TAG }}
-          docker push ${{ secrets.ACR_LOGIN_SERVER }}/patient-service:latest
 
       - name: Build and push scheduling-service
         run: |
