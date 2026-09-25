@@ -6,7 +6,7 @@
 
 A cloud-native, microservices-based dental practice management system built from the ground up with .NET 8, Blazor Server and deep payer interoperability.
 
-[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+[![License: BSL 1.1](https://img.shields.io/badge/License-BSL_1.1-blue.svg)](LICENSE)
 [![.NET](https://img.shields.io/badge/.NET-8.0-purple)](https://dotnet.microsoft.com)
 [![Blazor Server](https://img.shields.io/badge/Blazor_Server-Powered-blue)](https://dotnet.microsoft.com/apps/aspnet/web-apps/blazor)
 [![Architecture](https://img.shields.io/badge/Architecture-Microservices-green)](https://microservices.io)
@@ -545,4 +545,26 @@ clouddentaloffice/
 
 ## License
 
-[Apache License 2.0](LICENSE) — Copyright 2025 Aurelianware, Inc.
+Cloud Dental Office is **source-available** under the [Business Source License 1.1](LICENSE) (BSL). Copyright 2026 Aurelianware, Inc.
+
+**What dental practices can do for free**
+
+- Run Cloud Dental Office in production to manage your own dental practice, or a group of practices under common ownership.
+- Self-host it on your own infrastructure.
+- Read, copy, modify and build on the source code, and use it freely for development, testing and evaluation.
+
+**What requires a commercial license**
+
+- Offering Cloud Dental Office, or anything derived from it, to other parties as a hosted, managed or embedded commercial service that competes with Aurelianware's offerings.
+
+**Change date**
+
+Each version converts to the [Apache License, Version 2.0](https://www.apache.org/licenses/LICENSE-2.0) four years after it is first publicly released.
+
+**Earlier code**
+
+Code at or before the git tag [`apache-2.0-final`](https://github.com/aurelianware/clouddentaloffice/tree/apache-2.0-final) was released under the Apache License 2.0 and remains available under it.
+
+See [LICENSING.md](LICENSING.md) for more detail. For other licensing arrangements, contact licensing@cloudhealthoffice.com.
+
+This summary is for convenience only; the [LICENSE](LICENSE) file is the governing text.
