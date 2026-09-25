@@ -39,39 +39,49 @@ SELECT 'InsurancePlans', count(*), min("InsurancePlanId"), max("InsurancePlanId"
 SELECT "TenantId", "Status", count(*) AS claims, count("PatientInsuranceId") AS with_insurance
 FROM "Claims" GROUP BY "TenantId", "Status" ORDER BY "TenantId", "Status";
 
-\echo '== 7. Which store each patient reference resolves to'
+\echo '== 7. Which store each patient reference resolves to (tables missing from this database are listed as absent)'
 \echo '   in_portal = a Portal patient row exists; in_patientservice = the id is a PatientService patient'
+SELECT to_regclass('"PatientAccounts"') IS NOT NULL AS has_patient_accounts,
+       to_regclass('"PatientStatements"') IS NOT NULL AS has_patient_statements,
+       to_regclass('"PatientBillingNotifications"') IS NOT NULL AS has_billing_notifications,
+       to_regclass('"PatientPortalIdentities"') IS NOT NULL AS has_portal_identities \gset
+SELECT t AS table_name, to_regclass(format('"%s"', t)) IS NOT NULL AS present
+FROM unnest(ARRAY['PatientAccounts', 'PatientStatements', 'PatientBillingNotifications', 'PatientPortalIdentities']) t;
 SELECT 'Claims' AS source, count(*) AS rows,
        count(*) FILTER (WHERE p."PatientId" IS NOT NULL) AS in_portal,
        count(*) FILTER (WHERE x."PatientId" = ANY (:'patientservice_ids'::int[])) AS in_patientservice,
        count(*) FILTER (WHERE p."PatientId" IS NULL AND NOT (x."PatientId" = ANY (:'patientservice_ids'::int[]))) AS in_neither
-FROM "Claims" x LEFT JOIN "Patients" p ON p."PatientId" = x."PatientId"
-UNION ALL
-SELECT 'PatientAccounts', count(*),
-       count(*) FILTER (WHERE p."PatientId" IS NOT NULL),
-       count(*) FILTER (WHERE x."PatientId" = ANY (:'patientservice_ids'::int[])),
-       count(*) FILTER (WHERE p."PatientId" IS NULL AND NOT (x."PatientId" = ANY (:'patientservice_ids'::int[])))
-FROM "PatientAccounts" x LEFT JOIN "Patients" p ON p."PatientId" = x."PatientId"
-UNION ALL
-SELECT 'PatientStatements (via account)', count(*),
-       count(*) FILTER (WHERE p."PatientId" IS NOT NULL),
-       count(*) FILTER (WHERE a."PatientId" = ANY (:'patientservice_ids'::int[])),
-       count(*) FILTER (WHERE p."PatientId" IS NULL AND NOT (a."PatientId" = ANY (:'patientservice_ids'::int[])))
+FROM "Claims" x LEFT JOIN "Patients" p ON p."PatientId" = x."PatientId";
+\if :has_patient_accounts
+SELECT 'PatientAccounts' AS source, count(*) AS rows,
+       count(*) FILTER (WHERE p."PatientId" IS NOT NULL) AS in_portal,
+       count(*) FILTER (WHERE x."PatientId" = ANY (:'patientservice_ids'::int[])) AS in_patientservice,
+       count(*) FILTER (WHERE p."PatientId" IS NULL AND NOT (x."PatientId" = ANY (:'patientservice_ids'::int[]))) AS in_neither
+FROM "PatientAccounts" x LEFT JOIN "Patients" p ON p."PatientId" = x."PatientId";
+\if :has_patient_statements
+SELECT 'PatientStatements (via account)' AS source, count(*) AS rows,
+       count(*) FILTER (WHERE p."PatientId" IS NOT NULL) AS in_portal,
+       count(*) FILTER (WHERE a."PatientId" = ANY (:'patientservice_ids'::int[])) AS in_patientservice,
+       count(*) FILTER (WHERE p."PatientId" IS NULL AND NOT (a."PatientId" = ANY (:'patientservice_ids'::int[]))) AS in_neither
 FROM "PatientStatements" s JOIN "PatientAccounts" a ON a."TenantId" = s."TenantId" AND a."Id" = s."PatientAccountId"
-LEFT JOIN "Patients" p ON p."PatientId" = a."PatientId"
-UNION ALL
-SELECT 'PatientBillingNotifications (via account)', count(*),
-       count(*) FILTER (WHERE p."PatientId" IS NOT NULL),
-       count(*) FILTER (WHERE a."PatientId" = ANY (:'patientservice_ids'::int[])),
-       count(*) FILTER (WHERE p."PatientId" IS NULL AND NOT (a."PatientId" = ANY (:'patientservice_ids'::int[])))
-FROM "PatientBillingNotifications" n JOIN "PatientAccounts" a ON a."TenantId" = n."TenantId" AND a."Id" = n."PatientAccountId"
-LEFT JOIN "Patients" p ON p."PatientId" = a."PatientId"
-UNION ALL
-SELECT 'PatientPortalIdentities', count(*),
-       count(*) FILTER (WHERE p."PatientId" IS NOT NULL),
-       count(*) FILTER (WHERE x."PatientId" = ANY (:'patientservice_ids'::int[])),
-       count(*) FILTER (WHERE p."PatientId" IS NULL AND NOT (x."PatientId" = ANY (:'patientservice_ids'::int[])))
+LEFT JOIN "Patients" p ON p."PatientId" = a."PatientId";
+\endif
+\if :has_billing_notifications
+SELECT 'PatientBillingNotifications (via account)' AS source, count(*) AS rows,
+       count(*) FILTER (WHERE p."PatientId" IS NOT NULL) AS in_portal,
+       count(*) FILTER (WHERE a."PatientId" = ANY (:'patientservice_ids'::int[])) AS in_patientservice,
+       count(*) FILTER (WHERE p."PatientId" IS NULL AND NOT (a."PatientId" = ANY (:'patientservice_ids'::int[]))) AS in_neither
+FROM "PatientBillingNotifications" s JOIN "PatientAccounts" a ON a."TenantId" = s."TenantId" AND a."Id" = s."PatientAccountId"
+LEFT JOIN "Patients" p ON p."PatientId" = a."PatientId";
+\endif
+\endif
+\if :has_portal_identities
+SELECT 'PatientPortalIdentities' AS source, count(*) AS rows,
+       count(*) FILTER (WHERE p."PatientId" IS NOT NULL) AS in_portal,
+       count(*) FILTER (WHERE x."PatientId" = ANY (:'patientservice_ids'::int[])) AS in_patientservice,
+       count(*) FILTER (WHERE p."PatientId" IS NULL AND NOT (x."PatientId" = ANY (:'patientservice_ids'::int[]))) AS in_neither
 FROM "PatientPortalIdentities" x LEFT JOIN "Patients" p ON p."PatientId" = x."PatientId";
+\endif
 
 \echo '== 8. Other Portal tables keyed by PatientId (only those present)'
 SELECT to_regclass('"TreatmentPlans"') IS NOT NULL AS has_treatment_plans,

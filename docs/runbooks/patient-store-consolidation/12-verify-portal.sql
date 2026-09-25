@@ -51,28 +51,6 @@ SELECT 'Claims' AS source,
        count(*) FILTER (WHERE p."PatientId" IS NOT NULL AND p."TenantId" IS DISTINCT FROM x."TenantId") AS tenant_mismatches
 FROM "Claims" x LEFT JOIN "Patients" p ON p."PatientId" = x."PatientId"
 UNION ALL
-SELECT 'PatientAccounts',
-       count(*) FILTER (WHERE p."PatientId" IS NULL),
-       count(*) FILTER (WHERE p."PatientId" IS NOT NULL AND p."TenantId" IS DISTINCT FROM x."TenantId")
-FROM "PatientAccounts" x LEFT JOIN "Patients" p ON p."PatientId" = x."PatientId"
-UNION ALL
-SELECT 'PatientStatements (via account)',
-       count(*) FILTER (WHERE p."PatientId" IS NULL),
-       count(*) FILTER (WHERE p."PatientId" IS NOT NULL AND p."TenantId" IS DISTINCT FROM a."TenantId")
-FROM "PatientStatements" s JOIN "PatientAccounts" a ON a."TenantId" = s."TenantId" AND a."Id" = s."PatientAccountId"
-LEFT JOIN "Patients" p ON p."PatientId" = a."PatientId"
-UNION ALL
-SELECT 'PatientBillingNotifications (via account)',
-       count(*) FILTER (WHERE p."PatientId" IS NULL),
-       count(*) FILTER (WHERE p."PatientId" IS NOT NULL AND p."TenantId" IS DISTINCT FROM a."TenantId")
-FROM "PatientBillingNotifications" n JOIN "PatientAccounts" a ON a."TenantId" = n."TenantId" AND a."Id" = n."PatientAccountId"
-LEFT JOIN "Patients" p ON p."PatientId" = a."PatientId"
-UNION ALL
-SELECT 'PatientPortalIdentities',
-       count(*) FILTER (WHERE p."PatientId" IS NULL),
-       count(*) FILTER (WHERE p."PatientId" IS NOT NULL AND p."TenantId" IS DISTINCT FROM x."TenantId")
-FROM "PatientPortalIdentities" x LEFT JOIN "Patients" p ON p."PatientId" = x."PatientId"
-UNION ALL
 SELECT "Source",
        count(*) FILTER (WHERE p."PatientId" IS NULL),
        count(*) FILTER (WHERE p."PatientId" IS NOT NULL AND p."TenantId" IS DISTINCT FROM x."TenantId")
@@ -84,7 +62,23 @@ DECLARE
     optional_table text;
     optional_source text;
 BEGIN
-    FOREACH optional_table IN ARRAY ARRAY['TreatmentPlans', 'Procedures', 'ClinicalNotes', 'ReviewOutreaches', 'Appointments'] LOOP
+    -- Billing tables are absent from databases provisioned before billing existed.
+    IF to_regclass('"PatientAccounts"') IS NOT NULL THEN
+        FOREACH optional_table IN ARRAY ARRAY['PatientStatements', 'PatientBillingNotifications'] LOOP
+            IF to_regclass(format('"%s"', optional_table)) IS NOT NULL THEN
+                EXECUTE format(
+                    'INSERT INTO reference_verification (source, unresolved, tenant_mismatches)
+                     SELECT %L,
+                            count(*) FILTER (WHERE p."PatientId" IS NULL),
+                            count(*) FILTER (WHERE p."PatientId" IS NOT NULL AND p."TenantId" IS DISTINCT FROM a."TenantId")
+                     FROM %I s JOIN "PatientAccounts" a ON a."TenantId" = s."TenantId" AND a."Id" = s."PatientAccountId"
+                     LEFT JOIN "Patients" p ON p."PatientId" = a."PatientId"',
+                    optional_table || ' (via account)', optional_table);
+            END IF;
+        END LOOP;
+    END IF;
+
+    FOREACH optional_table IN ARRAY ARRAY['PatientAccounts', 'PatientPortalIdentities', 'TreatmentPlans', 'Procedures', 'ClinicalNotes', 'ReviewOutreaches', 'Appointments'] LOOP
         IF to_regclass(format('"%s"', optional_table)) IS NOT NULL THEN
             optional_source := CASE optional_table
                 WHEN 'Appointments' THEN 'Appointments (legacy Portal table)'
@@ -112,7 +106,6 @@ ORDER BY source;
 SELECT p."PatientId", p."TenantId", p."FirstName", p."LastName", p."DateOfBirth"::date AS dob, p."Status",
        (SELECT count(*) FROM "PatientInsurances" i WHERE i."PatientId" = p."PatientId") AS insurances,
        (SELECT count(*) FROM "Claims" c WHERE c."PatientId" = p."PatientId") AS claims,
-       (SELECT count(*) FROM "PatientAccounts" a WHERE a."PatientId" = p."PatientId") AS accounts,
        (SELECT count(*) FROM stage_scheduling_refs s WHERE s."Source" = 'Scheduling/Appointments' AND s."PatientId" = p."PatientId" AND s."TenantId" = p."TenantId") AS scheduling_appointments,
        (SELECT count(*) FROM stage_scheduling_refs s WHERE s."Source" = 'Scheduling/BookingRequests' AND s."PatientId" = p."PatientId" AND s."TenantId" = p."TenantId") AS scheduling_booking_requests
 FROM "Patients" p WHERE p."PatientId" = :patient_id;

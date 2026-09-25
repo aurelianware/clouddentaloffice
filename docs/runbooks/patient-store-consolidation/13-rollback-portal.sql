@@ -47,19 +47,7 @@ BEGIN
       ON m.kind = 'patient' AND m.inserted AND m.target_id = c."PatientId"
     HAVING count(*) > 0;
 
-    INSERT INTO rollback_blockers (source, blocking_rows)
-    SELECT 'PatientAccounts', count(*)
-    FROM "PatientAccounts" x JOIN "_patient_store_migration" m
-      ON m.kind = 'patient' AND m.inserted AND m.target_id = x."PatientId"
-    HAVING count(*) > 0;
-
-    INSERT INTO rollback_blockers (source, blocking_rows)
-    SELECT 'PatientPortalIdentities', count(*)
-    FROM "PatientPortalIdentities" x JOIN "_patient_store_migration" m
-      ON m.kind = 'patient' AND m.inserted AND m.target_id = x."PatientId"
-    HAVING count(*) > 0;
-
-    FOREACH optional_table IN ARRAY ARRAY['TreatmentPlans', 'Procedures', 'ClinicalNotes', 'ReviewOutreaches', 'Appointments'] LOOP
+    FOREACH optional_table IN ARRAY ARRAY['PatientAccounts', 'PatientPortalIdentities', 'TreatmentPlans', 'Procedures', 'ClinicalNotes', 'ReviewOutreaches', 'Appointments'] LOOP
         IF to_regclass(format('"%s"', optional_table)) IS NOT NULL THEN
             optional_source := CASE optional_table
                 WHEN 'Appointments' THEN 'Appointments (legacy Portal table)'
