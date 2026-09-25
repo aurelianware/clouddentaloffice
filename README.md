@@ -55,7 +55,7 @@ Cloud Dental Office uses a **microservices architecture** with each bounded cont
 |---------|------|-------------|
 | **Portal** | 5000 | Blazor Server UI — dashboard, patient management, claims, scheduling, e-prescribing, AI vision |
 | **API Gateway** | 5200 | YARP reverse proxy routing to all backend services |
-| **PatientService** | 5101 | Patient demographics, insurance/subscriber info, search |
+| **PatientService** | 5101 | *Not deployed.* Patients live in the Portal database; Zocdoc patient resolution uses the Portal's internal-only port 5091. Kept in the repo pending retirement. |
 | **SchedulingService** | 5102 | Appointments, operatory management, provider calendars |
 | **ClaimsService** | 5103 | Claim lifecycle (draft → submit → adjudicate), 837D generation |
 | **EligibilityService** | 5104 | Real-time 270/271 eligibility verification |
@@ -275,7 +275,6 @@ dotnet build CloudDentalOffice.sln --no-restore
 dotnet test CloudDentalOffice.sln --no-restore --no-build
 
 # Run individual services
-dotnet run --project src/Services/PatientService
 dotnet run --project src/Services/ClaimsService
 dotnet run --project src/Services/ApiGateway
 dotnet run --project src/CloudDentalOffice.Portal

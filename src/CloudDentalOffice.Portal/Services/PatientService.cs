@@ -1,20 +1,23 @@
 using CloudDentalOffice.Portal.Data;
 using CloudDentalOffice.Portal.Models;
+using CloudDentalOffice.Portal.Services.Tenancy;
 using Microsoft.EntityFrameworkCore;
 
 namespace CloudDentalOffice.Portal.Services;
 
 /// <summary>
-/// Patient service implementation with EF Core
+/// The only IPatientService: patients live in the Portal database, scoped to the caller's tenant.
 /// </summary>
 public class PatientServiceImpl : IPatientService
 {
     private readonly CloudDentalDbContext _context;
+    private readonly ITenantProvider _tenantProvider;
     private readonly ILogger<PatientServiceImpl> _logger;
 
-    public PatientServiceImpl(CloudDentalDbContext context, ILogger<PatientServiceImpl> logger)
+    public PatientServiceImpl(CloudDentalDbContext context, ITenantProvider tenantProvider, ILogger<PatientServiceImpl> logger)
     {
         _context = context;
+        _tenantProvider = tenantProvider;
         _logger = logger;
     }
 
@@ -81,6 +84,11 @@ public class PatientServiceImpl : IPatientService
     {
         try
         {
+            // Only a patient visible in the caller's tenant can be updated, and it stays there
+            // (the tenant-scoped update PatientService used to enforce). New rows are stamped by the DbContext.
+            if (!await _context.Patients.AnyAsync(p => p.PatientId == patient.PatientId))
+                throw new KeyNotFoundException($"Patient {patient.PatientId} was not found.");
+            patient.TenantId = _tenantProvider.TenantId;
             patient.ModifiedDate = DateTime.UtcNow;
             patient.DateOfBirth = NormalizeToUtc(patient.DateOfBirth);
 

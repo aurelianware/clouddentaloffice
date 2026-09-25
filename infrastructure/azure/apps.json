@@ -4,8 +4,8 @@
   "metadata": {
     "_generator": {
       "name": "bicep",
-      "version": "0.46.1.21595",
-      "templateHash": "3101743471211669532"
+      "version": "0.47.16.16243",
+      "templateHash": "191221690706498316"
     }
   },
   "parameters": {
@@ -66,6 +66,45 @@
     "publicBookingApiKey": {
       "type": "securestring"
     },
+    "patientServiceApiKey": {
+      "type": "securestring",
+      "metadata": {
+        "description": "Tenant-scoped key authorizing SchedulingService to call the Portal internal patient match-or-create API"
+      }
+    },
+    "publicSchedulingServiceApiKey": {
+      "type": "securestring",
+      "metadata": {
+        "description": "Tenant-scoped key authorizing IntakeService to call SchedulingService availability APIs"
+      }
+    },
+    "publicAvailabilitySlotKey": {
+      "type": "securestring",
+      "metadata": {
+        "description": "HMAC key used by SchedulingService for opaque public availability selections"
+      }
+    },
+    "zocdocWebhookIntegrationId": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Opaque route identifier configured in the Zocdoc webhook URL"
+      }
+    },
+    "zocdocWebhookSecret": {
+      "type": "securestring",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Base64 webhook signing key issued by Zocdoc"
+      }
+    },
+    "integrationInboxAdminApiKey": {
+      "type": "securestring",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Tenant-scoped credential for IntakeService inbox status and retry operations"
+      }
+    },
     "initialTenantId": {
       "type": "string",
       "defaultValue": "third-set-smiles",
@@ -86,6 +125,14 @@
       "metadata": {
         "description": "Google OAuth client secret for Portal sign-in; leave empty to disable Google sign-in"
       }
+    },
+    "searchConsoleServiceAccountEmail": {
+      "type": "string",
+      "defaultValue": ""
+    },
+    "searchConsolePrivateKey": {
+      "type": "securestring",
+      "defaultValue": ""
     },
     "cloudHealthOfficeBaseUrl": {
       "type": "string",
@@ -155,11 +202,14 @@
           "connPortal": {
             "value": "[format('{0}cdo_portal;', variables('pgBase'))]"
           },
-          "connPatient": {
-            "value": "[format('{0}cdo_patients;', variables('pgBase'))]"
-          },
           "connScheduling": {
             "value": "[format('{0}cdo_scheduling;', variables('pgBase'))]"
+          },
+          "connIntake": {
+            "value": "[format('{0}cdo_intake;', variables('pgBase'))]"
+          },
+          "connAuth": {
+            "value": "[format('{0}cdo_auth;', variables('pgBase'))]"
           },
           "connClaims": {
             "value": "[format('{0}cdo_claims;', variables('pgBase'))]"
@@ -188,6 +238,24 @@
           "publicBookingApiKey": {
             "value": "[parameters('publicBookingApiKey')]"
           },
+          "patientServiceApiKey": {
+            "value": "[parameters('patientServiceApiKey')]"
+          },
+          "publicSchedulingServiceApiKey": {
+            "value": "[parameters('publicSchedulingServiceApiKey')]"
+          },
+          "publicAvailabilitySlotKey": {
+            "value": "[parameters('publicAvailabilitySlotKey')]"
+          },
+          "zocdocWebhookIntegrationId": {
+            "value": "[parameters('zocdocWebhookIntegrationId')]"
+          },
+          "zocdocWebhookSecret": {
+            "value": "[parameters('zocdocWebhookSecret')]"
+          },
+          "integrationInboxAdminApiKey": {
+            "value": "[parameters('integrationInboxAdminApiKey')]"
+          },
           "initialTenantId": {
             "value": "[parameters('initialTenantId')]"
           },
@@ -196,6 +264,12 @@
           },
           "googleOAuthClientSecret": {
             "value": "[parameters('googleOAuthClientSecret')]"
+          },
+          "searchConsoleServiceAccountEmail": {
+            "value": "[parameters('searchConsoleServiceAccountEmail')]"
+          },
+          "searchConsolePrivateKey": {
+            "value": "[parameters('searchConsolePrivateKey')]"
           },
           "cloudHealthOfficeBaseUrl": {
             "value": "[parameters('cloudHealthOfficeBaseUrl')]"
@@ -216,8 +290,8 @@
           "metadata": {
             "_generator": {
               "name": "bicep",
-              "version": "0.46.1.21595",
-              "templateHash": "1065299927895639023"
+              "version": "0.47.16.16243",
+              "templateHash": "8277353147167648080"
             }
           },
           "parameters": {
@@ -243,10 +317,13 @@
             "connPortal": {
               "type": "securestring"
             },
-            "connPatient": {
+            "connScheduling": {
               "type": "securestring"
             },
-            "connScheduling": {
+            "connIntake": {
+              "type": "securestring"
+            },
+            "connAuth": {
               "type": "securestring"
             },
             "connClaims": {
@@ -276,6 +353,27 @@
             "publicBookingApiKey": {
               "type": "securestring"
             },
+            "patientServiceApiKey": {
+              "type": "securestring"
+            },
+            "publicSchedulingServiceApiKey": {
+              "type": "securestring"
+            },
+            "publicAvailabilitySlotKey": {
+              "type": "securestring"
+            },
+            "zocdocWebhookIntegrationId": {
+              "type": "string",
+              "defaultValue": ""
+            },
+            "zocdocWebhookSecret": {
+              "type": "securestring",
+              "defaultValue": ""
+            },
+            "integrationInboxAdminApiKey": {
+              "type": "securestring",
+              "defaultValue": ""
+            },
             "initialTenantId": {
               "type": "string",
               "defaultValue": "third-set-smiles"
@@ -285,6 +383,14 @@
               "defaultValue": ""
             },
             "googleOAuthClientSecret": {
+              "type": "securestring",
+              "defaultValue": ""
+            },
+            "searchConsoleServiceAccountEmail": {
+              "type": "string",
+              "defaultValue": ""
+            },
+            "searchConsolePrivateKey": {
               "type": "securestring",
               "defaultValue": ""
             },
@@ -319,7 +425,7 @@
           "resources": [
             {
               "type": "Microsoft.App/containerApps",
-              "apiVersion": "2023-05-01",
+              "apiVersion": "2024-03-01",
               "name": "portal",
               "location": "[parameters('location')]",
               "identity": "[variables('identityObj')]",
@@ -331,12 +437,23 @@
                     "external": true,
                     "targetPort": 5000,
                     "transport": "http",
-                    "allowInsecure": false
+                    "allowInsecure": false,
+                    "additionalPortMappings": [
+                      {
+                        "external": false,
+                        "targetPort": 5091,
+                        "exposedPort": 5091
+                      }
+                    ]
                   },
                   "secrets": [
                     {
                       "name": "conn-default",
                       "value": "[parameters('connPortal')]"
+                    },
+                    {
+                      "name": "internal-api-key",
+                      "value": "[parameters('patientServiceApiKey')]"
                     },
                     {
                       "name": "jwt-key",
@@ -379,12 +496,20 @@
                           "value": "http://api-gateway"
                         },
                         {
-                          "name": "Microservices__Patient__Enabled",
-                          "value": "true"
-                        },
-                        {
                           "name": "ConnectionStrings__DefaultConnection",
                           "secretRef": "conn-default"
+                        },
+                        {
+                          "name": "InternalApi__Port",
+                          "value": "5091"
+                        },
+                        {
+                          "name": "InternalApi__Clients__0__TenantId",
+                          "value": "[parameters('initialTenantId')]"
+                        },
+                        {
+                          "name": "InternalApi__Clients__0__ApiKey",
+                          "secretRef": "internal-api-key"
                         },
                         {
                           "name": "Jwt__Key",
@@ -443,6 +568,14 @@
                           "value": "Admin"
                         },
                         {
+                          "name": "StaffAuth__Users__2__Email",
+                          "value": "cindy@3rdsetsmiles.com"
+                        },
+                        {
+                          "name": "StaffAuth__Users__2__Role",
+                          "value": "Admin"
+                        },
+                        {
                           "name": "CloudHealthOffice__Enabled",
                           "value": "true"
                         },
@@ -470,6 +603,28 @@
                           "name": "[format('PayerConnectivity__Payers__{0}__PaymentEstimate__0', parameters('cloudHealthOfficePayerId'))]",
                           "value": "CloudHealthOffice"
                         }
+                      ],
+                      "probes": [
+                        {
+                          "type": "Liveness",
+                          "httpGet": {
+                            "path": "/health/live",
+                            "port": 5000
+                          },
+                          "initialDelaySeconds": 15,
+                          "periodSeconds": 15,
+                          "failureThreshold": 3
+                        },
+                        {
+                          "type": "Readiness",
+                          "httpGet": {
+                            "path": "/health/ready",
+                            "port": 5000
+                          },
+                          "initialDelaySeconds": 10,
+                          "periodSeconds": 10,
+                          "failureThreshold": 3
+                        }
                       ]
                     }
                   ],
@@ -491,7 +646,10 @@
                 },
                 "globalValidation": {
                   "unauthenticatedClientAction": "RedirectToLoginPage",
-                  "redirectToProvider": "google"
+                  "redirectToProvider": "google",
+                  "excludedPaths": [
+                    "/api/internal/patients/match-or-create"
+                  ]
                 },
                 "identityProviders": {
                   "google": {
@@ -550,10 +708,6 @@
                           "value": "Production"
                         },
                         {
-                          "name": "ReverseProxy__Clusters__patient-cluster__Destinations__primary__Address",
-                          "value": "http://patient-service"
-                        },
-                        {
                           "name": "ReverseProxy__Clusters__scheduling-cluster__Destinations__primary__Address",
                           "value": "http://scheduling-service"
                         },
@@ -594,60 +748,6 @@
             {
               "type": "Microsoft.App/containerApps",
               "apiVersion": "2023-05-01",
-              "name": "patient-service",
-              "location": "[parameters('location')]",
-              "identity": "[variables('identityObj')]",
-              "properties": {
-                "environmentId": "[parameters('environmentId')]",
-                "configuration": {
-                  "registries": "[variables('registry')]",
-                  "ingress": {
-                    "external": false,
-                    "targetPort": 5101,
-                    "transport": "http"
-                  },
-                  "secrets": [
-                    {
-                      "name": "conn-patient",
-                      "value": "[parameters('connPatient')]"
-                    }
-                  ]
-                },
-                "template": {
-                  "containers": [
-                    {
-                      "name": "patient-service",
-                      "image": "[format('{0}/patient-service:{1}', parameters('acrLoginServer'), parameters('imageTag'))]",
-                      "resources": {
-                        "cpu": "[json('0.25')]",
-                        "memory": "0.5Gi"
-                      },
-                      "env": [
-                        {
-                          "name": "ASPNETCORE_ENVIRONMENT",
-                          "value": "Production"
-                        },
-                        {
-                          "name": "DatabaseProvider",
-                          "value": "PostgreSQL"
-                        },
-                        {
-                          "name": "ConnectionStrings__PatientDb",
-                          "secretRef": "conn-patient"
-                        }
-                      ]
-                    }
-                  ],
-                  "scale": {
-                    "minReplicas": 0,
-                    "maxReplicas": 3
-                  }
-                }
-              }
-            },
-            {
-              "type": "Microsoft.App/containerApps",
-              "apiVersion": "2023-05-01",
               "name": "scheduling-service",
               "location": "[parameters('location')]",
               "identity": "[variables('identityObj')]",
@@ -660,16 +760,7 @@
                     "targetPort": 5102,
                     "transport": "http"
                   },
-                  "secrets": [
-                    {
-                      "name": "conn-scheduling",
-                      "value": "[parameters('connScheduling')]"
-                    },
-                    {
-                      "name": "servicebus-listen",
-                      "value": "[parameters('serviceBusListenConnection')]"
-                    }
-                  ]
+                  "secrets": "[concat(createArray(createObject('name', 'conn-scheduling', 'value', parameters('connScheduling')), createObject('name', 'servicebus-listen', 'value', parameters('serviceBusListenConnection')), createObject('name', 'jwt-key', 'value', parameters('jwtKey')), createObject('name', 'patient-service-api-key', 'value', parameters('patientServiceApiKey')), createObject('name', 'public-intake-api-key', 'value', parameters('publicSchedulingServiceApiKey')), createObject('name', 'public-slot-key', 'value', parameters('publicAvailabilitySlotKey'))), if(or(empty(parameters('searchConsoleServiceAccountEmail')), empty(parameters('searchConsolePrivateKey'))), createArray(), createArray(createObject('name', 'search-console-private-key', 'value', parameters('searchConsolePrivateKey')))))]"
                 },
                 "template": {
                   "containers": [
@@ -680,24 +771,7 @@
                         "cpu": "[json('0.25')]",
                         "memory": "0.5Gi"
                       },
-                      "env": [
-                        {
-                          "name": "ASPNETCORE_ENVIRONMENT",
-                          "value": "Production"
-                        },
-                        {
-                          "name": "DatabaseProvider",
-                          "value": "PostgreSQL"
-                        },
-                        {
-                          "name": "ConnectionStrings__SchedulingDb",
-                          "secretRef": "conn-scheduling"
-                        },
-                        {
-                          "name": "ServiceBus__ConnectionString",
-                          "secretRef": "servicebus-listen"
-                        }
-                      ]
+                      "env": "[concat(createArray(createObject('name', 'ASPNETCORE_ENVIRONMENT', 'value', 'Production'), createObject('name', 'DatabaseProvider', 'value', 'PostgreSQL'), createObject('name', 'ConnectionStrings__SchedulingDb', 'secretRef', 'conn-scheduling'), createObject('name', 'ServiceBus__ConnectionString', 'secretRef', 'servicebus-listen'), createObject('name', 'Services__PatientService', 'value', 'http://portal:5091'), createObject('name', 'InternalApi__PublicIntakeClients__0__TenantId', 'value', parameters('initialTenantId')), createObject('name', 'InternalApi__PublicIntakeClients__0__ApiKey', 'secretRef', 'public-intake-api-key'), createObject('name', 'PublicAvailability__SlotTokenKey', 'secretRef', 'public-slot-key'), createObject('name', 'Services__PatientServiceClients__0__TenantId', 'value', parameters('initialTenantId')), createObject('name', 'Services__PatientServiceClients__0__ApiKey', 'secretRef', 'patient-service-api-key'), createObject('name', 'Jwt__Key', 'secretRef', 'jwt-key'), createObject('name', 'Jwt__Issuer', 'value', parameters('jwtIssuer')), createObject('name', 'Jwt__Audience', 'value', parameters('jwtAudience'))), if(or(empty(parameters('searchConsoleServiceAccountEmail')), empty(parameters('searchConsolePrivateKey'))), createArray(), createArray(createObject('name', 'SearchConsoleCredentials__third-set-smiles__ClientEmail', 'value', parameters('searchConsoleServiceAccountEmail')), createObject('name', 'SearchConsoleCredentials__third-set-smiles__PrivateKey', 'secretRef', 'search-console-private-key'), createObject('name', 'SearchConsoleBootstrap__Enabled', 'value', 'true'), createObject('name', 'SearchConsoleBootstrap__TenantId', 'value', parameters('initialTenantId')), createObject('name', 'SearchConsoleBootstrap__PropertyUrl', 'value', 'sc-domain:3rdsetsmiles.com'), createObject('name', 'SearchConsoleBootstrap__CredentialReference', 'value', 'third-set-smiles'), createObject('name', 'SearchConsoleBootstrap__CanonicalHost', 'value', 'www.3rdsetsmiles.com'))))]"
                     }
                   ],
                   "scale": {
@@ -737,6 +811,52 @@
                             }
                           ]
                         }
+                      },
+                      {
+                        "name": "search-console-daily-sync",
+                        "custom": {
+                          "type": "cron",
+                          "metadata": {
+                            "timezone": "Etc/UTC",
+                            "start": "0 6 * * *",
+                            "end": "45 6 * * *",
+                            "desiredReplicas": "1"
+                          }
+                        }
+                      },
+                      {
+                        "name": "zocdoc-webhook-messages",
+                        "custom": {
+                          "type": "azure-servicebus",
+                          "metadata": {
+                            "topicName": "zocdoc-webhooks",
+                            "subscriptionName": "scheduling",
+                            "messageCount": "1"
+                          },
+                          "auth": [
+                            {
+                              "secretRef": "servicebus-listen",
+                              "triggerParameter": "connection"
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "name": "zocdoc-lifecycle-messages",
+                        "custom": {
+                          "type": "azure-servicebus",
+                          "metadata": {
+                            "topicName": "appointment-lifecycle",
+                            "subscriptionName": "zocdoc",
+                            "messageCount": "1"
+                          },
+                          "auth": [
+                            {
+                              "secretRef": "servicebus-listen",
+                              "triggerParameter": "connection"
+                            }
+                          ]
+                        }
                       }
                     ]
                   }
@@ -759,16 +879,7 @@
                     "transport": "http",
                     "allowInsecure": false
                   },
-                  "secrets": [
-                    {
-                      "name": "servicebus-send",
-                      "value": "[parameters('serviceBusSendConnection')]"
-                    },
-                    {
-                      "name": "booking-key",
-                      "value": "[parameters('publicBookingApiKey')]"
-                    }
-                  ]
+                  "secrets": "[concat(createArray(createObject('name', 'conn-intake', 'value', parameters('connIntake')), createObject('name', 'servicebus-send', 'value', parameters('serviceBusSendConnection')), createObject('name', 'booking-key', 'value', parameters('publicBookingApiKey')), createObject('name', 'scheduling-service-api-key', 'value', parameters('publicSchedulingServiceApiKey'))), if(or(empty(parameters('zocdocWebhookIntegrationId')), empty(parameters('zocdocWebhookSecret'))), createArray(), createArray(createObject('name', 'zocdoc-webhook-secret', 'value', parameters('zocdocWebhookSecret')))), if(empty(parameters('integrationInboxAdminApiKey')), createArray(), createArray(createObject('name', 'inbox-admin-key', 'value', parameters('integrationInboxAdminApiKey')))))]"
                 },
                 "template": {
                   "containers": [
@@ -779,32 +890,7 @@
                         "cpu": "[json('0.25')]",
                         "memory": "0.5Gi"
                       },
-                      "env": [
-                        {
-                          "name": "ASPNETCORE_ENVIRONMENT",
-                          "value": "Production"
-                        },
-                        {
-                          "name": "ServiceBus__ConnectionString",
-                          "secretRef": "servicebus-send"
-                        },
-                        {
-                          "name": "PublicBooking__Enabled",
-                          "value": "true"
-                        },
-                        {
-                          "name": "PublicBooking__Clients__0__TenantId",
-                          "value": "[parameters('initialTenantId')]"
-                        },
-                        {
-                          "name": "PublicBooking__Clients__0__ApiKey",
-                          "secretRef": "booking-key"
-                        },
-                        {
-                          "name": "PublicBooking__Source",
-                          "value": "3rdsetsmiles.com"
-                        }
-                      ],
+                      "env": "[concat(createArray(createObject('name', 'ASPNETCORE_ENVIRONMENT', 'value', 'Production'), createObject('name', 'DatabaseProvider', 'value', 'PostgreSQL'), createObject('name', 'ConnectionStrings__IntakeDb', 'secretRef', 'conn-intake'), createObject('name', 'ServiceBus__ConnectionString', 'secretRef', 'servicebus-send'), createObject('name', 'PublicBooking__Enabled', 'value', 'true'), createObject('name', 'PublicBooking__RequireAvailabilitySelection', 'value', 'true'), createObject('name', 'PublicBooking__Clients__0__TenantId', 'value', parameters('initialTenantId')), createObject('name', 'PublicBooking__Clients__0__ApiKey', 'secretRef', 'booking-key'), createObject('name', 'PublicBooking__Source', 'value', '3rdsetsmiles.com'), createObject('name', 'Services__SchedulingService', 'value', 'http://scheduling-service'), createObject('name', 'Services__SchedulingServiceClients__0__TenantId', 'value', parameters('initialTenantId')), createObject('name', 'Services__SchedulingServiceClients__0__ApiKey', 'secretRef', 'scheduling-service-api-key')), if(or(empty(parameters('zocdocWebhookIntegrationId')), empty(parameters('zocdocWebhookSecret'))), createArray(), createArray(createObject('name', 'ZocdocWebhooks__Integrations__0__IntegrationId', 'value', parameters('zocdocWebhookIntegrationId')), createObject('name', 'ZocdocWebhooks__Integrations__0__TenantId', 'value', parameters('initialTenantId')), createObject('name', 'ZocdocWebhooks__Integrations__0__WebhookSecret', 'secretRef', 'zocdoc-webhook-secret'), createObject('name', 'ZocdocWebhooks__Integrations__0__Enabled', 'value', 'true'))), if(empty(parameters('integrationInboxAdminApiKey')), createArray(), createArray(createObject('name', 'IntegrationInbox__AdminClients__0__TenantId', 'value', parameters('initialTenantId')), createObject('name', 'IntegrationInbox__AdminClients__0__ApiKey', 'secretRef', 'inbox-admin-key'))))]",
                       "probes": [
                         {
                           "type": "Liveness",
@@ -985,6 +1071,10 @@
                   },
                   "secrets": [
                     {
+                      "name": "conn-auth",
+                      "value": "[parameters('connAuth')]"
+                    },
+                    {
                       "name": "jwt-key",
                       "value": "[parameters('jwtKey')]"
                     }
@@ -1003,6 +1093,14 @@
                         {
                           "name": "ASPNETCORE_ENVIRONMENT",
                           "value": "Production"
+                        },
+                        {
+                          "name": "DatabaseProvider",
+                          "value": "PostgreSQL"
+                        },
+                        {
+                          "name": "ConnectionStrings__AuthDb",
+                          "secretRef": "conn-auth"
                         },
                         {
                           "name": "Jwt__Key",
@@ -1045,6 +1143,10 @@
                     {
                       "name": "conn-prescription",
                       "value": "[parameters('connPrescription')]"
+                    },
+                    {
+                      "name": "jwt-key",
+                      "value": "[parameters('jwtKey')]"
                     }
                   ]
                 },
@@ -1073,6 +1175,18 @@
                         {
                           "name": "ErxProvider",
                           "value": "Mock"
+                        },
+                        {
+                          "name": "Jwt__Key",
+                          "secretRef": "jwt-key"
+                        },
+                        {
+                          "name": "Jwt__Issuer",
+                          "value": "[parameters('jwtIssuer')]"
+                        },
+                        {
+                          "name": "Jwt__Audience",
+                          "value": "[parameters('jwtAudience')]"
                         }
                       ],
                       "probes": [
@@ -1201,7 +1315,7 @@
               "metadata": {
                 "description": "Public FQDN of the portal — use this as your app URL"
               },
-              "value": "[reference(resourceId('Microsoft.App/containerApps', 'portal'), '2023-05-01').configuration.ingress.fqdn]"
+              "value": "[reference(resourceId('Microsoft.App/containerApps', 'portal'), '2024-03-01').configuration.ingress.fqdn]"
             },
             "intakeFqdn": {
               "type": "string",

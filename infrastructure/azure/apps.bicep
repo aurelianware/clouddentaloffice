@@ -47,7 +47,7 @@ param serviceBusListenConnection string
 @secure()
 param publicBookingApiKey string
 @secure()
-@description('Tenant-scoped key authorizing SchedulingService to call PatientService internal APIs')
+@description('Tenant-scoped key authorizing SchedulingService to call the Portal internal patient match-or-create API')
 param patientServiceApiKey string
 @secure()
 @description('Tenant-scoped key authorizing IntakeService to call SchedulingService availability APIs')
@@ -97,7 +97,6 @@ module apps 'container-apps.bicep' = {
     identityId: identityId
     imageTag: imageTag
     connPortal: '${pgBase}cdo_portal;'
-    connPatient: '${pgBase}cdo_patients;'
     connScheduling: '${pgBase}cdo_scheduling;'
     connIntake: '${pgBase}cdo_intake;'
     connAuth: '${pgBase}cdo_auth;'

@@ -24,9 +24,6 @@ images:
   - name: registry.digitalocean.com/clouddental/api-gateway
     newName: clouddentaloffice/api-gateway
     newTag: local
-  - name: registry.digitalocean.com/clouddental/patient-service
-    newName: clouddentaloffice/patient-service
-    newTag: local
   - name: registry.digitalocean.com/clouddental/scheduling-service
     newName: clouddentaloffice/scheduling-service
     newTag: local

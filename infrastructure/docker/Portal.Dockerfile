@@ -19,4 +19,6 @@ WORKDIR /app
 COPY --from=publish /app/publish .
 ENV ASPNETCORE_URLS=http://+:5000
 EXPOSE 5000
+# Internal-only patient match-or-create (published only inside the Container Apps environment).
+EXPOSE 5091
 ENTRYPOINT ["dotnet", "CloudDentalOffice.Portal.dll"]

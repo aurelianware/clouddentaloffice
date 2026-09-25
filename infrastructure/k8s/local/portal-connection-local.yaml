@@ -5,8 +5,6 @@
       value: Production
     - name: ApiGateway__BaseUrl
       value: http://api-gateway:5200
-    - name: Microservices__Patient__Enabled
-      value: "false"
     - name: ConnectionStrings__DefaultConnection
       value: Data Source=/data/clouddental.db
     - name: Jwt__Key
