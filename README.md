@@ -1,4 +1,4 @@
-# Cloud Dental Office
+# Cloud Dental
 
 
 
@@ -131,7 +131,7 @@ with no timezone is rejected.
 
 The same internet-facing IntakeService publishes **bookable availability** to
 external scheduling partners through a versioned, vendor-neutral contract.
-CloudDentalOffice is the single system of record; partners read availability,
+Cloud Dental is the single system of record; partners read availability,
 they never see the underlying calendar or any PHI.
 
 ```
