@@ -8,7 +8,7 @@ Starting with the commit that follows the `apache-2.0-final` tag, Cloud Dental O
 |---|---|
 | Licensor | Aurelianware, Inc. |
 | Licensed Work | Cloud Dental Office (clouddental), (c) 2026 Aurelianware, Inc. |
-| Additional Use Grant | Free production use to run dental practice management for your own practice, or practices under common ownership, including self-hosting. You may not offer it, or a derivative, to third parties as a hosted, managed or embedded commercial service that competes with Aurelianware's offerings. |
+| Additional Use Grant | Free production use to run dental practice management for your own practice, or practices under common ownership, including self-hosting. The grant does not cover offering it, or a derivative, to third parties as a hosted, managed or embedded commercial service that competes with Aurelianware's offerings. |
 | Change Date | Four years after each version is first publicly released |
 | Change License | Apache License, Version 2.0 |
 
@@ -16,10 +16,10 @@ The [LICENSE](LICENSE) file is the governing text. The table above is a summary.
 
 ## Apache 2.0 boundary
 
-The annotated git tag **`apache-2.0-final`** marks the last commit licensed under the Apache License, Version 2.0. Code at or before that tag remains available under Apache 2.0. The BSL applies to changes made after it.
+The annotated git tag **`apache-2.0-final`** (commit `2c922709e97af4fc58d22f246cb241917c3f8a54`) marks the last commit licensed under the Apache License, Version 2.0. Code at or before that tag remains available under Apache 2.0. The BSL applies to changes made after it.
 
 ```sh
-git checkout apache-2.0-final   # last Apache 2.0 snapshot
+git checkout 2c92270   # last Apache 2.0 snapshot (also tagged apache-2.0-final)
 ```
 
 ## Third-party components

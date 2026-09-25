@@ -563,7 +563,7 @@ Each version converts to the [Apache License, Version 2.0](https://www.apache.or
 
 **Earlier code**
 
-Code at or before the git tag [`apache-2.0-final`](https://github.com/aurelianware/clouddentaloffice/tree/apache-2.0-final) was released under the Apache License 2.0 and remains available under it.
+Code at or before the git tag `apache-2.0-final` (commit [`2c92270`](https://github.com/aurelianware/clouddentaloffice/commit/2c922709e97af4fc58d22f246cb241917c3f8a54)) was released under the Apache License 2.0 and remains available under it.
 
 See [LICENSING.md](LICENSING.md) for more detail. For other licensing arrangements, contact licensing@cloudhealthoffice.com.
 

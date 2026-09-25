@@ -3,13 +3,14 @@ Business Source License 1.1
 Licensor:             Aurelianware, Inc.
 Licensed Work:        Cloud Dental Office (clouddental)
                       The Licensed Work is (c) 2026 Aurelianware, Inc.
-Additional Use Grant: You may use the Licensed Work in production, free of
-                      charge, to operate dental practice management for your
-                      own dental practice or practices under common ownership,
-                      including self-hosting. You may not offer the Licensed
-                      Work, or any derivative of it, to third parties as a
-                      hosted, managed, or embedded commercial service that
-                      competes with Aurelianware's offerings.
+Additional Use Grant: You may make production use of the Licensed Work, free
+                      of charge, to operate dental practice management for
+                      your own dental practice or practices under common
+                      ownership, including self-hosting, provided that such
+                      use does not include offering the Licensed Work, or any
+                      derivative of it, to third parties as a hosted, managed,
+                      or embedded commercial service that competes with
+                      Aurelianware's offerings.
 Change Date:          Four years from the date each version of the Licensed
                       Work is first publicly released.
 Change License:       Apache License, Version 2.0
