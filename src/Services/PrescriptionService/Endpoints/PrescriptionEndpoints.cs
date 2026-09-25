@@ -1,5 +1,5 @@
 // Copyright (c) Aurelianware, Inc. All rights reserved.
-// Licensed under the Apache License, Version 2.0.
+// Licensed under the Business Source License 1.1. See LICENSE in the repository root.
 
 using System.Security.Claims;
 using CloudDentalOffice.Contracts.Prescriptions;
