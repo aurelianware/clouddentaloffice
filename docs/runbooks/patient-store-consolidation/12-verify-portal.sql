@@ -5,14 +5,21 @@
 \set ON_ERROR_STOP on
 \pset footer off
 \i export-checksum.psql
-BEGIN TRANSACTION READ ONLY;
-
+-- Session temp tables, created before the read-only transaction (which forbids CREATE).
 CREATE TEMP TABLE stage_scheduling_refs (
     "Source" text NOT NULL,
     "TenantId" varchar(64) NOT NULL,
     "PatientId" integer NOT NULL
-) ON COMMIT DROP;
+);
 \copy stage_scheduling_refs FROM 'scheduling-patient-refs.csv' WITH (FORMAT csv, HEADER)
+
+CREATE TEMP TABLE reference_verification (
+    source text PRIMARY KEY,
+    unresolved bigint NOT NULL,
+    tenant_mismatches bigint NOT NULL
+);
+
+BEGIN TRANSACTION READ ONLY;
 
 \echo '== 1. Counts: source (PatientService export) vs Portal rows created by the migration'
 SELECT :'source_patient_count'::bigint AS source_patients,
@@ -37,12 +44,6 @@ FROM (SELECT 'Patients' AS table_name, pg_get_serial_sequence('"Patients"', 'Pat
       UNION ALL
       SELECT 'InsurancePlans', pg_get_serial_sequence('"InsurancePlans"', 'InsurancePlanId'), (SELECT max("InsurancePlanId") FROM "InsurancePlans")) t
 LEFT JOIN pg_sequences s ON quote_ident(s.schemaname) || '.' || quote_ident(s.sequencename) = t.seq;
-
-CREATE TEMP TABLE reference_verification (
-    source text PRIMARY KEY,
-    unresolved bigint NOT NULL,
-    tenant_mismatches bigint NOT NULL
-) ON COMMIT DROP;
 
 INSERT INTO reference_verification (source, unresolved, tenant_mismatches)
 SELECT 'Claims' AS source,

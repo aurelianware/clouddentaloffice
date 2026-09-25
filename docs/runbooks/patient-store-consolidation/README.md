@@ -69,8 +69,11 @@ reassigned to the practice's tenant.
    pg_dump "$PATIENTSERVICE_DB_URL" -Fc -f "cdo_patients-$stamp.dump"
    pg_dump "$SCHEDULING_DB_URL"     -Fc -f "cdo_scheduling-$stamp.dump"
    ```
-4. **Run the migration:**
+4. **Run the migration.** First re-run `01` and `03`, now that writes are paused, so the
+   scheduling references that `12` and `13` check are current:
    ```bash
+   psql "$PATIENTSERVICE_DB_URL" -v ON_ERROR_STOP=1 -f 01-inventory-patientservice.sql > 01-window.out
+   psql "$SCHEDULING_DB_URL"     -v ON_ERROR_STOP=1 -f 03-inventory-scheduling.sql     > 03-window.out
    psql "$PATIENTSERVICE_DB_URL" -v ON_ERROR_STOP=1 -f 10-export-patientservice.sql
    psql "$PORTAL_DB_URL"         -v ON_ERROR_STOP=1 -f 11-migrate-into-portal.sql
    ```
