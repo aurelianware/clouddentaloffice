@@ -32,11 +32,11 @@ public sealed class RunningPortalTests(RunningPortalFixture portal) : IClassFixt
         using var playwright = await Playwright.CreateAsync();
         await using var browser = await playwright.Chromium.LaunchAsync();
         var page = await browser.NewPageAsync();
-        var circuit = page.WaitForWebSocketAsync();
-
-        await page.GotoAsync(new Uri(portal.EasyAuthUrl, "/appointment-requests").ToString(),
-            new() { WaitUntil = WaitUntilState.NetworkIdle });
-        await circuit;
+        await page.RunAndWaitForWebSocketAsync(async () =>
+        {
+            await page.GotoAsync(new Uri(portal.EasyAuthUrl, "/appointment-requests").ToString(),
+                new() { WaitUntil = WaitUntilState.NetworkIdle });
+        });
         await page.WaitForFunctionAsync("() => window.Blazor !== undefined");
 
         // Changing the status filter runs inside the live circuit only (not prerendering) and calls

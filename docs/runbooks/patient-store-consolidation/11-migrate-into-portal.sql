@@ -5,6 +5,7 @@
 --
 -- Guards (the whole script aborts, writing nothing):
 --   * Portal "Patients" or "PatientInsurances" hold rows this migration did not create (4c: stop and report).
+--   * Existing tenant-scoped Portal references disagree with the staged patient or insurance tenant.
 --   * The exported files don't match the source counts/checksum from 10-export.
 --   * Exported insurance rows reference patients or plans missing from the export.
 -- Idempotent: rows already copied by an earlier run are recognised through
@@ -69,6 +70,13 @@ DECLARE
     new_plan_id integer;
     inserted_patients bigint;
     inserted_insurances bigint;
+    patient_tenant_conflicts bigint := 0;
+    insurance_tenant_conflicts bigint := 0;
+    source_conflicts bigint;
+    patient_conflict_details text := '';
+    insurance_conflict_details text := '';
+    optional_table text;
+    optional_source text;
 BEGIN
     -- File integrity: the staged export must match what 10-export counted at the source.
     SELECT md5(coalesce(string_agg(concat_ws('|', "PatientId", "TenantId", lower(trim("FirstName")), lower(trim("LastName")),
@@ -89,6 +97,61 @@ BEGIN
     IF foreign_patients > 0 OR foreign_insurances > 0 THEN
         RAISE EXCEPTION 'STOP (4c): the Portal DB already has % patient row(s) and % insurance row(s) not created by this migration. Report the overlap before continuing.',
             foreign_patients, foreign_insurances;
+    END IF;
+
+    SELECT count(*) INTO source_conflicts
+    FROM "Claims" x JOIN stage_patients s ON s."PatientId" = x."PatientId"
+    WHERE x."TenantId" IS DISTINCT FROM s."TenantId";
+    patient_tenant_conflicts := patient_tenant_conflicts + source_conflicts;
+    IF source_conflicts > 0 THEN
+        patient_conflict_details := concat_ws('; ', patient_conflict_details, format('Claims=%s', source_conflicts));
+    END IF;
+
+    SELECT count(*) INTO source_conflicts
+    FROM "PatientAccounts" x JOIN stage_patients s ON s."PatientId" = x."PatientId"
+    WHERE x."TenantId" IS DISTINCT FROM s."TenantId";
+    patient_tenant_conflicts := patient_tenant_conflicts + source_conflicts;
+    IF source_conflicts > 0 THEN
+        patient_conflict_details := concat_ws('; ', patient_conflict_details, format('PatientAccounts=%s', source_conflicts));
+    END IF;
+
+    SELECT count(*) INTO source_conflicts
+    FROM "PatientPortalIdentities" x JOIN stage_patients s ON s."PatientId" = x."PatientId"
+    WHERE x."TenantId" IS DISTINCT FROM s."TenantId";
+    patient_tenant_conflicts := patient_tenant_conflicts + source_conflicts;
+    IF source_conflicts > 0 THEN
+        patient_conflict_details := concat_ws('; ', patient_conflict_details, format('PatientPortalIdentities=%s', source_conflicts));
+    END IF;
+
+    FOREACH optional_table IN ARRAY ARRAY['TreatmentPlans', 'Procedures', 'ClinicalNotes', 'ReviewOutreaches', 'Appointments'] LOOP
+        IF to_regclass(format('"%s"', optional_table)) IS NOT NULL THEN
+            EXECUTE format(
+                'SELECT count(*) FROM %I x JOIN stage_patients s ON s."PatientId" = x."PatientId" WHERE x."TenantId" IS DISTINCT FROM s."TenantId"',
+                optional_table)
+            INTO source_conflicts;
+            patient_tenant_conflicts := patient_tenant_conflicts + source_conflicts;
+            IF source_conflicts > 0 THEN
+                optional_source := CASE optional_table
+                    WHEN 'Appointments' THEN 'Appointments (legacy Portal table)'
+                    ELSE optional_table
+                END;
+                patient_conflict_details := concat_ws('; ', patient_conflict_details, format('%s=%s', optional_source, source_conflicts));
+            END IF;
+        END IF;
+    END LOOP;
+
+    SELECT count(*) INTO source_conflicts
+    FROM "Claims" x JOIN stage_insurances s ON s."PatientInsuranceId" = x."PatientInsuranceId"
+    WHERE x."TenantId" IS DISTINCT FROM s."TenantId";
+    insurance_tenant_conflicts := insurance_tenant_conflicts + source_conflicts;
+    IF source_conflicts > 0 THEN
+        insurance_conflict_details := concat_ws('; ', insurance_conflict_details, format('Claims=%s', source_conflicts));
+    END IF;
+
+    IF patient_tenant_conflicts > 0 OR insurance_tenant_conflicts > 0 THEN
+        RAISE EXCEPTION 'STOP (4c): existing tenant-scoped references disagree with the staged data. PatientId tenant conflicts: %. PatientInsuranceId tenant conflicts: %. Report the overlap before continuing.',
+            coalesce(nullif(patient_conflict_details, ''), 'none'),
+            coalesce(nullif(insurance_conflict_details, ''), 'none');
     END IF;
 
     -- Referential integrity inside the export.

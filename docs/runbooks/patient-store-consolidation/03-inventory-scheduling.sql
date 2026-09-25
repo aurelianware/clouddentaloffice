@@ -1,7 +1,7 @@
 -- 4a · Read-only inventory of the SchedulingService database (appointment patient ids).
 -- Run after 01, from the same directory:
 --   psql "$SCHEDULING_DB_URL" -v ON_ERROR_STOP=1 -f 03-inventory-scheduling.sql
--- Writes no database rows.
+-- Writes no database rows; creates scheduling-patient-refs.csv locally for 12 and 13.
 \set ON_ERROR_STOP on
 \pset footer off
 \i patientservice-ids.psql
@@ -18,5 +18,17 @@ SELECT 'BookingRequests (matched)', "TenantId", count(*), count(DISTINCT "Matche
        count(*) FILTER (WHERE NOT ("MatchedPatientId" = ANY (:'patientservice_ids'::int[])))
 FROM "BookingRequests" WHERE "MatchedPatientId" IS NOT NULL GROUP BY "TenantId"
 ORDER BY 1, 2;
+
+\echo '== 2. Writing scheduling-patient-refs.csv for 12-verify-portal.sql and 13-rollback-portal.sql'
+\copy (
+    SELECT source, "TenantId", "PatientId"
+    FROM (
+        SELECT 'Scheduling/Appointments' AS source, "TenantId", "PatientId" FROM "Appointments"
+        UNION ALL
+        SELECT 'Scheduling/BookingRequests', "TenantId", "MatchedPatientId" AS "PatientId"
+        FROM "BookingRequests" WHERE "MatchedPatientId" IS NOT NULL
+    ) refs
+    ORDER BY source, "TenantId", "PatientId"
+) TO 'scheduling-patient-refs.csv' WITH (FORMAT csv, HEADER)
 
 ROLLBACK;

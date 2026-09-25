@@ -16,11 +16,11 @@ booking requests and claims already store those ids, so nothing else needs rewri
 |---|---|---|
 | `01-inventory-patientservice.sql` | `cdo_patients` | nothing (read-only transaction); creates `patientservice-ids.psql` locally |
 | `02-inventory-portal.sql` | `cdo_portal` | nothing |
-| `03-inventory-scheduling.sql` | `cdo_scheduling` | nothing |
+| `03-inventory-scheduling.sql` | `cdo_scheduling` | nothing; creates `scheduling-patient-refs.csv` locally |
 | `10-export-patientservice.sql` | `cdo_patients` | nothing; creates `export-*.csv` and `export-checksum.psql` locally |
 | `11-migrate-into-portal.sql` | `cdo_portal` | patients, patient insurance, any unmatched insurance plans, `_patient_store_migration` (one transaction) |
-| `12-verify-portal.sql` | `cdo_portal` | nothing |
-| `13-rollback-portal.sql` | `cdo_portal` | deletes only rows recorded in `_patient_store_migration` (one transaction) |
+| `12-verify-portal.sql` | `cdo_portal` | nothing; reads `scheduling-patient-refs.csv` locally |
+| `13-rollback-portal.sql` | `cdo_portal` | deletes only rows recorded in `_patient_store_migration` (one transaction); reads `scheduling-patient-refs.csv` locally |
 
 Use psql 14 or later from a secured host with access to the ACA PostgreSQL server
 (`SSL Mode=Require`). Always pass `-v ON_ERROR_STOP=1` and run every script from the
@@ -81,7 +81,8 @@ reassigned to the practice's tenant.
    psql "$PORTAL_DB_URL" -v ON_ERROR_STOP=1 -v patient_id=<known patient id> -f 12-verify-portal.sql
    ```
    Required: counts equal, `patient_checksum = MATCH`, every `sequence_ok = t`, and every
-   `unresolved` count `0`. The spot check shows the known patient with their insurance, claims and account.
+   `unresolved` and `tenant_mismatches` count `0`. The spot check shows the known patient with
+   their insurance, claims, account, and any scheduling references in the same tenant.
 6. **Deploy the Option 1 build** (the `deploy-aca.yml` workflow). It creates new active
    revisions of `portal` and `scheduling-service`. PatientService is no longer built, deployed or
    called. Bicep deployments are incremental, so the existing `patient-service` container app is
@@ -111,6 +112,6 @@ reassigned to the practice's tenant.
 * **Before step 6 (new build not deployed):** run `13-rollback-portal.sql`, reactivate the
   previous revisions of the three apps, and reopen. PatientService is untouched by the migration.
 * **After step 6 but before reopening:** redeploy the previous image tag, then run `13-rollback-portal.sql`.
-* **After reopening:** do not use `13-rollback-portal.sql`; it refuses once claims or patient-portal
-  logins reference the migrated rows. Fix forward, or restore the step-3 backups with
+* **After reopening:** do not use `13-rollback-portal.sql`; it refuses once claims, other
+  patient-bearing Portal tables, or scheduling rows reference the migrated rows. Fix forward, or restore the step-3 backups with
   `pg_restore --clean` (this loses everything written since reopening).
