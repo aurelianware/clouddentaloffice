@@ -55,7 +55,7 @@ unset conn
 ## Before the window
 
 Keep automatic deploys from shipping the new build early: they fail today only because Azure
-login is broken (see step 6). Do not fix that login before the window, or first disable the
+login is broken (see step 5). Do not fix that login before the window, or first disable the
 **Deploy to Azure Container Apps** workflow in the repository's Actions tab.
 
 ## Maintenance window (about 30 minutes)
@@ -64,36 +64,60 @@ login is broken (see step 6). Do not fix that login before the window, or first 
 2. **Pause the apps.** Deactivate the active revisions of `portal`, `scheduling-service` and
    `patient-service`:
    ```bash
+   failed=0
    for app in portal scheduling-service patient-service; do
-     rev=$(az containerapp revision list -g "$RG" -n "$app" --query "[?properties.active].name" -o tsv)
-     az containerapp revision deactivate -g "$RG" -n "$app" --revision "$rev"
+     revs=$(az containerapp revision list -g "$RG" -n "$app" --query "[?properties.active].name" -o tsv) \
+       || { echo "LIST FAILED: $app"; failed=1; continue; }
+     for rev in $revs; do
+       az containerapp revision deactivate -g "$RG" -n "$app" --revision "$rev" \
+         || { echo "DEACTIVATE FAILED: $app $rev"; failed=1; }
+     done
+     left=$(az containerapp revision list -g "$RG" -n "$app" --query "[?properties.active].name" -o tsv)
+     [ -z "$left" ] || { echo "STILL ACTIVE: $app $left"; failed=1; }
    done
+   [ "$failed" = 0 ] && echo "ALL APPS PAUSED" || echo "STOP: not every app is paused"
    ```
+   Continue only after `ALL APPS PAUSED`. An app with no active revision is skipped.
    IntakeService stays up: new website bookings and Zocdoc webhooks wait in its inbox and on
    Service Bus and are processed after reopening.
-3. **Back up all three databases** and check the files are not empty. They contain patient data:
-   keep them in secured storage, never in the repository.
+3. **Back up all three databases.** Each dump must succeed, be non-empty and be readable by
+   `pg_restore`. They contain patient data: keep them in secured storage, never in the repository.
    ```bash
    stamp=$(date -u +%Y%m%dT%H%M%SZ)
-   for db in cdo_portal cdo_patients cdo_scheduling; do pg_dump -d "$db" -Fc -f "$db-$stamp.dump"; done
-   ls -l *.dump
+   failed=0
+   for db in cdo_portal cdo_patients cdo_scheduling; do
+     f="$db-$stamp.dump"
+     if pg_dump -d "$db" -Fc -f "$f" && [ -s "$f" ] && pg_restore -l "$f" > /dev/null; then
+       echo "OK $f"
+     else
+       echo "BACKUP FAILED: $db"; failed=1
+     fi
+   done
+   [ "$failed" = 0 ] && echo "ALL BACKUPS OK" || echo "STOP: a backup failed"
    ```
+   Continue only after `ALL BACKUPS OK`.
 4. **Pre-check, then reset.**
    ```bash
-   psql -d cdo_portal -v ON_ERROR_STOP=1 -f 20-precheck.sql | tee 20-precheck.out
+   set -o pipefail
+   psql -d cdo_portal -v ON_ERROR_STOP=1 -f 20-precheck.sql | tee 20-precheck.out \
+     && echo "PRECHECK OK" || echo "STOP: the pre-check failed"
    ```
+   `pipefail` makes a `psql` failure show even though the output goes through `tee`.
    Section 1 lists the providers. Ids 1–4 in tenant `demo` are samples; **keep the details of
    any other provider** (the output file has them) to re-enter in step 7. Section 2 must show
    `added_by_staff = 0`, and section 3 only the tables it names. If anything else has rows, stop
    and decide whether it matters before continuing.
 
-   Then recreate `cdo_portal` empty and clear the scheduling references:
+   Only after `ALL BACKUPS OK`, `PRECHECK OK` and reading the pre-check output, recreate
+   `cdo_portal` empty and clear the scheduling references. Each command runs only if the one
+   before it succeeded:
    ```bash
-   az postgres flexible-server db delete -g "$RG" -s "$SERVER" -d cdo_portal --yes
-   az postgres flexible-server db create -g "$RG" -s "$SERVER" -d cdo_portal
-   psql -d cdo_scheduling -v ON_ERROR_STOP=1 -f 21-clear-scheduling-patient-refs.sql
+   az postgres flexible-server db delete -g "$RG" -s "$SERVER" -d cdo_portal --yes \
+     && az postgres flexible-server db create -g "$RG" -s "$SERVER" -d cdo_portal \
+     && psql -d cdo_scheduling -v ON_ERROR_STOP=1 -f 21-clear-scheduling-patient-refs.sql \
+     && echo "RESET DONE" || echo "STOP: the reset did not finish; see the error above"
    ```
-   `21` must end with `appointments 0, booking_requests 0` and `COMMIT`.
+   Expect `appointments 0, booking_requests 0`, `COMMIT` and `RESET DONE`.
 5. **Fix the deploy login.** GitHub now identifies the repository to Azure with numeric ids, and
    the app registration has no federated credential for that subject (deploy runs 68–71 failed
    with `AADSTS700213`). Add one, using the application (client) id stored in the
@@ -111,10 +135,12 @@ login is broken (see step 6). Do not fix that login before the window, or first 
    creates new active revisions of `portal` and `scheduling-service`. The `patient-service` app is
    no longer deployed and stays deactivated. When the run is green:
    ```bash
-   psql -d cdo_portal -v ON_ERROR_STOP=1 -f 22-verify-fresh-portal.sql
+   psql -d cdo_portal -v ON_ERROR_STOP=1 -v tenant_id=third-set-smiles -f 22-verify-fresh-portal.sql
    ```
-   Every table in section 1 must be `t`; section 2 must show tenants 1, organizations 1,
-   providers 4, procedure codes 38, patients 0, claims 0; section 3 the practice's tenant.
+   Every row must end in `t`. It checks that every table in the current model exists (including
+   all the billing tables), that the practice tenant, organization and review settings were
+   created, that the seed is exactly providers 1–4 in the sample tenant `demo` plus the 38 CDT
+   codes, and that there are no patients or claims.
 7. **Re-enter staff-added providers** on the Providers page, from the step 4 output.
 8. **Smoke-test**, signed in as staff. Create a test patient with insurance, then:
    * **Patients:** the patient is listed and opens with the right details.
