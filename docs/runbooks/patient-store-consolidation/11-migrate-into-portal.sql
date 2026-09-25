@@ -107,23 +107,7 @@ BEGIN
         patient_conflict_details := concat_ws('; ', patient_conflict_details, format('Claims=%s', source_conflicts));
     END IF;
 
-    SELECT count(*) INTO source_conflicts
-    FROM "PatientAccounts" x JOIN stage_patients s ON s."PatientId" = x."PatientId"
-    WHERE x."TenantId" IS DISTINCT FROM s."TenantId";
-    patient_tenant_conflicts := patient_tenant_conflicts + source_conflicts;
-    IF source_conflicts > 0 THEN
-        patient_conflict_details := concat_ws('; ', patient_conflict_details, format('PatientAccounts=%s', source_conflicts));
-    END IF;
-
-    SELECT count(*) INTO source_conflicts
-    FROM "PatientPortalIdentities" x JOIN stage_patients s ON s."PatientId" = x."PatientId"
-    WHERE x."TenantId" IS DISTINCT FROM s."TenantId";
-    patient_tenant_conflicts := patient_tenant_conflicts + source_conflicts;
-    IF source_conflicts > 0 THEN
-        patient_conflict_details := concat_ws('; ', patient_conflict_details, format('PatientPortalIdentities=%s', source_conflicts));
-    END IF;
-
-    FOREACH optional_table IN ARRAY ARRAY['TreatmentPlans', 'Procedures', 'ClinicalNotes', 'ReviewOutreaches', 'Appointments'] LOOP
+    FOREACH optional_table IN ARRAY ARRAY['PatientAccounts', 'PatientPortalIdentities', 'TreatmentPlans', 'Procedures', 'ClinicalNotes', 'ReviewOutreaches', 'Appointments'] LOOP
         IF to_regclass(format('"%s"', optional_table)) IS NOT NULL THEN
             EXECUTE format(
                 'SELECT count(*) FROM %I x JOIN stage_patients s ON s."PatientId" = x."PatientId" WHERE x."TenantId" IS DISTINCT FROM s."TenantId"',

@@ -20,15 +20,7 @@ FROM "BookingRequests" WHERE "MatchedPatientId" IS NOT NULL GROUP BY "TenantId"
 ORDER BY 1, 2;
 
 \echo '== 2. Writing scheduling-patient-refs.csv for 12-verify-portal.sql and 13-rollback-portal.sql'
-\copy (
-    SELECT source, "TenantId", "PatientId"
-    FROM (
-        SELECT 'Scheduling/Appointments' AS source, "TenantId", "PatientId" FROM "Appointments"
-        UNION ALL
-        SELECT 'Scheduling/BookingRequests', "TenantId", "MatchedPatientId" AS "PatientId"
-        FROM "BookingRequests" WHERE "MatchedPatientId" IS NOT NULL
-    ) refs
-    ORDER BY source, "TenantId", "PatientId"
-) TO 'scheduling-patient-refs.csv' WITH (FORMAT csv, HEADER)
+-- psql reads \copy up to the end of the line, so it must stay on one line.
+\copy (SELECT source, "TenantId", "PatientId" FROM (SELECT 'Scheduling/Appointments' AS source, "TenantId", "PatientId" FROM "Appointments" UNION ALL SELECT 'Scheduling/BookingRequests', "TenantId", "MatchedPatientId" AS "PatientId" FROM "BookingRequests" WHERE "MatchedPatientId" IS NOT NULL) refs ORDER BY source, "TenantId", "PatientId") TO 'scheduling-patient-refs.csv' WITH (FORMAT csv, HEADER)
 
 ROLLBACK;

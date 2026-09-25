@@ -1,4 +1,6 @@
-# Outputs of these scripts contain patient data (PHI). Never commit them.
+# Outputs of these scripts and the database backups contain patient data (PHI). Never commit them.
+*.dump
+*.out
 *.csv
 patientservice-ids.psql
 export-checksum.psql
