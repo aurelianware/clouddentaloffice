@@ -549,13 +549,13 @@ Cloud Dental Office is **source-available** under the [Business Source License 1
 
 **What dental practices can do for free**
 
-- Run Cloud Dental Office in production to manage your own dental practice, or a group of practices under common ownership.
+- Run Cloud Dental Office in production to manage your own dental practice, or practices under common ownership or control with yours.
 - Self-host it on your own infrastructure.
 - Read, copy, modify and build on the source code, and use it freely for development, testing and evaluation.
 
 **What requires a commercial license**
 
-- Offering Cloud Dental Office, or anything derived from it, to other parties as a hosted, managed or embedded commercial service that competes with Aurelianware's offerings.
+- Offering Cloud Dental Office, or anything derived from it, to other parties on a hosted, managed or embedded basis as a commercial product or service that competes with Aurelianware's paid versions of Cloud Dental Office.
 
 **Change date**
 
