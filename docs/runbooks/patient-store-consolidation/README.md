@@ -1,120 +1,161 @@
-# Runbook: consolidate patients into the Portal database
+# Runbook: make the Portal database the only patient store (reset)
 
-**Why:** ACA production keeps patients in PatientService (`cdo_patients`), but billing,
-claims/EDI, patient insurance and patient-portal logins read the Portal database
-(`cdo_portal`). The Option 1 build makes the Portal database the only patient store.
-Before that build ships, PatientService patients and their insurance are copied into
-`cdo_portal` **with their existing `PatientId` and `PatientInsuranceId`**. Appointments,
-booking requests and claims already store those ids, so nothing else needs rewriting.
+**Why:** ACA production kept patients in PatientService (`cdo_patients`), while billing, claims,
+patient insurance and patient-portal logins read the Portal database (`cdo_portal`). The current
+`main` build reads patients only from `cdo_portal`.
 
-**Rule:** nothing here writes to production except `11-migrate-into-portal.sql` and
-`13-rollback-portal.sql`, and both run only inside the maintenance window below.
+**Decision (2026-09-25):** the existing patient data is not needed, so instead of migrating it we
+start `cdo_portal` fresh and clear the scheduling rows that point at the old patient ids.
+Production held 3 PatientService patients, 2 draft claims, 3 appointments and 8 booking requests.
+
+Why both databases: a fresh `cdo_portal` hands out patient ids 1, 2, 3 … again. Any appointment,
+booking request or claim still pointing at the old ids would attach to the wrong new patient.
+
+A fresh `cdo_portal` also fixes a separate gap: the old database was created before the billing
+tables existed (`PatientAccounts`, statements, payments, portal logins) and never received them.
+On first start the Portal creates the full current schema and re-seeds:
+
+* the tenant, organization and review-outreach settings (from the `InitialTenant__*` settings);
+* the 4 sample providers (tenant `demo`) and the 38 procedure codes;
+* staff sign-in comes from the `StaffAuth__Users__*` settings, not the database.
+
+Not recreated: providers that staff added (re-enter them, step 7) and anything else staff typed in.
+
+`cdo_scheduling` is **cleaned, not recreated**, so the Google Search Console connection and its
+history (Google only offers about 16 months to re-import) and the patient-acquisition events stay.
+
+> The files `01`–`13` in this folder belong to the superseded migration plan. Do not run them.
 
 ## Files
 
 | Script | Runs against | Writes |
 |---|---|---|
-| `01-inventory-patientservice.sql` | `cdo_patients` | nothing (read-only transaction); creates `patientservice-ids.psql` locally |
-| `02-inventory-portal.sql` | `cdo_portal` | nothing |
-| `03-inventory-scheduling.sql` | `cdo_scheduling` | nothing; creates `scheduling-patient-refs.csv` locally |
-| `10-export-patientservice.sql` | `cdo_patients` | nothing; creates `export-*.csv` and `export-checksum.psql` locally |
-| `11-migrate-into-portal.sql` | `cdo_portal` | patients, patient insurance, any unmatched insurance plans, `_patient_store_migration` (one transaction) |
-| `12-verify-portal.sql` | `cdo_portal` | nothing; reads `scheduling-patient-refs.csv` locally |
-| `13-rollback-portal.sql` | `cdo_portal` | deletes only rows recorded in `_patient_store_migration` (one transaction); reads `scheduling-patient-refs.csv` locally |
+| `20-precheck.sql` | `cdo_portal` | nothing (read-only) |
+| `21-clear-scheduling-patient-refs.sql` | `cdo_scheduling` | deletes all `Appointments` and `BookingRequests` (one transaction) |
+| `22-verify-fresh-portal.sql` | `cdo_portal` | nothing (read-only) |
 
-Use psql 14 or later from a secured host with access to the ACA PostgreSQL server
-(`SSL Mode=Require`). Always pass `-v ON_ERROR_STOP=1` and run every script from the
-same working directory, because later scripts read files the earlier ones write.
+## Connecting (Azure Cloud Shell, Bash)
 
-> The CSV and `.psql` outputs contain patient data. Keep them on the secured host only,
-> never commit them (see `.gitignore`), and delete them (`shred -u`) when the window closes.
-
-## Step 1 · Inventory (4a), no downtime
+Cloud Shell has psql, git and az, and reaches the database without a firewall change. The
+connection details come from the Portal's `conn-default` Container App secret:
 
 ```bash
-psql "$PATIENTSERVICE_DB_URL" -v ON_ERROR_STOP=1 -f 01-inventory-patientservice.sql | tee 01.out
-psql "$PORTAL_DB_URL"         -v ON_ERROR_STOP=1 -f 02-inventory-portal.sql         | tee 02.out
-psql "$SCHEDULING_DB_URL"     -v ON_ERROR_STOP=1 -f 03-inventory-scheduling.sql     | tee 03.out
+git clone https://github.com/aurelianware/clouddentaloffice.git
+cd clouddentaloffice/docs/runbooks/patient-store-consolidation
+RG=cdo-prod-rg
+SERVER=cdo-postgres-mfosw3gaw6fk2
+conn=$(az containerapp secret show -g "$RG" -n portal --secret-name conn-default --query value -o tsv)
+export PGHOST=$(sed -n 's/.*Host=\([^;]*\).*/\1/p' <<<"$conn")
+export PGUSER=$(sed -n 's/.*Username=\([^;]*\).*/\1/p' <<<"$conn")
+export PGPASSWORD=$(sed -n 's/.*Password=\([^;]*\).*/\1/p' <<<"$conn")
+export PGSSLMODE=require
+unset conn
 ```
 
-Share `01.out`, `02.out` and `03.out` (they contain counts, id ranges and ids, no names).
-Decide from `02.out`:
+## Before the window
 
-* **Section 3 shows no Portal patients** → proceed with the migration below (4b).
-* **Section 3 shows Portal patients, or section 4 shows overlapping ids** → **stop** (4c).
-  Report the overlap; a different reconciliation is needed. `11-migrate-into-portal.sql`
-  refuses to run in this case anyway.
+Keep automatic deploys from shipping the new build early: they fail today only because Azure
+login is broken (see step 6). Do not fix that login before the window, or first disable the
+**Deploy to Azure Container Apps** workflow in the repository's Actions tab.
 
-Also note from `01.out` section 2 any patients whose `TenantId` is `default` (created by
-the pre-#70 API without a tenant). They are copied as-is and stay invisible to staff until
-reassigned to the practice's tenant.
+## Maintenance window (about 30 minutes)
 
-## Step 2 · Maintenance window (4d)
-
-1. **Announce maintenance** to the practice (start time and expected duration of about 30 minutes).
-2. **Pause writes.** Deactivate the active revisions of `portal`, `scheduling-service`
-   and `patient-service` (Container Apps has no zero-replica maximum, so deactivate):
+1. **Announce maintenance** to the practice.
+2. **Pause the apps.** Deactivate the active revisions of `portal`, `scheduling-service` and
+   `patient-service`:
    ```bash
    for app in portal scheduling-service patient-service; do
      rev=$(az containerapp revision list -g "$RG" -n "$app" --query "[?properties.active].name" -o tsv)
      az containerapp revision deactivate -g "$RG" -n "$app" --revision "$rev"
    done
    ```
-   IntakeService stays up: website bookings and Zocdoc webhooks keep landing in its durable
-   inbox and on Service Bus, and are processed after reopening.
-3. **Back up both databases** (plus scheduling for completeness) and confirm the files are non-empty:
+   IntakeService stays up: new website bookings and Zocdoc webhooks wait in its inbox and on
+   Service Bus and are processed after reopening.
+3. **Back up all three databases** and check the files are not empty. They contain patient data:
+   keep them in secured storage, never in the repository.
    ```bash
    stamp=$(date -u +%Y%m%dT%H%M%SZ)
-   pg_dump "$PORTAL_DB_URL"         -Fc -f "cdo_portal-$stamp.dump"
-   pg_dump "$PATIENTSERVICE_DB_URL" -Fc -f "cdo_patients-$stamp.dump"
-   pg_dump "$SCHEDULING_DB_URL"     -Fc -f "cdo_scheduling-$stamp.dump"
+   for db in cdo_portal cdo_patients cdo_scheduling; do pg_dump -d "$db" -Fc -f "$db-$stamp.dump"; done
+   ls -l *.dump
    ```
-4. **Run the migration.** First re-run `01` and `03`, now that writes are paused, so the
-   scheduling references that `12` and `13` check are current:
+4. **Pre-check, then reset.**
    ```bash
-   psql "$PATIENTSERVICE_DB_URL" -v ON_ERROR_STOP=1 -f 01-inventory-patientservice.sql > 01-window.out
-   psql "$SCHEDULING_DB_URL"     -v ON_ERROR_STOP=1 -f 03-inventory-scheduling.sql     > 03-window.out
-   psql "$PATIENTSERVICE_DB_URL" -v ON_ERROR_STOP=1 -f 10-export-patientservice.sql
-   psql "$PORTAL_DB_URL"         -v ON_ERROR_STOP=1 -f 11-migrate-into-portal.sql
+   psql -d cdo_portal -v ON_ERROR_STOP=1 -f 20-precheck.sql | tee 20-precheck.out
    ```
-   Expect `NOTICE: This run inserted N patients and M insurance rows. Now present: N of N …`
-   followed by `COMMIT`. Any `STOP` error means nothing was written; read the message.
-5. **Verify:**
+   Section 1 lists the providers. Ids 1–4 in tenant `demo` are samples; **keep the details of
+   any other provider** (the output file has them) to re-enter in step 7. Section 2 must show
+   `added_by_staff = 0`, and section 3 only the tables it names. If anything else has rows, stop
+   and decide whether it matters before continuing.
+
+   Then recreate `cdo_portal` empty and clear the scheduling references:
    ```bash
-   psql "$PORTAL_DB_URL" -v ON_ERROR_STOP=1 -v patient_id=<known patient id> -f 12-verify-portal.sql
+   az postgres flexible-server db delete -g "$RG" -s "$SERVER" -d cdo_portal --yes
+   az postgres flexible-server db create -g "$RG" -s "$SERVER" -d cdo_portal
+   psql -d cdo_scheduling -v ON_ERROR_STOP=1 -f 21-clear-scheduling-patient-refs.sql
    ```
-   Required: counts equal, `patient_checksum = MATCH`, every `sequence_ok = t`, and every
-   `unresolved` and `tenant_mismatches` count `0`. The spot check shows the known patient with
-   their insurance, claims, account, and any scheduling references in the same tenant.
-6. **Deploy the Option 1 build** (the `deploy-aca.yml` workflow). It creates new active
-   revisions of `portal` and `scheduling-service`. PatientService is no longer built, deployed or
-   called. Bicep deployments are incremental, so the existing `patient-service` container app is
-   **not deleted**: leave it deactivated (step 2) until the PatientService retirement pass removes it.
-7. **Smoke-test with the known patient**, signed in as staff:
-   * **Patients**: the patient is listed and opens with correct demographics.
-   * **Billing**: selecting the patient loads their account and ledger (no "Patient was not found").
-   * **Claim Wizard**: selecting the patient shows their insurance.
-   * Optionally, approve a test booking request and confirm the appointment shows the right patient.
+   `21` must end with `appointments 0, booking_requests 0` and `COMMIT`.
+5. **Fix the deploy login.** GitHub now identifies the repository to Azure with numeric ids, and
+   the app registration has no federated credential for that subject (deploy runs 68–71 failed
+   with `AADSTS700213`). Add one, using the application (client) id stored in the
+   `AZURE_CLIENT_ID` repository secret:
+   ```bash
+   az ad app federated-credential create --id <AZURE_CLIENT_ID> --parameters '{
+     "name": "github-main",
+     "issuer": "https://token.actions.githubusercontent.com",
+     "subject": "repo:aurelianware@194855645/clouddentaloffice@1158178664:ref:refs/heads/main",
+     "audiences": ["api://AzureADTokenExchange"]
+   }'
+   ```
+6. **Deploy.** Re-enable the deploy workflow if you disabled it, then run **Deploy to Azure
+   Container Apps** from the Actions tab (*Run workflow* on `main`). It runs CI first, then
+   creates new active revisions of `portal` and `scheduling-service`. The `patient-service` app is
+   no longer deployed and stays deactivated. When the run is green:
+   ```bash
+   psql -d cdo_portal -v ON_ERROR_STOP=1 -f 22-verify-fresh-portal.sql
+   ```
+   Every table in section 1 must be `t`; section 2 must show tenants 1, organizations 1,
+   providers 4, procedure codes 38, patients 0, claims 0; section 3 the practice's tenant.
+7. **Re-enter staff-added providers** on the Providers page, from the step 4 output.
+8. **Smoke-test**, signed in as staff. Create a test patient with insurance, then:
+   * **Patients:** the patient is listed and opens with the right details.
+   * **Billing:** selecting the patient loads their account (this page could not work before).
+   * **Claim Wizard:** selecting the patient shows their insurance.
    * **Zocdoc path (SchedulingService → Portal internal port).** From inside the environment, send
-     the known patient's own name and date of birth, so it matches instead of creating a patient.
+     the test patient's own name and date of birth, so it matches instead of creating a patient.
      The runtime image has no curl, so this uses bash's `/dev/tcp`:
      ```bash
      az containerapp exec -g "$RG" -n scheduling-service --command "bash -c '
        body={\"firstName\":\"<First>\",\"lastName\":\"<Last>\",\"dateOfBirth\":\"<YYYY-MM-DD>\"}
        exec 3<>/dev/tcp/portal/5091
-       printf \"POST /api/internal/patients/match-or-create?tenantId=<tenant> HTTP/1.1\r\nHost: portal:5091\r\nX-CDO-Service-Key: <PATIENT_SERVICE_API_KEY>\r\nContent-Type: application/json\r\nContent-Length: \${#body}\r\nConnection: close\r\n\r\n\$body\" >&3
+       printf \"POST /api/internal/patients/match-or-create?tenantId=third-set-smiles HTTP/1.1\r\nHost: portal:5091\r\nX-CDO-Service-Key: <PATIENT_SERVICE_API_KEY>\r\nContent-Type: application/json\r\nContent-Length: \${#body}\r\nConnection: close\r\n\r\n\$body\" >&3
        head -c 400 <&3'"
      ```
-     Expect `HTTP/1.1 200` with `{"patientId":<known id>,"created":false}`. A `302` means EasyAuth is
-     intercepting the internal port (roll back and report); `401` means the key or tenant is wrong.
-     From outside, `https://<portal host>/api/internal/patients/match-or-create` must return `404`.
-8. **Reopen:** confirm the new revisions are active and healthy (`/health/ready`), then announce the end of maintenance.
+     Expect `HTTP/1.1 200` with `{"patientId":<test patient id>,"created":false}`. A `302` means
+     EasyAuth is intercepting the internal port; `401` means the key or tenant is wrong. From
+     outside, `https://<portal host>/api/internal/patients/match-or-create` must return `404`.
 
-## Rollback
+   Archive the test patient afterwards if you don't want it listed.
+9. **Reopen:** confirm the new revisions are healthy (`/health/ready`) and announce the end of
+   maintenance.
 
-* **Before step 6 (new build not deployed):** run `13-rollback-portal.sql`, reactivate the
-  previous revisions of the three apps, and reopen. PatientService is untouched by the migration.
-* **After step 6 but before reopening:** redeploy the previous image tag, then run `13-rollback-portal.sql`.
-* **After reopening:** do not use `13-rollback-portal.sql`; it refuses once claims, other
-  patient-bearing Portal tables, or scheduling rows reference the migrated rows. Fix forward, or restore the step-3 backups with
-  `pg_restore --clean` (this loses everything written since reopening).
+## If something goes wrong
+
+* **Before step 4's reset:** reactivate the previous revisions and reopen. Nothing has changed.
+* **After the reset, before reopening:** restore the step 3 backups, then reactivate the previous
+  revisions:
+  ```bash
+  az postgres flexible-server db delete -g "$RG" -s "$SERVER" -d cdo_portal --yes
+  az postgres flexible-server db create -g "$RG" -s "$SERVER" -d cdo_portal
+  pg_restore -d cdo_portal --no-owner cdo_portal-<stamp>.dump
+  pg_restore -d cdo_scheduling --clean --if-exists --no-owner cdo_scheduling-<stamp>.dump
+  ```
+  If the new build is already deployed, redeploy the previous image tag first, or the Portal
+  will ignore the restored PatientService setup.
+* **After reopening:** fix forward; restoring would discard everything entered since.
+
+## Later (PatientService retirement)
+
+* Delete the `patient-service` container app and, once your records-retention needs are met,
+  the `cdo_patients` database. The step 3 backup keeps a copy.
+* Remove the PatientService projects, `PatientService.Dockerfile` and the superseded scripts
+  `01`–`13` in this folder.
