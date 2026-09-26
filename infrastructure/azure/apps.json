@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.47.16.16243",
-      "templateHash": "191221690706498316"
+      "templateHash": "17900005907674139584"
     }
   },
   "parameters": {
@@ -161,6 +161,27 @@
         "description": "Payer ID that should route payment estimates through CloudHealthOffice"
       }
     },
+    "cloudHealthOfficeEligibilityBaseUrl": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Internal URL of the CHO provider eligibility app; empty leaves eligibility off"
+      }
+    },
+    "cloudHealthOfficeEligibilityApiKey": {
+      "type": "securestring",
+      "defaultValue": "",
+      "metadata": {
+        "description": "CDO client credential for the CHO provider eligibility API"
+      }
+    },
+    "cloudHealthOfficeEligibilityPayerIds": {
+      "type": "array",
+      "defaultValue": [],
+      "metadata": {
+        "description": "CDO insurance-plan payer IDs whose eligibility checks route through CloudHealthOffice"
+      }
+    },
     "jwtIssuer": {
       "type": "string",
       "defaultValue": "CloudDentalOffice"
@@ -282,6 +303,15 @@
           },
           "cloudHealthOfficePayerId": {
             "value": "[parameters('cloudHealthOfficePayerId')]"
+          },
+          "cloudHealthOfficeEligibilityBaseUrl": {
+            "value": "[parameters('cloudHealthOfficeEligibilityBaseUrl')]"
+          },
+          "cloudHealthOfficeEligibilityApiKey": {
+            "value": "[parameters('cloudHealthOfficeEligibilityApiKey')]"
+          },
+          "cloudHealthOfficeEligibilityPayerIds": {
+            "value": "[parameters('cloudHealthOfficeEligibilityPayerIds')]"
           }
         },
         "template": {
@@ -291,7 +321,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.47.16.16243",
-              "templateHash": "8277353147167648080"
+              "templateHash": "14292535387343759641"
             }
           },
           "parameters": {
@@ -406,9 +436,43 @@
             "cloudHealthOfficePayerId": {
               "type": "string",
               "defaultValue": "00001"
+            },
+            "cloudHealthOfficeEligibilityBaseUrl": {
+              "type": "string",
+              "defaultValue": "",
+              "metadata": {
+                "description": "Internal URL of the CHO provider eligibility app (its eligibilityCheckUrl output, without the path). Empty leaves eligibility off."
+              }
+            },
+            "cloudHealthOfficeEligibilityApiKey": {
+              "type": "securestring",
+              "defaultValue": "",
+              "metadata": {
+                "description": "CDO client credential for the CHO provider eligibility API (CHO Key Vault secret provider-eligibility-cdo-api-key)."
+              }
+            },
+            "cloudHealthOfficeEligibilityPayerIds": {
+              "type": "array",
+              "defaultValue": [],
+              "metadata": {
+                "description": "CDO insurance-plan payer IDs whose eligibility checks route through CloudHealthOffice."
+              }
             }
           },
           "variables": {
+            "copy": [
+              {
+                "name": "choEligibilityRoutes",
+                "count": "[length(parameters('cloudHealthOfficeEligibilityPayerIds'))]",
+                "input": {
+                  "name": "[format('PayerConnectivity__Payers__{0}__Eligibility', parameters('cloudHealthOfficeEligibilityPayerIds')[copyIndex('choEligibilityRoutes')])]",
+                  "value": "CloudHealthOffice"
+                }
+              }
+            ],
+            "choEligibilityEnabled": "[and(not(empty(parameters('cloudHealthOfficeEligibilityBaseUrl'))), not(empty(parameters('cloudHealthOfficeEligibilityApiKey'))))]",
+            "choEligibilitySecrets": "[if(variables('choEligibilityEnabled'), createArray(createObject('name', 'cho-eligibility-api-key', 'value', parameters('cloudHealthOfficeEligibilityApiKey'))), createArray())]",
+            "choEligibilityEnv": "[if(variables('choEligibilityEnabled'), concat(createArray(createObject('name', 'CloudHealthOffice__Eligibility__BaseUrl', 'value', parameters('cloudHealthOfficeEligibilityBaseUrl')), createObject('name', 'CloudHealthOffice__Eligibility__ApiKey', 'secretRef', 'cho-eligibility-api-key')), variables('choEligibilityRoutes')), createArray())]",
             "registry": [
               {
                 "server": "[parameters('acrLoginServer')]",
@@ -446,28 +510,7 @@
                       }
                     ]
                   },
-                  "secrets": [
-                    {
-                      "name": "conn-default",
-                      "value": "[parameters('connPortal')]"
-                    },
-                    {
-                      "name": "internal-api-key",
-                      "value": "[parameters('patientServiceApiKey')]"
-                    },
-                    {
-                      "name": "jwt-key",
-                      "value": "[parameters('jwtKey')]"
-                    },
-                    {
-                      "name": "google-oauth-client-secret",
-                      "value": "[parameters('googleOAuthClientSecret')]"
-                    },
-                    {
-                      "name": "cloudhealthoffice-api-key",
-                      "value": "[parameters('cloudHealthOfficeApiKey')]"
-                    }
-                  ]
+                  "secrets": "[concat(createArray(createObject('name', 'conn-default', 'value', parameters('connPortal')), createObject('name', 'internal-api-key', 'value', parameters('patientServiceApiKey')), createObject('name', 'jwt-key', 'value', parameters('jwtKey')), createObject('name', 'google-oauth-client-secret', 'value', parameters('googleOAuthClientSecret')), createObject('name', 'cloudhealthoffice-api-key', 'value', parameters('cloudHealthOfficeApiKey'))), variables('choEligibilitySecrets'))]"
                 },
                 "template": {
                   "containers": [
@@ -478,132 +521,7 @@
                         "cpu": "[json('0.5')]",
                         "memory": "1Gi"
                       },
-                      "env": [
-                        {
-                          "name": "ASPNETCORE_ENVIRONMENT",
-                          "value": "Production"
-                        },
-                        {
-                          "name": "Database__Provider",
-                          "value": "PostgreSQL"
-                        },
-                        {
-                          "name": "Database__UseMigrations",
-                          "value": "false"
-                        },
-                        {
-                          "name": "ApiGateway__BaseUrl",
-                          "value": "http://api-gateway"
-                        },
-                        {
-                          "name": "ConnectionStrings__DefaultConnection",
-                          "secretRef": "conn-default"
-                        },
-                        {
-                          "name": "InternalApi__Port",
-                          "value": "5091"
-                        },
-                        {
-                          "name": "InternalApi__Clients__0__TenantId",
-                          "value": "[parameters('initialTenantId')]"
-                        },
-                        {
-                          "name": "InternalApi__Clients__0__ApiKey",
-                          "secretRef": "internal-api-key"
-                        },
-                        {
-                          "name": "Jwt__Key",
-                          "secretRef": "jwt-key"
-                        },
-                        {
-                          "name": "Jwt__Issuer",
-                          "value": "[parameters('jwtIssuer')]"
-                        },
-                        {
-                          "name": "Jwt__Audience",
-                          "value": "[parameters('jwtAudience')]"
-                        },
-                        {
-                          "name": "InitialTenant__Enabled",
-                          "value": "true"
-                        },
-                        {
-                          "name": "InitialTenant__TenantId",
-                          "value": "[parameters('initialTenantId')]"
-                        },
-                        {
-                          "name": "InitialTenant__Name",
-                          "value": "3rd Set Smiles"
-                        },
-                        {
-                          "name": "InitialTenant__Domain",
-                          "value": "3rdsetsmiles.com"
-                        },
-                        {
-                          "name": "AzureAd__Enabled",
-                          "value": "false"
-                        },
-                        {
-                          "name": "StaffAuth__Enabled",
-                          "value": "[if(not(empty(parameters('googleOAuthClientId'))), 'true', 'false')]"
-                        },
-                        {
-                          "name": "StaffAuth__TenantId",
-                          "value": "[parameters('initialTenantId')]"
-                        },
-                        {
-                          "name": "StaffAuth__Users__0__Email",
-                          "value": "matt@3rdsetsmiles.com"
-                        },
-                        {
-                          "name": "StaffAuth__Users__0__Role",
-                          "value": "Admin"
-                        },
-                        {
-                          "name": "StaffAuth__Users__1__Email",
-                          "value": "markus.phillips@gmail.com"
-                        },
-                        {
-                          "name": "StaffAuth__Users__1__Role",
-                          "value": "Admin"
-                        },
-                        {
-                          "name": "StaffAuth__Users__2__Email",
-                          "value": "cindy@3rdsetsmiles.com"
-                        },
-                        {
-                          "name": "StaffAuth__Users__2__Role",
-                          "value": "Admin"
-                        },
-                        {
-                          "name": "CloudHealthOffice__Enabled",
-                          "value": "true"
-                        },
-                        {
-                          "name": "CloudHealthOffice__BaseUrl",
-                          "value": "[parameters('cloudHealthOfficeBaseUrl')]"
-                        },
-                        {
-                          "name": "CloudHealthOffice__EstimatePath",
-                          "value": "/api/v1/adjudication/estimate"
-                        },
-                        {
-                          "name": "CloudHealthOffice__IntelligencePath",
-                          "value": "/api/claims/{claimId}/intelligence"
-                        },
-                        {
-                          "name": "CloudHealthOffice__ApiKey",
-                          "secretRef": "cloudhealthoffice-api-key"
-                        },
-                        {
-                          "name": "[format('CloudHealthOffice__BenefitPlanMappings__{0}', parameters('cloudHealthOfficePayerId'))]",
-                          "value": "[parameters('cloudHealthOfficeBenefitPlanId')]"
-                        },
-                        {
-                          "name": "[format('PayerConnectivity__Payers__{0}__PaymentEstimate__0', parameters('cloudHealthOfficePayerId'))]",
-                          "value": "CloudHealthOffice"
-                        }
-                      ],
+                      "env": "[concat(createArray(createObject('name', 'ASPNETCORE_ENVIRONMENT', 'value', 'Production'), createObject('name', 'Database__Provider', 'value', 'PostgreSQL'), createObject('name', 'Database__UseMigrations', 'value', 'false'), createObject('name', 'ApiGateway__BaseUrl', 'value', 'http://api-gateway'), createObject('name', 'ConnectionStrings__DefaultConnection', 'secretRef', 'conn-default'), createObject('name', 'InternalApi__Port', 'value', '5091'), createObject('name', 'InternalApi__Clients__0__TenantId', 'value', parameters('initialTenantId')), createObject('name', 'InternalApi__Clients__0__ApiKey', 'secretRef', 'internal-api-key'), createObject('name', 'Jwt__Key', 'secretRef', 'jwt-key'), createObject('name', 'Jwt__Issuer', 'value', parameters('jwtIssuer')), createObject('name', 'Jwt__Audience', 'value', parameters('jwtAudience')), createObject('name', 'InitialTenant__Enabled', 'value', 'true'), createObject('name', 'InitialTenant__TenantId', 'value', parameters('initialTenantId')), createObject('name', 'InitialTenant__Name', 'value', '3rd Set Smiles'), createObject('name', 'InitialTenant__Domain', 'value', '3rdsetsmiles.com'), createObject('name', 'AzureAd__Enabled', 'value', 'false'), createObject('name', 'StaffAuth__Enabled', 'value', if(not(empty(parameters('googleOAuthClientId'))), 'true', 'false')), createObject('name', 'StaffAuth__TenantId', 'value', parameters('initialTenantId')), createObject('name', 'StaffAuth__Users__0__Email', 'value', 'matt@3rdsetsmiles.com'), createObject('name', 'StaffAuth__Users__0__Role', 'value', 'Admin'), createObject('name', 'StaffAuth__Users__1__Email', 'value', 'markus.phillips@gmail.com'), createObject('name', 'StaffAuth__Users__1__Role', 'value', 'Admin'), createObject('name', 'StaffAuth__Users__2__Email', 'value', 'cindy@3rdsetsmiles.com'), createObject('name', 'StaffAuth__Users__2__Role', 'value', 'Admin'), createObject('name', 'CloudHealthOffice__Enabled', 'value', 'true'), createObject('name', 'CloudHealthOffice__BaseUrl', 'value', parameters('cloudHealthOfficeBaseUrl')), createObject('name', 'CloudHealthOffice__EstimatePath', 'value', '/api/v1/adjudication/estimate'), createObject('name', 'CloudHealthOffice__IntelligencePath', 'value', '/api/claims/{claimId}/intelligence'), createObject('name', 'CloudHealthOffice__ApiKey', 'secretRef', 'cloudhealthoffice-api-key'), createObject('name', format('CloudHealthOffice__BenefitPlanMappings__{0}', parameters('cloudHealthOfficePayerId')), 'value', parameters('cloudHealthOfficeBenefitPlanId')), createObject('name', format('PayerConnectivity__Payers__{0}__PaymentEstimate__0', parameters('cloudHealthOfficePayerId')), 'value', 'CloudHealthOffice')), variables('choEligibilityEnv'))]",
                       "probes": [
                         {
                           "type": "Liveness",
