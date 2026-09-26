@@ -177,13 +177,18 @@ public sealed class CloudHealthOfficeEligibilityClient : ICloudHealthOfficeEligi
     {
         if (!_options.IsConfigured)
             throw new TreatmentEstimateUnavailableException("Eligibility checks are not configured for this environment.");
-        if (!Uri.TryCreate(_options.BaseUrl, UriKind.Absolute, out var baseUri) ||
+        // The request carries the API key and the member's identity, so only a plain HTTPS origin is accepted.
+        if (!Uri.TryCreate(_options.BaseUrl, UriKind.Absolute, out var baseUri) || baseUri.Scheme != Uri.UriSchemeHttps ||
+            !string.IsNullOrEmpty(baseUri.UserInfo) || !string.IsNullOrEmpty(baseUri.Query) || !string.IsNullOrEmpty(baseUri.Fragment) ||
             !Uri.TryCreate(_options.CheckPath, UriKind.Relative, out _) || _options.CheckPath.StartsWith("//", StringComparison.Ordinal))
             throw new TreatmentEstimateUnavailableException("Eligibility checks are misconfigured. Contact support.");
         if (string.IsNullOrWhiteSpace(_tenantProvider.TenantId) || request.TenantId != _tenantProvider.TenantId)
             throw new UnauthorizedAccessException("The eligibility request is outside the active tenant.");
 
         var correlationId = request.CorrelationId ?? Guid.NewGuid().ToString("N");
+        var logCorrelationId = ForLog(correlationId);
+        var logTenantId = ForLog(request.TenantId);
+        var logPayerId = ForLog(request.PayerId);
         using var message = new HttpRequestMessage(HttpMethod.Post, new Uri(baseUri, _options.CheckPath));
         message.Headers.Add("X-Api-Key", _options.ApiKey);
         message.Headers.Add("X-Tenant-ID", request.TenantId);
@@ -197,13 +202,13 @@ public sealed class CloudHealthOfficeEligibilityClient : ICloudHealthOfficeEligi
         catch (OperationCanceledException ex) when (!cancellationToken.IsCancellationRequested)
         {
             _logger.LogWarning("Eligibility check {CorrelationId} for tenant {TenantId} payer {PayerId} timed out",
-                correlationId, request.TenantId, request.PayerId);
+                logCorrelationId, logTenantId, logPayerId);
             throw new TreatmentEstimateUnavailableException("The eligibility check timed out. Try again.", ex);
         }
         catch (HttpRequestException ex)
         {
             _logger.LogWarning(ex, "Eligibility service could not be reached for check {CorrelationId} tenant {TenantId}",
-                correlationId, request.TenantId);
+                logCorrelationId, logTenantId);
             throw new TreatmentEstimateUnavailableException("Eligibility checks are temporarily unavailable. Try again in a minute.", ex);
         }
 
@@ -211,7 +216,7 @@ public sealed class CloudHealthOfficeEligibilityClient : ICloudHealthOfficeEligi
         {
             var status = (int)response.StatusCode;
             _logger.LogInformation("Eligibility check {CorrelationId} for tenant {TenantId} payer {PayerId} returned HTTP {StatusCode}",
-                correlationId, request.TenantId, request.PayerId, status);
+                logCorrelationId, logTenantId, logPayerId, status);
 
             switch (response.StatusCode)
             {
@@ -233,7 +238,7 @@ public sealed class CloudHealthOfficeEligibilityClient : ICloudHealthOfficeEligi
                 }
                 case HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden:
                     _logger.LogError("Eligibility service refused CDO's credential for tenant {TenantId} (HTTP {StatusCode})",
-                        request.TenantId, status);
+                        logTenantId, status);
                     throw new TreatmentEstimateUnavailableException(
                         "Eligibility checks are not authorized for this practice yet. Contact support.");
                 case HttpStatusCode.ServiceUnavailable or HttpStatusCode.TooManyRequests:
@@ -245,6 +250,11 @@ public sealed class CloudHealthOfficeEligibilityClient : ICloudHealthOfficeEligi
             }
         }
     }
+
+    // Tenant, payer and correlation IDs come from stored or caller-supplied data; strip line breaks
+    // and other control characters so a value can't forge extra log entries.
+    internal static string ForLog(string? value) =>
+        string.IsNullOrEmpty(value) ? string.Empty : new string(value.Where(c => !char.IsControl(c)).ToArray());
 
     internal static ChoEligibilityRequest ToWire(NormalizedEligibilityRequest request, string correlationId) => new()
     {
