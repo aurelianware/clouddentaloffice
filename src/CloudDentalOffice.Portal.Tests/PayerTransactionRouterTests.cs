@@ -23,6 +23,7 @@ public sealed class PayerTransactionRouterTests
         Assert.Single(audit.Records);
         Assert.Equal("Eligibility", audit.Records[0].TransactionType);
         Assert.DoesNotContain("MEMBER", audit.Records[0].CorrelationId);
+        Assert.Equal(audit.Records[0].CorrelationId, adapter.Received!.CorrelationId);
     }
 
     [Fact]
@@ -110,6 +111,7 @@ public sealed class PayerTransactionRouterTests
     private static NormalizedEligibilityRequest EligibilityRequest() => new()
     {
         TenantId = "tenant-a", PayerId = "PAYER1", MemberId = "MEMBER1",
+        SubscriberFirstName = "Test", SubscriberLastName = "Subscriber", SubscriberDateOfBirth = new DateOnly(1970, 1, 1),
         ProviderNpi = "1234567890", ServiceDate = new DateOnly(2026, 9, 1)
     };
 
@@ -130,11 +132,13 @@ public sealed class PayerTransactionRouterTests
     private sealed class FakeEligibilityAdapter(string type) : IEligibilityTradingPartnerAdapter
     {
         public int CallCount { get; private set; }
+        public NormalizedEligibilityRequest? Received { get; private set; }
         public string AdapterType => type;
         public TradingPartnerCapability Capabilities => TradingPartnerCapability.Eligibility;
         public Task<EligibilityResult> CheckEligibilityAsync(NormalizedEligibilityRequest request, CancellationToken cancellationToken = default)
         {
             CallCount++;
+            Received = request;
             return Task.FromResult(new EligibilityResult { CorrelationId = "external-1", CoverageStatus = CoverageStatus.Active, Source = type, VerifiedAt = DateTimeOffset.UtcNow });
         }
     }

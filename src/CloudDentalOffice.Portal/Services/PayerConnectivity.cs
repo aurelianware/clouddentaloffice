@@ -82,8 +82,13 @@ public sealed class PayerTransactionRouter : IPayerTransactionRouter
             !adapter.Capabilities.HasFlag(TradingPartnerCapability.Eligibility))
             throw new TreatmentEstimateUnavailableException($"The {routes.Eligibility} adapter does not support eligibility.");
 
+        // One correlation ID for the audit record and the downstream call, so
+        // CDO and CHO logs for the same check can be matched.
+        var correlationId = Guid.NewGuid().ToString("N");
+        var routed = request with { CorrelationId = correlationId };
         return await AuditAsync(request.TenantId, request.PayerId, adapter.AdapterType, "Eligibility", async () =>
-            await eligibility.CheckEligibilityAsync(request, cancellationToken), result => result.CoverageStatus.ToString(), cancellationToken);
+            await eligibility.CheckEligibilityAsync(routed, cancellationToken), result => result.CoverageStatus.ToString(),
+            cancellationToken, correlationId);
     }
 
     public async Task<RoutedTreatmentEstimate> GetEstimateAsync(PayerEstimateRoutingRequest request, CancellationToken cancellationToken = default)
@@ -137,9 +142,9 @@ public sealed class PayerTransactionRouter : IPayerTransactionRouter
     }
 
     private async Task<T> AuditAsync<T>(string tenantId, string payerId, string adapterType, string transactionType,
-        Func<Task<T>> action, Func<T, string> status, CancellationToken cancellationToken)
+        Func<Task<T>> action, Func<T, string> status, CancellationToken cancellationToken, string? correlationId = null)
     {
-        var correlationId = Guid.NewGuid().ToString("N");
+        correlationId ??= Guid.NewGuid().ToString("N");
         var started = DateTimeOffset.UtcNow;
         var stopwatch = Stopwatch.StartNew();
         try
@@ -166,12 +171,28 @@ public sealed class PayerTransactionRouter : IPayerTransactionRouter
     }
 }
 
-public sealed class CloudHealthOfficeTradingPartnerAdapter(IInsuranceEstimateService estimates) : IEstimateTradingPartnerAdapter
+/// <summary>
+/// CloudHealthOffice as a trading partner: payment estimates and, when its
+/// provider eligibility API is configured, real-time eligibility (CHO routes
+/// the 270/271 through its clearinghouse). One adapter per partner because the
+/// router keys adapters by <see cref="AdapterType"/>.
+/// </summary>
+public sealed class CloudHealthOfficeTradingPartnerAdapter(
+    IInsuranceEstimateService estimates, ICloudHealthOfficeEligibilityClient eligibility)
+    : IEstimateTradingPartnerAdapter, IEligibilityTradingPartnerAdapter
 {
     public string AdapterType => "CloudHealthOffice";
-    public TradingPartnerCapability Capabilities => TradingPartnerCapability.PaymentEstimate;
+
+    public TradingPartnerCapability Capabilities => eligibility.IsConfigured
+        ? TradingPartnerCapability.PaymentEstimate | TradingPartnerCapability.Eligibility
+        : TradingPartnerCapability.PaymentEstimate;
+
     public Task<TreatmentEstimateResult?> GetEstimateAsync(TreatmentEstimateRequest request, CancellationToken cancellationToken = default) =>
         Wrap(estimates.EstimateAsync(request, cancellationToken));
+
+    public Task<EligibilityResult> CheckEligibilityAsync(NormalizedEligibilityRequest request, CancellationToken cancellationToken = default) =>
+        eligibility.CheckAsync(request, cancellationToken);
+
     private static async Task<TreatmentEstimateResult?> Wrap(Task<TreatmentEstimateResult> task) => await task;
 }
 
