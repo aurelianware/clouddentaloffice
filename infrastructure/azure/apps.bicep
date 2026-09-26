@@ -60,6 +60,13 @@ param zocdocWebhookIntegrationId string = ''
 @secure()
 @description('Base64 webhook signing key issued by Zocdoc')
 param zocdocWebhookSecret string = ''
+@description('Opaque SchedulingService credential reference; must match the tenant Zocdoc integration setting in the Portal')
+param zocdocCredentialReference string = 'third-set-smiles-zocdoc'
+@description('Zocdoc Calendar Integration OAuth client ID; leave empty to leave outbound Zocdoc calls unconfigured')
+param zocdocClientId string = ''
+@secure()
+@description('Zocdoc Calendar Integration OAuth client secret')
+param zocdocClientSecret string = ''
 @secure()
 @description('Tenant-scoped credential for IntakeService inbox status and retry operations')
 param integrationInboxAdminApiKey string = ''
@@ -121,6 +128,9 @@ module apps 'container-apps.bicep' = {
     publicAvailabilitySlotKey: publicAvailabilitySlotKey
     zocdocWebhookIntegrationId: zocdocWebhookIntegrationId
     zocdocWebhookSecret: zocdocWebhookSecret
+    zocdocCredentialReference: zocdocCredentialReference
+    zocdocClientId: zocdocClientId
+    zocdocClientSecret: zocdocClientSecret
     integrationInboxAdminApiKey: integrationInboxAdminApiKey
     initialTenantId: initialTenantId
     googleOAuthClientId: googleOAuthClientId

@@ -74,6 +74,22 @@ SchedulingCredentials__third-set-smiles-zocdoc__ClientSecret=<Client Secret>
 Never place the values in `appsettings.json`, database rows, source control,
 logs, screenshots, or pull-request descriptions.
 
+In the Azure Container Apps deployment, `deploy-aca.yml` supplies these from
+GitHub Actions secrets. Each is optional; an empty value leaves that part of the
+integration unconfigured rather than failing the deployment.
+
+| GitHub secret | Bicep parameter | Used by |
+| --- | --- | --- |
+| `ZOCDOC_CLIENT_ID` | `zocdocClientId` | SchedulingService OAuth client ID |
+| `ZOCDOC_CLIENT_SECRET` | `zocdocClientSecret` | SchedulingService OAuth client secret |
+| `ZOCDOC_WEBHOOK_INTEGRATION_ID` | `zocdocWebhookIntegrationId` | IntakeService webhook route identifier |
+| `ZOCDOC_WEBHOOK_SECRET` | `zocdocWebhookSecret` | IntakeService signature check and SchedulingService readiness |
+| `INTEGRATION_INBOX_ADMIN_API_KEY` | `integrationInboxAdminApiKey` | IntakeService inbox status/retry |
+
+SchedulingService receives the credentials under the reference named by
+`zocdocCredentialReference` (default `third-set-smiles-zocdoc`), so enter that
+same value as the tenant's credential reference in the Portal.
+
 ## Current adapter operations
 
 `ZocdocSchedulingAdapter` implements the canonical

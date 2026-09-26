@@ -45,6 +45,10 @@ param publicAvailabilitySlotKey string
 param zocdocWebhookIntegrationId string = ''
 @secure()
 param zocdocWebhookSecret string = ''
+param zocdocCredentialReference string = 'third-set-smiles-zocdoc'
+param zocdocClientId string = ''
+@secure()
+param zocdocClientSecret string = ''
 @secure()
 param integrationInboxAdminApiKey string = ''
 param initialTenantId string = 'third-set-smiles'
@@ -287,6 +291,10 @@ resource schedulingService 'Microsoft.App/containerApps@2023-05-01' = {
         { name: 'public-slot-key', value: publicAvailabilitySlotKey }
       ], empty(searchConsoleServiceAccountEmail) || empty(searchConsolePrivateKey) ? [] : [
         { name: 'search-console-private-key', value: searchConsolePrivateKey }
+      ], empty(zocdocClientId) || empty(zocdocClientSecret) ? [] : [
+        { name: 'zocdoc-client-secret', value: zocdocClientSecret }
+      ], empty(zocdocClientId) || empty(zocdocClientSecret) || empty(zocdocWebhookSecret) ? [] : [
+        { name: 'zocdoc-webhook-secret', value: zocdocWebhookSecret }
       ])
     }
     template: {
@@ -318,6 +326,13 @@ resource schedulingService 'Microsoft.App/containerApps@2023-05-01' = {
             { name: 'SearchConsoleBootstrap__PropertyUrl', value: 'sc-domain:3rdsetsmiles.com' }
             { name: 'SearchConsoleBootstrap__CredentialReference', value: 'third-set-smiles' }
             { name: 'SearchConsoleBootstrap__CanonicalHost', value: 'www.3rdsetsmiles.com' }
+          ], empty(zocdocClientId) || empty(zocdocClientSecret) ? [] : [
+            // Outbound Zocdoc API credentials, resolved through the tenant's opaque CredentialReference.
+            { name: 'SchedulingCredentials__${zocdocCredentialReference}__ClientId', value: zocdocClientId }
+            { name: 'SchedulingCredentials__${zocdocCredentialReference}__ClientSecret', secretRef: 'zocdoc-client-secret' }
+          ], empty(zocdocClientId) || empty(zocdocClientSecret) || empty(zocdocWebhookSecret) ? [] : [
+            // Readiness reports the webhook as configured only when this key is present.
+            { name: 'SchedulingCredentials__${zocdocCredentialReference}__WebhookSecret', secretRef: 'zocdoc-webhook-secret' }
           ])
         }
       ]
