@@ -82,6 +82,13 @@ param cloudHealthOfficeApiKey string
 param cloudHealthOfficeBenefitPlanId string = '3e8c59e8-47dd-4aa9-b318-9828fbdcb072'
 @description('Payer ID that should route payment estimates through CloudHealthOffice')
 param cloudHealthOfficePayerId string = '00001'
+@description('Internal URL of the CHO provider eligibility app; empty leaves eligibility off')
+param cloudHealthOfficeEligibilityBaseUrl string = ''
+@secure()
+@description('CDO client credential for the CHO provider eligibility API')
+param cloudHealthOfficeEligibilityApiKey string = ''
+@description('CDO insurance-plan payer IDs whose eligibility checks route through CloudHealthOffice')
+param cloudHealthOfficeEligibilityPayerIds array = []
 
 param jwtIssuer string = 'CloudDentalOffice'
 param jwtAudience string = 'CloudDentalOfficeUsers'
@@ -124,6 +131,9 @@ module apps 'container-apps.bicep' = {
     cloudHealthOfficeApiKey: cloudHealthOfficeApiKey
     cloudHealthOfficeBenefitPlanId: cloudHealthOfficeBenefitPlanId
     cloudHealthOfficePayerId: cloudHealthOfficePayerId
+    cloudHealthOfficeEligibilityBaseUrl: cloudHealthOfficeEligibilityBaseUrl
+    cloudHealthOfficeEligibilityApiKey: cloudHealthOfficeEligibilityApiKey
+    cloudHealthOfficeEligibilityPayerIds: cloudHealthOfficeEligibilityPayerIds
   }
 }
 

@@ -59,6 +59,28 @@ param cloudHealthOfficeBaseUrl string
 param cloudHealthOfficeApiKey string
 param cloudHealthOfficeBenefitPlanId string
 param cloudHealthOfficePayerId string = '00001'
+@description('Internal URL of the CHO provider eligibility app (its eligibilityCheckUrl output, without the path). Empty leaves eligibility off.')
+param cloudHealthOfficeEligibilityBaseUrl string = ''
+@secure()
+@description('CDO client credential for the CHO provider eligibility API (CHO Key Vault secret provider-eligibility-cdo-api-key).')
+param cloudHealthOfficeEligibilityApiKey string = ''
+@description('CDO insurance-plan payer IDs whose eligibility checks route through CloudHealthOffice.')
+param cloudHealthOfficeEligibilityPayerIds array = []
+
+// Eligibility is wired only when both the URL and the credential are supplied,
+// so a deploy without them leaves the portal exactly as before.
+var choEligibilityEnabled = !empty(cloudHealthOfficeEligibilityBaseUrl) && !empty(cloudHealthOfficeEligibilityApiKey)
+var choEligibilitySecrets = choEligibilityEnabled ? [
+  { name: 'cho-eligibility-api-key', value: cloudHealthOfficeEligibilityApiKey }
+] : []
+var choEligibilityRoutes = [for payerId in cloudHealthOfficeEligibilityPayerIds: {
+  name: 'PayerConnectivity__Payers__${payerId}__Eligibility'
+  value: 'CloudHealthOffice'
+}]
+var choEligibilityEnv = choEligibilityEnabled ? concat([
+  { name: 'CloudHealthOffice__Eligibility__BaseUrl', value: cloudHealthOfficeEligibilityBaseUrl }
+  { name: 'CloudHealthOffice__Eligibility__ApiKey', secretRef: 'cho-eligibility-api-key' }
+], choEligibilityRoutes) : []
 
 // Shared registry config — Managed Identity pulls from ACR (no admin credentials)
 var registry = [
@@ -98,13 +120,13 @@ resource portal 'Microsoft.App/containerApps@2024-03-01' = {
           { external: false, targetPort: 5091, exposedPort: 5091 }
         ]
       }
-      secrets: [
+      secrets: concat([
         { name: 'conn-default', value: connPortal }
         { name: 'internal-api-key', value: patientServiceApiKey }
         { name: 'jwt-key', value: jwtKey }
         { name: 'google-oauth-client-secret', value: googleOAuthClientSecret }
         { name: 'cloudhealthoffice-api-key', value: cloudHealthOfficeApiKey }
-      ]
+      ], choEligibilitySecrets)
     }
     template: {
       containers: [
@@ -112,7 +134,7 @@ resource portal 'Microsoft.App/containerApps@2024-03-01' = {
           name: 'portal'
           image: '${acrLoginServer}/portal:${imageTag}'
           resources: { cpu: json('0.5'), memory: '1Gi' }
-          env: [
+          env: concat([
             { name: 'ASPNETCORE_ENVIRONMENT', value: 'Production' }
             { name: 'Database__Provider', value: 'PostgreSQL' }
             { name: 'Database__UseMigrations', value: 'false' }
@@ -145,7 +167,7 @@ resource portal 'Microsoft.App/containerApps@2024-03-01' = {
             { name: 'CloudHealthOffice__ApiKey', secretRef: 'cloudhealthoffice-api-key' }
             { name: 'CloudHealthOffice__BenefitPlanMappings__${cloudHealthOfficePayerId}', value: cloudHealthOfficeBenefitPlanId }
             { name: 'PayerConnectivity__Payers__${cloudHealthOfficePayerId}__PaymentEstimate__0', value: 'CloudHealthOffice' }
-          ]
+          ], choEligibilityEnv)
           probes: [
             // Liveness has no database dependency, so a transient database outage
             // does not cause the platform to restart an otherwise-healthy process.

@@ -431,6 +431,13 @@ builder.Services.AddHttpClient<IClaimIntelligenceClient, ClaimIntelligenceClient
     client.Timeout = TimeSpan.FromSeconds(20);
     client.DefaultRequestHeaders.Add("Accept", "application/json");
 });
+// Real-time checks go CDO → CHO → clearinghouse → payer; payers can take
+// several seconds, so allow longer than the estimate call.
+builder.Services.AddHttpClient<ICloudHealthOfficeEligibilityClient, CloudHealthOfficeEligibilityClient>(client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(45);
+    client.DefaultRequestHeaders.Add("Accept", "application/json");
+});
 builder.Services.AddScoped<IClaimLifecycleService, ClaimLifecycleService>();
 builder.Services.Configure<PayerConnectivityOptions>(builder.Configuration.GetSection("PayerConnectivity"));
 builder.Services.AddScoped<ITradingPartnerAdapter, CloudHealthOfficeTradingPartnerAdapter>();

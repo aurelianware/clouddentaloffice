@@ -22,6 +22,9 @@ public sealed class CloudHealthOfficeOptions
     public bool Enabled { get; set; }
     public string? ApiKey { get; set; }
     public Dictionary<string, Guid> BenefitPlanMappings { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>Provider eligibility API; a separate CHO app with its own URL and credential.</summary>
+    public CloudHealthOfficeEligibilityOptions Eligibility { get; set; } = new();
 }
 
 public static class TreatmentEstimateMapper

@@ -6,6 +6,7 @@
 @inject IPayerTransactionRouter PayerRouter
 @inject ITenantProvider TenantProvider
 @inject Microsoft.Extensions.Options.IOptions<CloudHealthOfficeOptions> EstimateOptions
+@inject ILogger<TreatmentPlanInsuranceEstimate> Logger
 
 <MudPaper Class="pa-4 mt-4" Style="background: #101010; border: 1px solid rgba(0, 255, 255, 0.35);">
     <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-3">
@@ -54,9 +55,25 @@
     {
         <MudAlert Class="mt-3" Severity="@(_eligibility.CoverageStatus == CoverageStatus.Active ? Severity.Success : Severity.Warning)">
             <strong>@_eligibility.CoverageStatus coverage</strong> via @_eligibility.Source · verified @_eligibility.VerifiedAt.LocalDateTime.ToString("g")
-            @if (_eligibility.AnnualMaximumRemaining.HasValue)
+            @if (!string.IsNullOrWhiteSpace(_eligibility.PlanName))
             {
-                <span> · Annual maximum remaining: @_eligibility.AnnualMaximumRemaining.Value.ToString("C2")</span>
+                <div>Plan: @_eligibility.PlanName</div>
+            }
+            @if (_eligibility.EffectiveDate.HasValue || _eligibility.TerminationDate.HasValue)
+            {
+                <div>Coverage: @(_eligibility.EffectiveDate?.ToString("d") ?? "—") to @(_eligibility.TerminationDate?.ToString("d") ?? "present")</div>
+            }
+            @if (_eligibility.AnnualMaximum.HasValue || _eligibility.AnnualMaximumRemaining.HasValue)
+            {
+                <div>Annual maximum: @Money(_eligibility.AnnualMaximum) · remaining @Money(_eligibility.AnnualMaximumRemaining)</div>
+            }
+            @if (_eligibility.Deductible.HasValue || _eligibility.DeductibleRemaining.HasValue)
+            {
+                <div>Deductible: @Money(_eligibility.Deductible) · remaining @Money(_eligibility.DeductibleRemaining)</div>
+            }
+            @foreach (var note in _eligibility.Messages.Take(5))
+            {
+                <div class="mt-1" style="font-size: 0.85em;">• @note</div>
             }
         </MudAlert>
     }
@@ -193,25 +210,28 @@
     {
         _message = null;
         _eligibility = null;
-        var insurance = _coverages.FirstOrDefault(x => x.PatientInsuranceId == _selectedInsuranceId);
-        var provider = Providers.FirstOrDefault(x => x.ProviderId == ProviderId);
-        if (insurance?.InsurancePlan is null) { _message = "Select an insurance coverage before checking eligibility."; return; }
-        if (string.IsNullOrWhiteSpace(insurance.MemberId)) { _message = "This coverage does not have a member ID on file."; return; }
-        if (provider is null || string.IsNullOrWhiteSpace(provider.NPI)) { _message = "Select a rendering provider with an NPI before checking eligibility."; return; }
+        if (_patient is null) { _message = "Patient information is unavailable."; return; }
         try
         {
             _checkingEligibility = true;
-            _eligibility = await PayerRouter.CheckEligibilityAsync(new NormalizedEligibilityRequest
-            {
-                TenantId = TenantProvider.TenantId, PayerId = insurance.InsurancePlan.PayerId,
-                MemberId = insurance.MemberId, SubscriberId = insurance.MemberId, ProviderNpi = provider.NPI,
-                ServiceDate = DateOnly.FromDateTime(_serviceDate ?? DateTime.Today)
-            });
+            var insurance = _coverages.FirstOrDefault(x => x.PatientInsuranceId == _selectedInsuranceId);
+            var provider = Providers.FirstOrDefault(x => x.ProviderId == ProviderId);
+            var request = EligibilityRequestBuilder.Build(_patient, insurance, provider,
+                DateOnly.FromDateTime(_serviceDate ?? DateTime.Today), TenantProvider.TenantId);
+            _eligibility = await PayerRouter.CheckEligibilityAsync(request);
         }
+        catch (TreatmentEstimateValidationException ex) { _message = ex.Message; }
         catch (TreatmentEstimateUnavailableException ex) { _message = ex.Message; }
         catch (UnauthorizedAccessException) { _message = "The eligibility request was denied for this practice."; }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Unexpected error during eligibility check for tenant {TenantId}", TenantProvider.TenantId);
+            _message = "The eligibility check could not be completed. Try again later.";
+        }
         finally { _checkingEligibility = false; }
     }
+
+    private static string Money(decimal? value) => value.HasValue ? value.Value.ToString("C2") : "not reported";
 
     internal static IEnumerable<(string Label, decimal Value)> SummaryTotals(TreatmentEstimateResult result) =>
     [
