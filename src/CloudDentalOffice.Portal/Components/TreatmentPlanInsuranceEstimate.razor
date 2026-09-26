@@ -71,6 +71,27 @@
             {
                 <div>Deductible: @Money(_eligibility.Deductible) · remaining @Money(_eligibility.DeductibleRemaining)</div>
             }
+            @if (_eligibility.Benefits.Count > 0)
+            {
+                <MudSimpleTable Dense="true" Class="mt-2" Style="background:transparent;">
+                    <thead>
+                        <tr><th>Benefit</th><th>Status</th><th>Copay</th><th>Coinsurance</th><th>Limit</th><th>Remaining</th></tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var benefit in _eligibility.Benefits)
+                        {
+                            <tr>
+                                <td>@benefit.Description</td>
+                                <td>@benefit.Status</td>
+                                <td>@BenefitValue(benefit.Copay, "C2")</td>
+                                <td>@BenefitValue(benefit.Coinsurance, "P0")</td>
+                                <td>@BenefitValue(benefit.Limit, "C2")</td>
+                                <td>@BenefitValue(benefit.Remaining, "C2")</td>
+                            </tr>
+                        }
+                    </tbody>
+                </MudSimpleTable>
+            }
             @foreach (var note in _eligibility.Messages.Take(5))
             {
                 <div class="mt-1" style="font-size: 0.85em;">• @note</div>
@@ -232,6 +253,8 @@
     }
 
     private static string Money(decimal? value) => value.HasValue ? value.Value.ToString("C2") : "not reported";
+
+    private static string BenefitValue(decimal? value, string format) => value.HasValue ? value.Value.ToString(format) : "—";
 
     internal static IEnumerable<(string Label, decimal Value)> SummaryTotals(TreatmentEstimateResult result) =>
     [
