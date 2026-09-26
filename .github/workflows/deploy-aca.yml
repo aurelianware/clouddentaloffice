@@ -218,6 +218,13 @@ jobs:
           echo "listen_connection=$listen_connection" >> "$GITHUB_OUTPUT"
 
       - name: Deploy Container Apps (Bicep)
+        env:
+          ZOCDOC_CREDENTIAL_REFERENCE: ${{ vars.ZOCDOC_CREDENTIAL_REFERENCE || 'third-set-smiles-zocdoc' }}
+          ZOCDOC_WEBHOOK_INTEGRATION_ID: ${{ secrets.ZOCDOC_WEBHOOK_INTEGRATION_ID }}
+          ZOCDOC_WEBHOOK_SECRET: ${{ secrets.ZOCDOC_WEBHOOK_SECRET }}
+          ZOCDOC_CLIENT_ID: ${{ secrets.ZOCDOC_CLIENT_ID }}
+          ZOCDOC_CLIENT_SECRET: ${{ secrets.ZOCDOC_CLIENT_SECRET }}
+          INTEGRATION_INBOX_ADMIN_API_KEY: ${{ secrets.INTEGRATION_INBOX_ADMIN_API_KEY }}
         run: |
           az deployment group create \
             --resource-group ${{ env.RESOURCE_GROUP }} \
@@ -237,11 +244,12 @@ jobs:
               patientServiceApiKey='${{ secrets.PATIENT_SERVICE_API_KEY }}' \
               publicSchedulingServiceApiKey='${{ secrets.PUBLIC_SCHEDULING_SERVICE_API_KEY }}' \
               publicAvailabilitySlotKey='${{ secrets.PUBLIC_AVAILABILITY_SLOT_KEY }}' \
-              zocdocWebhookIntegrationId='${{ secrets.ZOCDOC_WEBHOOK_INTEGRATION_ID }}' \
-              zocdocWebhookSecret='${{ secrets.ZOCDOC_WEBHOOK_SECRET }}' \
-              zocdocClientId='${{ secrets.ZOCDOC_CLIENT_ID }}' \
-              zocdocClientSecret='${{ secrets.ZOCDOC_CLIENT_SECRET }}' \
-              integrationInboxAdminApiKey='${{ secrets.INTEGRATION_INBOX_ADMIN_API_KEY }}' \
+              zocdocCredentialReference="$ZOCDOC_CREDENTIAL_REFERENCE" \
+              zocdocWebhookIntegrationId="$ZOCDOC_WEBHOOK_INTEGRATION_ID" \
+              zocdocWebhookSecret="$ZOCDOC_WEBHOOK_SECRET" \
+              zocdocClientId="$ZOCDOC_CLIENT_ID" \
+              zocdocClientSecret="$ZOCDOC_CLIENT_SECRET" \
+              integrationInboxAdminApiKey="$INTEGRATION_INBOX_ADMIN_API_KEY" \
               googleOAuthClientId='${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}' \
               googleOAuthClientSecret='${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}' \
               searchConsoleServiceAccountEmail='${{ secrets.SEARCH_CONSOLE_SERVICE_ACCOUNT_EMAIL }}' \

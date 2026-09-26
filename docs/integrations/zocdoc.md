@@ -87,8 +87,10 @@ integration unconfigured rather than failing the deployment.
 | `INTEGRATION_INBOX_ADMIN_API_KEY` | `integrationInboxAdminApiKey` | IntakeService inbox status/retry |
 
 SchedulingService receives the credentials under the reference named by
-`zocdocCredentialReference` (default `third-set-smiles-zocdoc`), so enter that
-same value as the tenant's credential reference in the Portal.
+`zocdocCredentialReference` (the optional `ZOCDOC_CREDENTIAL_REFERENCE` Actions
+variable, default `third-set-smiles-zocdoc`), so enter that same value as the
+tenant's credential reference in the Portal. Use letters, digits, and single
+hyphens; `__` is the configuration path separator and cannot appear in it.
 
 ## Current adapter operations
 
