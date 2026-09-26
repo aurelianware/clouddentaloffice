@@ -179,7 +179,7 @@ public sealed class CloudHealthOfficeEligibilityClient : ICloudHealthOfficeEligi
             throw new TreatmentEstimateUnavailableException("Eligibility checks are not configured for this environment.");
         // The request carries the API key and the member's identity, so only a plain HTTPS origin is accepted.
         if (!Uri.TryCreate(_options.BaseUrl, UriKind.Absolute, out var baseUri) || baseUri.Scheme != Uri.UriSchemeHttps ||
-            !string.IsNullOrEmpty(baseUri.UserInfo) || !string.IsNullOrEmpty(baseUri.Query) || !string.IsNullOrEmpty(baseUri.Fragment) ||
+            !string.IsNullOrEmpty(baseUri.UserInfo) || baseUri.AbsolutePath != "/" || !string.IsNullOrEmpty(baseUri.Query) || !string.IsNullOrEmpty(baseUri.Fragment) ||
             !Uri.TryCreate(_options.CheckPath, UriKind.Relative, out _) || _options.CheckPath.StartsWith("//", StringComparison.Ordinal))
             throw new TreatmentEstimateUnavailableException("Eligibility checks are misconfigured. Contact support.");
         if (string.IsNullOrWhiteSpace(_tenantProvider.TenantId) || request.TenantId != _tenantProvider.TenantId)

@@ -441,6 +441,7 @@ public sealed class CloudHealthOfficeEligibilityTests
     [Theory]
     [InlineData("http://provider-eligibility.internal.example")]
     [InlineData("https://user:secret@provider-eligibility.internal.example")]
+    [InlineData("https://provider-eligibility.internal.example/some-path")]
     [InlineData("https://provider-eligibility.internal.example/?route=other")]
     [InlineData("https://provider-eligibility.internal.example/#fragment")]
     public async Task Base_url_that_is_not_a_plain_https_origin_is_refused_before_any_call(string baseUrl)
