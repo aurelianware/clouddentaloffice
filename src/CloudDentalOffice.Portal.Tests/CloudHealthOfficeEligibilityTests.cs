@@ -4,6 +4,7 @@ using System.Text.Json;
 using CloudDentalOffice.Portal.Models;
 using CloudDentalOffice.Portal.Services;
 using CloudDentalOffice.Portal.Services.Tenancy;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Moq;
@@ -437,6 +438,39 @@ public sealed class CloudHealthOfficeEligibilityTests
         Assert.Contains("timed out", error.Message);
     }
 
+    [Theory]
+    [InlineData("http://provider-eligibility.internal.example")]
+    [InlineData("https://user:secret@provider-eligibility.internal.example")]
+    [InlineData("https://provider-eligibility.internal.example/?route=other")]
+    [InlineData("https://provider-eligibility.internal.example/#fragment")]
+    public async Task Base_url_that_is_not_a_plain_https_origin_is_refused_before_any_call(string baseUrl)
+    {
+        var called = false;
+        var client = Client(_ => { called = true; return Task.FromResult(Json(HttpStatusCode.OK, ActiveResponseJson)); },
+            baseUrl: baseUrl);
+
+        var error = await Assert.ThrowsAsync<TreatmentEstimateUnavailableException>(() => client.CheckAsync(Request()));
+
+        Assert.Contains("misconfigured", error.Message);
+        Assert.False(called);
+    }
+
+    [Fact]
+    public async Task Logged_ids_cannot_forge_extra_log_lines()
+    {
+        var logger = new CapturingLogger();
+        var client = Client(_ => Task.FromResult(Json(HttpStatusCode.OK, ActiveResponseJson)), logger: logger);
+        var request = Request() with { PayerId = "PAYER1\r\nforged entry", CorrelationId = "corr\n2" };
+
+        await client.CheckAsync(request);
+
+        var entry = Assert.Single(logger.Messages);
+        Assert.DoesNotContain('\n', entry);
+        Assert.DoesNotContain('\r', entry);
+        Assert.Contains("PAYER1forged entry", entry);
+        Assert.Contains("corr2", entry);
+    }
+
     // ── Adapter ─────────────────────────────────────────────────────────────
 
     [Fact]
@@ -475,7 +509,9 @@ public sealed class CloudHealthOfficeEligibilityTests
         EligibilityRequestBuilder.Build(Patient(), dependent ? DependentInsurance("Spouse") : Insurance(), Provider(), ServiceDate, Tenant);
 
     private static CloudHealthOfficeEligibilityClient Client(
-        Func<HttpRequestMessage, Task<HttpResponseMessage>> send, string? apiKey = "cdo-test-key")
+        Func<HttpRequestMessage, Task<HttpResponseMessage>> send, string? apiKey = "cdo-test-key",
+        string baseUrl = "https://provider-eligibility.internal.example",
+        ILogger<CloudHealthOfficeEligibilityClient>? logger = null)
     {
         var tenantProvider = new Mock<ITenantProvider>();
         tenantProvider.SetupGet(x => x.TenantId).Returns(Tenant);
@@ -483,12 +519,12 @@ public sealed class CloudHealthOfficeEligibilityTests
         {
             Eligibility = new CloudHealthOfficeEligibilityOptions
             {
-                BaseUrl = "https://provider-eligibility.internal.example",
+                BaseUrl = baseUrl,
                 ApiKey = apiKey
             }
         });
         return new CloudHealthOfficeEligibilityClient(new HttpClient(new Handler(send)), options,
-            tenantProvider.Object, NullLogger<CloudHealthOfficeEligibilityClient>.Instance);
+            tenantProvider.Object, logger ?? NullLogger<CloudHealthOfficeEligibilityClient>.Instance);
     }
 
     private static HttpResponseMessage Json(HttpStatusCode status, string body) =>
@@ -522,6 +558,15 @@ public sealed class CloudHealthOfficeEligibilityTests
         insurance.SubscriberLastName = "Harlow";
         insurance.SubscriberDateOfBirth = new DateTime(1955, 7, 2);
         return insurance;
+    }
+
+    private sealed class CapturingLogger : ILogger<CloudHealthOfficeEligibilityClient>
+    {
+        public List<string> Messages { get; } = [];
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+        public bool IsEnabled(LogLevel logLevel) => true;
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception,
+            Func<TState, Exception?, string> formatter) => Messages.Add(formatter(state, exception));
     }
 
     private sealed class Handler(Func<HttpRequestMessage, Task<HttpResponseMessage>> send) : HttpMessageHandler
