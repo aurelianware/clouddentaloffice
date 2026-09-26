@@ -252,9 +252,12 @@ public sealed class CloudHealthOfficeEligibilityClient : ICloudHealthOfficeEligi
     }
 
     // Tenant, payer and correlation IDs come from stored or caller-supplied data; strip line breaks
-    // and other control characters so a value can't forge extra log entries.
+    // and other control characters so a value can't forge extra log entries. The trailing Replace
+    // calls are what CodeQL's log-forging query recognizes as a sanitizer.
     internal static string ForLog(string? value) =>
-        string.IsNullOrEmpty(value) ? string.Empty : new string(value.Where(c => !char.IsControl(c)).ToArray());
+        string.IsNullOrEmpty(value)
+            ? string.Empty
+            : new string(value.Where(c => !char.IsControl(c)).ToArray()).Replace("\r", string.Empty).Replace("\n", string.Empty);
 
     internal static ChoEligibilityRequest ToWire(NormalizedEligibilityRequest request, string correlationId) => new()
     {
