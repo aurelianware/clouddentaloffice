@@ -522,6 +522,7 @@ using (var scope = app.Services.CreateScope())
         await ReviewOutreachSchemaReconciliation.ApplyAsync(dbContext, databaseProvider, logger);
         await ClaimLifecycleSchemaReconciliation.ApplyAsync(dbContext, databaseProvider, logger);
         await ClearinghouseConnectionSchemaReconciliation.ApplyAsync(dbContext, databaseProvider, logger);
+        await PatientCoverageSchemaReconciliation.ApplyAsync(dbContext, databaseProvider, logger);
 
         await InitialTenantBootstrap.ApplyAsync(dbContext, builder.Configuration);
 

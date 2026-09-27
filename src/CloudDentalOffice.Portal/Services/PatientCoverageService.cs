@@ -69,7 +69,8 @@ public sealed class PatientCoverageService(
         // Query filters scope both lookups to the caller's practice.
         if (!await db.Patients.AnyAsync(p => p.PatientId == patientId, cancellationToken))
             throw new CoverageValidationException("This patient was not found.");
-        var normalized = await ValidateAsync(patientId, input, existingId: null, cancellationToken);
+        var active = WillBeActive(input.TerminationDate, currentlyActive: true);
+        var normalized = await ValidateAsync(patientId, input, existingId: null, active, cancellationToken);
 
         var now = time.GetUtcNow().UtcDateTime;
         var coverage = new PatientInsurance
@@ -78,9 +79,9 @@ public sealed class PatientCoverageService(
             PatientId = patientId,
             CreatedDate = now
         };
-        Apply(coverage, normalized);
+        Apply(coverage, normalized, active);
         db.PatientInsurances.Add(coverage);
-        await db.SaveChangesAsync(cancellationToken);
+        await SaveAsync(input.SequenceNumber, cancellationToken);
 
         logger.LogInformation("Added coverage {PatientInsuranceId} (sequence {Sequence}) for patient {PatientId}",
             coverage.PatientInsuranceId, coverage.SequenceNumber, patientId);
@@ -91,11 +92,12 @@ public sealed class PatientCoverageService(
     {
         var coverage = await db.PatientInsurances.SingleOrDefaultAsync(x => x.PatientInsuranceId == patientInsuranceId, cancellationToken)
             ?? throw new CoverageValidationException("This coverage was not found.");
-        var normalized = await ValidateAsync(coverage.PatientId, input, patientInsuranceId, cancellationToken, coverage.IsActive);
+        var active = WillBeActive(input.TerminationDate, coverage.IsActive);
+        var normalized = await ValidateAsync(coverage.PatientId, input, patientInsuranceId, active, cancellationToken);
 
-        Apply(coverage, normalized);
+        Apply(coverage, normalized, active);
         coverage.ModifiedDate = time.GetUtcNow().UtcDateTime;
-        await db.SaveChangesAsync(cancellationToken);
+        await SaveAsync(input.SequenceNumber, cancellationToken);
 
         logger.LogInformation("Updated coverage {PatientInsuranceId} for patient {PatientId}", patientInsuranceId, coverage.PatientId);
         return coverage;
@@ -107,7 +109,8 @@ public sealed class PatientCoverageService(
             ?? throw new CoverageValidationException("This coverage was not found.");
         var now = time.GetUtcNow().UtcDateTime;
         coverage.IsActive = false;
-        coverage.TerminationDate ??= now.Date;
+        if (coverage.TerminationDate is null || coverage.TerminationDate.Value.Date > now.Date)
+            coverage.TerminationDate = now.Date;
         coverage.ModifiedDate = now;
         await db.SaveChangesAsync(cancellationToken);
 
@@ -115,7 +118,7 @@ public sealed class PatientCoverageService(
     }
 
     private async Task<CoverageInput> ValidateAsync(
-        int patientId, CoverageInput input, int? existingId, CancellationToken cancellationToken, bool active = true)
+        int patientId, CoverageInput input, int? existingId, bool active, CancellationToken cancellationToken)
     {
         var plan = await db.InsurancePlans.AsNoTracking()
             .SingleOrDefaultAsync(p => p.InsurancePlanId == input.InsurancePlanId, cancellationToken);
@@ -150,14 +153,11 @@ public sealed class PatientCoverageService(
         if (input.TerminationDate is { } end && end.Date < input.EffectiveDate.Date)
             throw new CoverageValidationException("The termination date can't be before the effective date.");
 
+        // Friendly early answer; the filtered unique index enforces it under concurrency.
         if (active && await db.PatientInsurances.AnyAsync(x =>
                 x.PatientId == patientId && x.IsActive && x.SequenceNumber == input.SequenceNumber &&
                 (existingId == null || x.PatientInsuranceId != existingId), cancellationToken))
-        {
-            var which = input.SequenceNumber == 1 ? "primary" : "secondary";
-            throw new CoverageValidationException(
-                $"This patient already has active {which} coverage. Deactivate it first, or save this coverage as {(input.SequenceNumber == 1 ? "secondary" : "primary")}.");
-        }
+            throw SlotTaken(input.SequenceNumber);
 
         return input with
         {
@@ -174,7 +174,7 @@ public sealed class PatientCoverageService(
         };
     }
 
-    private static void Apply(PatientInsurance coverage, CoverageInput input)
+    private static void Apply(PatientInsurance coverage, CoverageInput input, bool active)
     {
         coverage.InsurancePlanId = input.InsurancePlanId;
         coverage.MemberId = input.MemberId;
@@ -186,7 +186,53 @@ public sealed class PatientCoverageService(
         coverage.SubscriberDateOfBirth = input.SubscriberDateOfBirth;
         coverage.EffectiveDate = input.EffectiveDate;
         coverage.TerminationDate = input.TerminationDate;
-        coverage.IsActive = input.TerminationDate is not { } end || end.Date >= DateTime.Today;
+        coverage.IsActive = active;
+    }
+
+    /// <summary>
+    /// Active when there is no termination date or it is in the future. A
+    /// termination date of today keeps coverage active only if it already was,
+    /// so editing a coverage deactivated today never reactivates it.
+    /// </summary>
+    internal static bool WillBeActive(DateTime? terminationDate, bool currentlyActive)
+    {
+        if (terminationDate is not { } end) return true;
+        var today = DateTime.Today;
+        return end.Date > today || (end.Date == today && currentlyActive);
+    }
+
+    private async Task SaveAsync(int sequenceNumber, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await db.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException ex) when (IsActiveSlotConflict(ex))
+        {
+            // Another save took the slot between our check and this commit.
+            foreach (var entry in db.ChangeTracker.Entries<PatientInsurance>().ToList())
+                entry.State = EntityState.Detached;
+            throw SlotTaken(sequenceNumber);
+        }
+    }
+
+    public const string ActiveSlotIndexName = "IX_PatientInsurances_TenantId_PatientId_SequenceNumber_Active";
+
+    private static bool IsActiveSlotConflict(DbUpdateException ex)
+    {
+        var message = ex.InnerException?.Message ?? ex.Message;
+        return message.Contains(ActiveSlotIndexName, StringComparison.OrdinalIgnoreCase) ||
+               // SQLite reports the columns rather than the index name.
+               message.Contains("UNIQUE constraint failed: PatientInsurances.TenantId, PatientInsurances.PatientId, PatientInsurances.SequenceNumber",
+                   StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static CoverageValidationException SlotTaken(int sequenceNumber)
+    {
+        var which = sequenceNumber == 1 ? "primary" : "secondary";
+        var other = sequenceNumber == 1 ? "secondary" : "primary";
+        return new CoverageValidationException(
+            $"This patient already has active {which} coverage. Deactivate it first, or save this coverage as {other}.");
     }
 
     private static string? Text(string? value, int max, string label, bool required)

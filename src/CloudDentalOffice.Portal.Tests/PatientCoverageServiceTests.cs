@@ -5,6 +5,7 @@ using CloudDentalOffice.Portal.Services;
 using CloudDentalOffice.Portal.Services.Tenancy;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace CloudDentalOffice.Portal.Tests;
@@ -242,6 +243,124 @@ public sealed class PatientCoverageServiceTests : IDisposable
         });
 
         Assert.False(saved.IsActive);
+    }
+
+    [Fact]
+    public async Task Past_coverage_can_be_recorded_while_a_primary_is_active()
+    {
+        await _service.AddCoverageAsync(PatientId, SelfInput());
+
+        var history = await _service.AddCoverageAsync(PatientId, SelfInput() with
+        {
+            MemberId = "OLD123",
+            EffectiveDate = new DateTime(2023, 1, 1),
+            TerminationDate = new DateTime(2024, 12, 31)
+        });
+
+        Assert.False(history.IsActive);
+        Assert.Single(await _service.GetCoveragesAsync(PatientId), c => c.IsActive);
+    }
+
+    [Fact]
+    public async Task Editing_coverage_deactivated_today_keeps_it_inactive()
+    {
+        var saved = await _service.AddCoverageAsync(PatientId, SelfInput());
+        await _service.DeactivateCoverageAsync(saved.PatientInsuranceId);
+        var deactivated = Assert.Single(await _service.GetCoveragesAsync(PatientId));
+
+        await _service.UpdateCoverageAsync(saved.PatientInsuranceId, SelfInput() with
+        {
+            GroupNumber = "G9",
+            TerminationDate = deactivated.TerminationDate
+        });
+
+        var edited = Assert.Single(await _service.GetCoveragesAsync(PatientId));
+        Assert.False(edited.IsActive);
+        Assert.Equal("G9", edited.GroupNumber);
+    }
+
+    [Fact]
+    public async Task Deactivating_future_dated_coverage_ends_it_today()
+    {
+        var saved = await _service.AddCoverageAsync(PatientId, SelfInput() with { TerminationDate = DateTime.Today.AddYears(1) });
+
+        await _service.DeactivateCoverageAsync(saved.PatientInsuranceId);
+
+        var coverage = Assert.Single(await _service.GetCoveragesAsync(PatientId));
+        Assert.False(coverage.IsActive);
+        Assert.Equal(DateTime.Today, coverage.TerminationDate!.Value.Date);
+    }
+
+    [Fact]
+    public async Task Clearing_the_termination_date_reactivates_only_into_a_free_slot()
+    {
+        var first = await _service.AddCoverageAsync(PatientId, SelfInput());
+        await _service.DeactivateCoverageAsync(first.PatientInsuranceId);
+        await _service.AddCoverageAsync(PatientId, SelfInput() with { MemberId = "MBR999" });
+
+        var error = await Assert.ThrowsAsync<CoverageValidationException>(() =>
+            _service.UpdateCoverageAsync(first.PatientInsuranceId, SelfInput()));
+        Assert.Contains("already has active primary coverage", error.Message);
+
+        await _service.UpdateCoverageAsync(first.PatientInsuranceId, SelfInput() with { SequenceNumber = 2 });
+        Assert.True((await _service.GetCoveragesAsync(PatientId)).Single(c => c.PatientInsuranceId == first.PatientInsuranceId).IsActive);
+    }
+
+    [Fact]
+    public async Task Database_rejects_a_second_active_primary()
+    {
+        await _service.AddCoverageAsync(PatientId, SelfInput());
+        _db.PatientInsurances.Add(new PatientInsurance
+        {
+            TenantId = Tenant, PatientId = PatientId, InsurancePlanId = PlanId, MemberId = "RACE",
+            SequenceNumber = 1, IsActive = true, EffectiveDate = new DateTime(2026, 1, 1), CreatedDate = DateTime.UtcNow
+        });
+
+        await Assert.ThrowsAsync<DbUpdateException>(() => _db.SaveChangesAsync());
+    }
+
+    [Fact]
+    public async Task Concurrent_saves_for_the_same_slot_leave_one_and_explain_the_other()
+    {
+        // Another staff member saves an active primary after this request's
+        // check passes but before it commits.
+        var options = new DbContextOptionsBuilder<CloudDentalDbContext>()
+            .UseSqlite(_connection)
+            .AddInterceptors(new CompetingSaveInterceptor(_connection))
+            .Options;
+        var tenant = new FixedTenantProvider(Tenant);
+        await using var db = new CloudDentalDbContext(options, tenant);
+        var service = new PatientCoverageService(db, tenant, TimeProvider.System, NullLogger<PatientCoverageService>.Instance);
+
+        var error = await Assert.ThrowsAsync<CoverageValidationException>(() => service.AddCoverageAsync(PatientId, SelfInput()));
+
+        Assert.Contains("already has active primary coverage", error.Message);
+        var coverage = Assert.Single(await _service.GetCoveragesAsync(PatientId));
+        Assert.Equal("OTHER-STAFF", coverage.MemberId);
+        Assert.Empty(db.ChangeTracker.Entries<PatientInsurance>());
+    }
+
+    private sealed class CompetingSaveInterceptor(SqliteConnection connection) : SaveChangesInterceptor
+    {
+        private bool _fired;
+
+        public override async ValueTask<InterceptionResult<int>> SavingChangesAsync(
+            DbContextEventData eventData, InterceptionResult<int> result, CancellationToken cancellationToken = default)
+        {
+            if (!_fired)
+            {
+                _fired = true;
+                var options = new DbContextOptionsBuilder<CloudDentalDbContext>().UseSqlite(connection).Options;
+                await using var other = new CloudDentalDbContext(options, new FixedTenantProvider(Tenant));
+                other.PatientInsurances.Add(new PatientInsurance
+                {
+                    TenantId = Tenant, PatientId = PatientId, InsurancePlanId = PlanId, MemberId = "OTHER-STAFF",
+                    SequenceNumber = 1, IsActive = true, EffectiveDate = new DateTime(2026, 1, 1), CreatedDate = DateTime.UtcNow
+                });
+                await other.SaveChangesAsync(cancellationToken);
+            }
+            return result;
+        }
     }
 
     [Fact]
