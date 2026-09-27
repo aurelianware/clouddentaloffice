@@ -26,7 +26,7 @@
     }
     else if (!_coverages.Any())
     {
-        <MudAlert Severity="Severity.Warning">This patient does not have active insurance on file.</MudAlert>
+        <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined">This patient does not have active insurance on file.</MudAlert>
     }
     else
     {
@@ -58,7 +58,7 @@
 
     @if (!string.IsNullOrWhiteSpace(_message))
     {
-        <MudAlert Class="mt-3" Severity="Severity.Warning">@_message</MudAlert>
+        <MudAlert Class="mt-3" Severity="Severity.Warning" Variant="Variant.Outlined">@_message</MudAlert>
     }
 
     @if (_result is not null)
@@ -119,7 +119,7 @@
 
         @foreach (var warning in _result.Warnings)
         {
-            <MudAlert Class="mt-2" Severity="Severity.Warning">@warning.Message</MudAlert>
+            <MudAlert Class="mt-2" Severity="Severity.Warning" Variant="Variant.Outlined">@warning.Message</MudAlert>
         }
         <MudAlert Class="mt-3" Severity="Severity.Info" Variant="Variant.Outlined">@_result.Disclaimer</MudAlert>
     }
