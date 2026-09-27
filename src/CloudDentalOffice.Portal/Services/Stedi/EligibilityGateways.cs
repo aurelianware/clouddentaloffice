@@ -47,7 +47,8 @@ public sealed class ClearinghouseEligibilityAdapter(
     public async Task<EligibilityResult> CheckEligibilityAsync(NormalizedEligibilityRequest request, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(request.TenantId))
-            throw new InvalidOperationException("Eligibility request has no tenant.");
+            throw new StediCredentialUnavailableException(string.Empty, StediCredentialFailure.MissingTenant,
+                "Eligibility request has no tenant.");
 
         var connection = await connections.GetAsync(request.TenantId, cancellationToken);
         if (connection is null || connection.Status != ClearinghouseConnectionStatus.Active)

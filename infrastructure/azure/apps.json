@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.47.16.16243",
-      "templateHash": "9758639499217277172"
+      "templateHash": "4397048802436866182"
     }
   },
   "parameters": {
@@ -210,11 +210,18 @@
         "description": "Key Vault URI for per-practice Stedi keys (main.bicep output keyVaultUri)"
       }
     },
-    "identityClientId": {
+    "portalIdentityId": {
       "type": "string",
       "defaultValue": "",
       "metadata": {
-        "description": "User-assigned identity client ID (main.bicep output identityClientId)"
+        "description": "Portal-only identity resource ID (main.bicep output portalIdentityId)"
+      }
+    },
+    "portalIdentityClientId": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Portal identity client ID (main.bicep output portalIdentityClientId)"
       }
     },
     "stediSharedAccountEnabled": {
@@ -228,7 +235,7 @@
       "type": "string",
       "defaultValue": "",
       "metadata": {
-        "description": "Key Vault secret name of the shared Stedi key"
+        "description": "Key Vault secret name of the shared Stedi key (must start with stedi-shared-)"
       }
     },
     "jwtIssuer": {
@@ -374,8 +381,11 @@
           "keyVaultUri": {
             "value": "[parameters('keyVaultUri')]"
           },
-          "identityClientId": {
-            "value": "[parameters('identityClientId')]"
+          "portalIdentityId": {
+            "value": "[parameters('portalIdentityId')]"
+          },
+          "portalIdentityClientId": {
+            "value": "[parameters('portalIdentityClientId')]"
           },
           "stediSharedAccountEnabled": {
             "value": "[parameters('stediSharedAccountEnabled')]"
@@ -391,7 +401,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.47.16.16243",
-              "templateHash": "2783504732887978466"
+              "templateHash": "13850336796402701859"
             }
           },
           "parameters": {
@@ -547,11 +557,18 @@
                 "description": "Key Vault URI holding stedi-apikey-{tenantId} secrets (main.bicep output keyVaultUri)."
               }
             },
-            "identityClientId": {
+            "portalIdentityId": {
               "type": "string",
               "defaultValue": "",
               "metadata": {
-                "description": "Client ID of the user-assigned identity (main.bicep output identityClientId); lets DefaultAzureCredential pick it."
+                "description": "Portal-only identity (main.bicep output portalIdentityId); the only identity with Key Vault access."
+              }
+            },
+            "portalIdentityClientId": {
+              "type": "string",
+              "defaultValue": "",
+              "metadata": {
+                "description": "Client ID of the Portal identity (main.bicep output portalIdentityClientId); lets DefaultAzureCredential pick it."
               }
             },
             "stediSharedAccountEnabled": {
@@ -565,7 +582,7 @@
               "type": "string",
               "defaultValue": "",
               "metadata": {
-                "description": "Key Vault secret name of the shared Stedi key; used only when stediSharedAccountEnabled is true."
+                "description": "Key Vault secret name of the shared Stedi key (must start with stedi-shared-); used only when stediSharedAccountEnabled is true."
               }
             }
           },
@@ -580,7 +597,7 @@
                 }
               }
             ],
-            "stediEnv": "[concat(if(empty(parameters('keyVaultUri')), createArray(), createArray(createObject('name', 'Stedi__KeyVaultUri', 'value', parameters('keyVaultUri')))), if(empty(parameters('identityClientId')), createArray(), createArray(createObject('name', 'AZURE_CLIENT_ID', 'value', parameters('identityClientId')))), createArray(createObject('name', 'Stedi__SharedAccount__Enabled', 'value', string(parameters('stediSharedAccountEnabled'))), createObject('name', 'Stedi__SharedAccount__SecretName', 'value', parameters('stediSharedAccountSecretName'))))]",
+            "stediEnv": "[concat(if(empty(parameters('keyVaultUri')), createArray(), createArray(createObject('name', 'Stedi__KeyVaultUri', 'value', parameters('keyVaultUri')))), if(empty(parameters('portalIdentityClientId')), createArray(), createArray(createObject('name', 'AZURE_CLIENT_ID', 'value', parameters('portalIdentityClientId')))), createArray(createObject('name', 'Stedi__SharedAccount__Enabled', 'value', string(parameters('stediSharedAccountEnabled'))), createObject('name', 'Stedi__SharedAccount__SecretName', 'value', parameters('stediSharedAccountSecretName'))))]",
             "choEligibilityEnabled": "[and(not(empty(parameters('cloudHealthOfficeEligibilityBaseUrl'))), not(empty(parameters('cloudHealthOfficeEligibilityApiKey'))))]",
             "choEligibilitySecrets": "[if(variables('choEligibilityEnabled'), createArray(createObject('name', 'cho-eligibility-api-key', 'value', parameters('cloudHealthOfficeEligibilityApiKey'))), createArray())]",
             "choEligibilityEnv": "[if(variables('choEligibilityEnabled'), concat(createArray(createObject('name', 'CloudHealthOffice__Eligibility__BaseUrl', 'value', parameters('cloudHealthOfficeEligibilityBaseUrl')), createObject('name', 'CloudHealthOffice__Eligibility__ApiKey', 'secretRef', 'cho-eligibility-api-key')), variables('choEligibilityRoutes')), createArray())]",
@@ -595,7 +612,8 @@
               "userAssignedIdentities": {
                 "[format('{0}', parameters('identityId'))]": {}
               }
-            }
+            },
+            "portalIdentityObj": "[if(empty(parameters('portalIdentityId')), variables('identityObj'), createObject('type', 'UserAssigned', 'userAssignedIdentities', createObject(format('{0}', parameters('identityId')), createObject(), format('{0}', parameters('portalIdentityId')), createObject())))]"
           },
           "resources": [
             {
@@ -603,7 +621,7 @@
               "apiVersion": "2024-03-01",
               "name": "portal",
               "location": "[parameters('location')]",
-              "identity": "[variables('identityObj')]",
+              "identity": "[variables('portalIdentityObj')]",
               "properties": {
                 "environmentId": "[parameters('environmentId')]",
                 "configuration": {

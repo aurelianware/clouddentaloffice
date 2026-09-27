@@ -36,14 +36,24 @@ public sealed class SharedStediAccountOptions
 {
     public bool Enabled { get; set; }
 
-    /// <summary>Key Vault secret name of the shared key (e.g. stedi-apikey-shared).</summary>
+    /// <summary>
+    /// Key Vault secret name of the shared key. Must start with
+    /// <see cref="StediSecretNames.SharedPrefix"/> (e.g. stedi-shared-apikey),
+    /// so it can never be a practice's stedi-apikey-{tenantId} secret.
+    /// </summary>
     public string? SecretName { get; set; }
 }
 
-/// <summary>Secret names for per-practice keys. The name is derived from the tenant, never chosen freely.</summary>
+/// <summary>
+/// Secret names. Per-practice names are derived from the tenant, never chosen
+/// freely; the shared key lives in a separate namespace. Key Vault names are
+/// case-insensitive, so comparisons ignore case and tenant IDs must be lowercase
+/// (otherwise "Acme" and "acme" would share one secret).
+/// </summary>
 public static partial class StediSecretNames
 {
     public const string Prefix = "stedi-apikey-";
+    public const string SharedPrefix = "stedi-shared-";
 
     /// <summary>Key Vault names allow letters, digits and hyphens, up to 127 characters.</summary>
     public static bool TryForTenant(string? tenantId, out string secretName)
@@ -54,10 +64,15 @@ public static partial class StediSecretNames
         return secretName.Length <= 127;
     }
 
-    internal static bool IsValidSecretName(string? name) =>
-        !string.IsNullOrWhiteSpace(name) && name.Length <= 127 && SecretPattern().IsMatch(name);
+    internal static bool IsValidSharedSecretName(string? name) =>
+        !string.IsNullOrWhiteSpace(name) && name.Length <= 127 && SecretPattern().IsMatch(name) &&
+        name.StartsWith(SharedPrefix, StringComparison.OrdinalIgnoreCase) &&
+        name.Length > SharedPrefix.Length;
 
-    [GeneratedRegex("^[A-Za-z0-9-]+$")]
+    internal static bool SameSecret(string? a, string? b) =>
+        a is not null && b is not null && string.Equals(a, b, StringComparison.OrdinalIgnoreCase);
+
+    [GeneratedRegex("^[a-z0-9-]+$")]
     private static partial Regex TenantPattern();
 
     [GeneratedRegex("^[A-Za-z0-9-]+$")]
@@ -252,7 +267,7 @@ public sealed class StediCredentialProvider : IStediCredentialProvider
             // The name is derived from the tenant and must match the stored
             // reference, so a row can never point at another practice's key.
             if (!StediSecretNames.TryForTenant(tenantId, out secretName) ||
-                !string.Equals(connection.KeyReference, secretName, StringComparison.Ordinal))
+                !StediSecretNames.SameSecret(connection.KeyReference, secretName))
                 throw Fail(tenantId, StediCredentialFailure.InvalidKeyReference,
                     "This practice's Stedi key reference is not valid for this practice.");
         }
@@ -261,8 +276,9 @@ public sealed class StediCredentialProvider : IStediCredentialProvider
             if (!options.SharedAccount.Enabled)
                 throw Fail(tenantId, StediCredentialFailure.SharedAccountDisabled,
                     "The shared Stedi account is disabled; this practice needs its own Stedi connection.");
-            if (!StediSecretNames.IsValidSecretName(options.SharedAccount.SecretName))
-                throw Fail(tenantId, StediCredentialFailure.InvalidKeyReference, "The shared Stedi key reference is not configured.");
+            if (!StediSecretNames.IsValidSharedSecretName(options.SharedAccount.SecretName))
+                throw Fail(tenantId, StediCredentialFailure.InvalidKeyReference,
+                    $"The shared Stedi key must be a Key Vault secret named {StediSecretNames.SharedPrefix}….");
             secretName = options.SharedAccount.SecretName!;
             _logger.LogWarning("Tenant {TenantId} is using the shared Aurelianware Stedi account", ClaimLifecycleMapper.SanitizeForLog(tenantId));
         }

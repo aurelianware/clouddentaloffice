@@ -755,6 +755,14 @@ public class CloudDentalDbContext : DbContext
             {
                 if (string.IsNullOrWhiteSpace(entry.Entity.TenantId))
                 {
+                    // A clearinghouse connection selects a practice's credential, so
+                    // it is never stamped from ambient state (which falls back to demo).
+                    if (entry.Entity is TenantClearinghouseConnection)
+                    {
+                        throw new InvalidOperationException(
+                            "A clearinghouse connection must be saved with an explicit tenant.");
+                    }
+
                     entry.Entity.TenantId = tenantId;
                 }
             }

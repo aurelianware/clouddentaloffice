@@ -26,7 +26,9 @@ Staff action ─► PayerTransactionRouter ─► "Clearinghouse" adapter
    - `CreatedAt`, `UpdatedAt`, `RotatedAt`.
 
    `TenantId` has no `demo` default.
-2. **Keys live only in Key Vault**, one secret per practice, named `stedi-apikey-{tenantId}`. For Integrated mode the provider *derives* that name from the tenant and requires `KeyReference` to match it exactly. A row can therefore never point one practice at another practice's key.
+2. **Keys live only in Key Vault**, one secret per practice, named `stedi-apikey-{tenantId}`. For Integrated mode the provider *derives* that name from the tenant and requires `KeyReference` to match it. A row can therefore never point one practice at another practice's key.
+   - Key Vault secret names are case-insensitive, so the comparison ignores case, and tenant IDs must be lowercase letters, digits and hyphens. Otherwise `Acme` and `acme` would share a secret.
+   - A connection row can't be saved without an explicit tenant. It is never stamped from the ambient tenant (which falls back to `demo`).
 3. **`IStediCredentialProvider.GetAsync(tenantId)`** (`Services/Stedi/StediCredentials.cs`):
    - It reads the row for the explicit tenant (ignoring the ambient tenant) and requires `Active`.
    - It reads the secret with the Container App's managed identity (`DefaultAzureCredential`, `AZURE_CLIENT_ID`).
@@ -36,7 +38,8 @@ Staff action ─► PayerTransactionRouter ─► "Clearinghouse" adapter
 4. **`StediCredentialHandler`** (a `DelegatingHandler` on the Stedi `HttpClient`):
    - It takes the tenant only from the request's `StediRequest.Tenant` option, never from ambient state.
    - It removes any existing `Authorization` header and attaches that practice's key.
-   - A request with no tenant throws before anything is sent.
+   - A request with no tenant throws `StediCredentialUnavailableException` (`MissingTenant`) before anything is sent. The client and the adapter raise the same typed failure.
+   - The client sends the key only to an **HTTPS** `Stedi:BaseUrl` with a relative `EligibilityPath` on the same host. An `http://` base, a URL containing credentials, or an absolute or `//` path is refused as misconfigured.
 5. **Failures never fall back.** A missing tenant, missing or inactive connection, bad key reference, disabled shared account, missing vault configuration, missing secret, or Key Vault error each raise `StediCredentialUnavailableException`. The eligibility client turns that into a staff-readable message. No other key is tried.
 
 ## Shared mode (pilot only)
@@ -45,7 +48,7 @@ Aurelianware's Stedi key is used only when **both** of these hold:
 - `Stedi:SharedAccount:Enabled` is `true`. This is the GitHub variable `STEDI_SHARED_ACCOUNT_ENABLED`.
 - The practice's connection has `Mode = Shared`.
 
-The key is read from the secret named in `Stedi:SharedAccount:SecretName` (e.g. `stedi-apikey-shared`, via GitHub variable `STEDI_SHARED_ACCOUNT_SECRET_NAME`). Every use logs a warning, `Tenant {TenantId} is using the shared Aurelianware Stedi account`, with no PHI. An Integrated practice is never given the shared key, even when the flag is on.
+The key is read from the secret named in `Stedi:SharedAccount:SecretName` (via GitHub variable `STEDI_SHARED_ACCOUNT_SECRET_NAME`). That name **must start with `stedi-shared-`** (e.g. `stedi-shared-apikey`), a namespace no practice's `stedi-apikey-{tenantId}` can occupy. Any other name, such as a practice's secret, is refused. Every use logs a warning, `Tenant {TenantId} is using the shared Aurelianware Stedi account`, with no PHI. An Integrated practice is never given the shared key, even when the flag is on.
 
 ## Eligibility routing per practice
 
@@ -78,9 +81,10 @@ A future consumer must carry `TenantId` in its message and stamp it on the reque
 
 - **`main.bicep`:**
   - Adds Key Vault `cdo-kv-{unique}`: Azure RBAC authorization, soft delete with 90 days' retention.
-  - Grants the apps' identity (`cdo-identity`) **Key Vault Secrets User** on that vault only. That role allows secret get and list (`getSecret`, `readMetadata`): no writes, deletes, keys or certificates.
-  - New outputs: `identityClientId`, `keyVaultUri`, `keyVaultName`.
-- **`apps.bicep` / `container-apps.bicep`:** set the Portal's `Stedi__KeyVaultUri`, `AZURE_CLIENT_ID`, `Stedi__SharedAccount__Enabled` and `Stedi__SharedAccount__SecretName`. No key is passed to any app.
+  - Adds a **Portal-only** identity, `cdo-portal-identity`, and grants only it **Key Vault Secrets User** on that vault. That role allows secret get and list (`getSecret`, `readMetadata`): no writes, deletes, keys or certificates.
+  - The shared `cdo-identity`, attached to every container app for ACR pulls, has **no** vault access, so a compromised service other than the Portal can't read practice keys.
+  - New outputs: `portalIdentityId`, `portalIdentityClientId`, `keyVaultUri`, `keyVaultName`.
+- **`apps.bicep` / `container-apps.bicep`:** attach the Portal identity to the Portal only, alongside `cdo-identity`. Set the Portal's `AZURE_CLIENT_ID` to the Portal identity, plus `Stedi__KeyVaultUri`, `Stedi__SharedAccount__Enabled` and `Stedi__SharedAccount__SecretName`. No key is passed to any app.
 - **`.github/workflows/deploy-aca.yml`:** reads the new outputs and passes them to `apps.bicep`, along with the optional variables `STEDI_SHARED_ACCOUNT_ENABLED` and `STEDI_SHARED_ACCOUNT_SECRET_NAME`.
 - **`apps.json`:** regenerated from `apps.bicep`.
 

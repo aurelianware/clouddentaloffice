@@ -59,7 +59,7 @@ public sealed class StediCredentialTests : IDisposable
 
         _secrets.Values["stedi-apikey-" + TenantA] = KeyA;
         _secrets.Values["stedi-apikey-" + TenantB] = KeyB;
-        _secrets.Values["stedi-apikey-shared"] = SharedKey;
+        _secrets.Values["stedi-shared-apikey"] = SharedKey;
     }
 
     public void Dispose()
@@ -149,7 +149,7 @@ public sealed class StediCredentialTests : IDisposable
     [Fact]
     public async Task Shared_mode_is_refused_when_the_flag_is_off()
     {
-        _options.SharedAccount = new SharedStediAccountOptions { Enabled = false, SecretName = "stedi-apikey-shared" };
+        _options.SharedAccount = new SharedStediAccountOptions { Enabled = false, SecretName = "stedi-shared-apikey" };
         await Connect(TenantA, mode: ClearinghouseConnectionMode.Shared, keyReference: null);
 
         var error = await Assert.ThrowsAsync<StediCredentialUnavailableException>(() => Credentials.GetAsync(TenantA));
@@ -161,7 +161,7 @@ public sealed class StediCredentialTests : IDisposable
     [Fact]
     public async Task Shared_mode_uses_the_shared_key_and_logs_every_use()
     {
-        _options.SharedAccount = new SharedStediAccountOptions { Enabled = true, SecretName = "stedi-apikey-shared" };
+        _options.SharedAccount = new SharedStediAccountOptions { Enabled = true, SecretName = "stedi-shared-apikey" };
         await Connect(TenantA, mode: ClearinghouseConnectionMode.Shared, keyReference: null);
 
         var first = await Credentials.GetAsync(TenantA);
@@ -175,14 +175,14 @@ public sealed class StediCredentialTests : IDisposable
     [Fact]
     public async Task Integrated_practice_is_not_given_the_shared_key_when_the_flag_is_on()
     {
-        _options.SharedAccount = new SharedStediAccountOptions { Enabled = true, SecretName = "stedi-apikey-shared" };
+        _options.SharedAccount = new SharedStediAccountOptions { Enabled = true, SecretName = "stedi-shared-apikey" };
         await Connect(TenantA);
         _secrets.Values.TryRemove("stedi-apikey-" + TenantA, out _);
 
         var error = await Assert.ThrowsAsync<StediCredentialUnavailableException>(() => Credentials.GetAsync(TenantA));
 
         Assert.Equal(StediCredentialFailure.SecretNotFound, error.Failure);
-        Assert.DoesNotContain("stedi-apikey-shared", _secrets.Reads);
+        Assert.DoesNotContain("stedi-shared-apikey", _secrets.Reads);
     }
 
     [Fact]
@@ -254,6 +254,60 @@ public sealed class StediCredentialTests : IDisposable
         Assert.Equal("rotated-key", (await Credentials.GetAsync(TenantA)).ApiKey);
     }
 
+    [Theory]
+    [InlineData("stedi-apikey-practice-b")]
+    [InlineData("STEDI-APIKEY-practice-b")]
+    [InlineData("stedi-shared-")]
+    [InlineData("some-other-secret")]
+    public async Task Shared_key_must_live_outside_the_practice_key_namespace(string configured)
+    {
+        _options.SharedAccount = new SharedStediAccountOptions { Enabled = true, SecretName = configured };
+        await Connect(TenantA, mode: ClearinghouseConnectionMode.Shared, keyReference: null);
+
+        var error = await Assert.ThrowsAsync<StediCredentialUnavailableException>(() => Credentials.GetAsync(TenantA));
+
+        Assert.Equal(StediCredentialFailure.InvalidKeyReference, error.Failure);
+        Assert.Empty(_secrets.Reads);
+    }
+
+    [Fact]
+    public async Task Tenant_ids_that_differ_only_by_case_cannot_share_a_key()
+    {
+        // Key Vault names are case-insensitive: "Practice-A" would read stedi-apikey-practice-a.
+        await Connect("Practice-A", keyReference: "stedi-apikey-Practice-A");
+
+        var error = await Assert.ThrowsAsync<StediCredentialUnavailableException>(() => Credentials.GetAsync("Practice-A"));
+
+        Assert.Equal(StediCredentialFailure.InvalidKeyReference, error.Failure);
+        Assert.Empty(_secrets.Reads);
+    }
+
+    [Fact]
+    public async Task Key_reference_comparison_ignores_case_like_key_vault()
+    {
+        await Connect(TenantA, keyReference: "STEDI-APIKEY-" + TenantA.ToUpperInvariant());
+
+        Assert.Equal(KeyA, (await Credentials.GetAsync(TenantA)).ApiKey);
+    }
+
+    [Fact]
+    public async Task Connection_without_a_tenant_is_never_stamped_with_the_ambient_tenant()
+    {
+        using var scope = _services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<CloudDentalDbContext>();
+        db.TenantClearinghouseConnections.Add(new TenantClearinghouseConnection
+        {
+            TenantId = "",
+            Status = ClearinghouseConnectionStatus.Active,
+            KeyReference = "stedi-apikey-demo",
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow
+        });
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => db.SaveChangesAsync());
+        Assert.False(await db.TenantClearinghouseConnections.IgnoreQueryFilters().AnyAsync());
+    }
+
     // ── Per-request handler ─────────────────────────────────────────────────
 
     [Fact]
@@ -278,8 +332,10 @@ public sealed class StediCredentialTests : IDisposable
         var inner = new RecordingHandler();
         using var client = new HttpClient(new StediCredentialHandler(Credentials) { InnerHandler = inner });
 
-        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+        var error = await Assert.ThrowsAsync<StediCredentialUnavailableException>(() =>
             client.SendAsync(new HttpRequestMessage(HttpMethod.Post, "https://stedi.test/eligibility")));
+
+        Assert.Equal(StediCredentialFailure.MissingTenant, error.Failure);
 
         Assert.Empty(inner.Authorizations);
         Assert.Empty(_secrets.Reads);
@@ -370,6 +426,39 @@ public sealed class StediCredentialTests : IDisposable
         Assert.DoesNotContain(_logs.Entries, e => e.Message.Contains(KeyA));
     }
 
+    [Theory]
+    [InlineData("http://healthcare.us.stedi.com", "/2024-04-01/change/medicalnetwork/eligibility/v3")]
+    [InlineData("https://healthcare.us.stedi.com", "https://attacker.example/steal")]
+    [InlineData("https://healthcare.us.stedi.com", "//attacker.example/steal")]
+    [InlineData("https://user:pw@healthcare.us.stedi.com", "/eligibility")]
+    [InlineData("not a url", "/eligibility")]
+    public async Task Key_is_only_sent_to_the_configured_https_origin(string baseUrl, string path)
+    {
+        await Connect(TenantA);
+        _options.BaseUrl = baseUrl;
+        _options.EligibilityPath = path;
+        var inner = new RecordingHandler(ActiveResponse);
+
+        var error = await Assert.ThrowsAsync<TreatmentEstimateUnavailableException>(() =>
+            StediClient(inner).CheckAsync(DependentRequest(TenantA)));
+
+        Assert.Contains("misconfigured", error.Message);
+        Assert.Empty(inner.Bodies);
+        Assert.Empty(_secrets.Reads);
+    }
+
+    [Fact]
+    public async Task Client_reports_a_missing_tenant_with_the_typed_failure()
+    {
+        var request = DependentRequest(TenantA) with { TenantId = " " };
+
+        var error = await Assert.ThrowsAsync<TreatmentEstimateUnavailableException>(() =>
+            StediClient(new RecordingHandler(ActiveResponse)).CheckAsync(request));
+
+        var inner = Assert.IsType<StediCredentialUnavailableException>(error.InnerException);
+        Assert.Equal(StediCredentialFailure.MissingTenant, inner.Failure);
+    }
+
     // ── Per-practice routing ────────────────────────────────────────────────
 
     [Theory]
@@ -423,7 +512,7 @@ public sealed class StediCredentialTests : IDisposable
     [Fact]
     public async Task Nothing_logged_contains_a_key_or_patient_identity()
     {
-        _options.SharedAccount = new SharedStediAccountOptions { Enabled = true, SecretName = "stedi-apikey-shared" };
+        _options.SharedAccount = new SharedStediAccountOptions { Enabled = true, SecretName = "stedi-shared-apikey" };
         await Connect(TenantA, gateway: EligibilityGatewayKind.Stedi);
         await Connect(TenantB, mode: ClearinghouseConnectionMode.Shared, keyReference: null, gateway: EligibilityGatewayKind.Stedi);
         var client = StediClient(new RecordingHandler(ActiveResponse));

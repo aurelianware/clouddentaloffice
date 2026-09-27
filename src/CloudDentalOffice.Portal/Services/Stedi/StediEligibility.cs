@@ -25,7 +25,8 @@ public sealed class StediCredentialHandler(IStediCredentialProvider credentials)
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
         if (!request.Options.TryGetValue(StediRequest.Tenant, out var tenantId) || string.IsNullOrWhiteSpace(tenantId))
-            throw new InvalidOperationException("Stedi request has no tenant; refusing to send it without that practice's credential.");
+            throw new StediCredentialUnavailableException(string.Empty, StediCredentialFailure.MissingTenant,
+                "Stedi request has no tenant; refusing to send it without that practice's credential.");
 
         var credential = await credentials.GetAsync(tenantId, cancellationToken);
         request.Headers.Remove("Authorization");
@@ -60,12 +61,18 @@ public sealed class StediEligibilityClient(
     public async Task<EligibilityResult> CheckAsync(NormalizedEligibilityRequest request, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(request.TenantId))
-            throw new InvalidOperationException("Eligibility request has no tenant.");
-        if (!Uri.TryCreate(options.Value.BaseUrl, UriKind.Absolute, out var baseUri))
+            throw new TreatmentEstimateUnavailableException(StaffMessage(StediCredentialFailure.MissingTenant),
+                new StediCredentialUnavailableException(string.Empty, StediCredentialFailure.MissingTenant,
+                    "Eligibility request has no tenant."));
+        // The practice's key rides on this request, so it may only go to the
+        // configured HTTPS origin: an absolute or protocol-relative path would
+        // replace the base URL.
+        var target = ResolveTarget(options.Value);
+        if (target is null)
             throw new TreatmentEstimateUnavailableException("Eligibility checks are misconfigured. Contact support.");
 
         var correlationId = request.CorrelationId ?? Guid.NewGuid().ToString("N");
-        using var message = new HttpRequestMessage(HttpMethod.Post, new Uri(baseUri, options.Value.EligibilityPath));
+        using var message = new HttpRequestMessage(HttpMethod.Post, target);
         message.Options.Set(StediRequest.Tenant, request.TenantId);
         message.Content = JsonContent.Create(StediEligibilityWire.ToRequest(request, correlationId), options: Json);
 
@@ -121,6 +128,23 @@ public sealed class StediEligibilityClient(
                         "The eligibility check could not be completed. This is not a problem with the patient's information; try again later or contact support.");
             }
         }
+    }
+
+    internal static Uri? ResolveTarget(StediOptions options)
+    {
+        if (!Uri.TryCreate(options.BaseUrl, UriKind.Absolute, out var baseUri) ||
+            baseUri.Scheme != Uri.UriSchemeHttps || !string.IsNullOrEmpty(baseUri.UserInfo))
+            return null;
+        var path = options.EligibilityPath;
+        if (string.IsNullOrWhiteSpace(path) || path.StartsWith("//", StringComparison.Ordinal) ||
+            path.Contains('\\') || !Uri.TryCreate(path, UriKind.Relative, out _))
+            return null;
+        var target = new Uri(baseUri, path);
+        return target.Scheme == Uri.UriSchemeHttps &&
+               string.Equals(target.Host, baseUri.Host, StringComparison.OrdinalIgnoreCase) &&
+               target.Port == baseUri.Port
+            ? target
+            : null;
     }
 
     internal static string StaffMessage(StediCredentialFailure failure) => failure switch

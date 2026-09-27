@@ -74,20 +74,23 @@ param cloudHealthOfficeEligibilityPayerIds array = []
 @description('Key Vault URI holding stedi-apikey-{tenantId} secrets (main.bicep output keyVaultUri).')
 param keyVaultUri string = ''
 
-@description('Client ID of the user-assigned identity (main.bicep output identityClientId); lets DefaultAzureCredential pick it.')
-param identityClientId string = ''
+@description('Portal-only identity (main.bicep output portalIdentityId); the only identity with Key Vault access.')
+param portalIdentityId string = ''
+
+@description('Client ID of the Portal identity (main.bicep output portalIdentityClientId); lets DefaultAzureCredential pick it.')
+param portalIdentityClientId string = ''
 
 @description('Pilot only: allow practices in Shared mode to use Aurelianware\'s Stedi account.')
 param stediSharedAccountEnabled bool = false
 
-@description('Key Vault secret name of the shared Stedi key; used only when stediSharedAccountEnabled is true.')
+@description('Key Vault secret name of the shared Stedi key (must start with stedi-shared-); used only when stediSharedAccountEnabled is true.')
 param stediSharedAccountSecretName string = ''
 
 // Per-practice Stedi keys are read from Key Vault at request time; no key is
 // passed to the app. Without a vault URI the Stedi path fails closed.
 var stediEnv = concat(
   empty(keyVaultUri) ? [] : [ { name: 'Stedi__KeyVaultUri', value: keyVaultUri } ],
-  empty(identityClientId) ? [] : [ { name: 'AZURE_CLIENT_ID', value: identityClientId } ],
+  empty(portalIdentityClientId) ? [] : [ { name: 'AZURE_CLIENT_ID', value: portalIdentityClientId } ],
   [
     { name: 'Stedi__SharedAccount__Enabled', value: string(stediSharedAccountEnabled) }
     { name: 'Stedi__SharedAccount__SecretName', value: stediSharedAccountSecretName }
@@ -123,6 +126,15 @@ var identityObj = {
   }
 }
 
+// The Portal also carries its own identity, which alone can read Key Vault.
+var portalIdentityObj = empty(portalIdentityId) ? identityObj : {
+  type: 'UserAssigned'
+  userAssignedIdentities: {
+    '${identityId}': {}
+    '${portalIdentityId}': {}
+  }
+}
+
 // ── portal ────────────────────────────────────────────────────────────────────
 // External HTTPS ingress — public-facing Blazor Server UI.
 // Port 5091 is published only inside the environment (external: false) for
@@ -132,7 +144,7 @@ var identityObj = {
 resource portal 'Microsoft.App/containerApps@2024-03-01' = {
   name: 'portal'
   location: location
-  identity: identityObj
+  identity: portalIdentityObj
   properties: {
     environmentId: environmentId
     configuration: {
