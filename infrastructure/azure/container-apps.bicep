@@ -214,7 +214,7 @@ resource portal 'Microsoft.App/containerApps@2024-03-01' = {
             { name: 'StaffAuth__TenantId', value: initialTenantId }
             { name: 'StaffAuth__Users__0__Email', value: 'matt@3rdsetsmiles.com' }
             { name: 'StaffAuth__Users__0__Role', value: 'Admin' }
-            { name: 'StaffAuth__Users__1__Email', value: 'markus.phillips@gmail.com' }
+            { name: 'StaffAuth__Users__1__Email', value: 'markus.phillips@aurelianware.com' }
             { name: 'StaffAuth__Users__1__Role', value: 'Admin' }
             { name: 'StaffAuth__Users__2__Email', value: 'cindy@3rdsetsmiles.com' }
             { name: 'StaffAuth__Users__2__Role', value: 'Admin' }
