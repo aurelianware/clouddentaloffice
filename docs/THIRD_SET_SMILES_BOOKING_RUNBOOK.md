@@ -148,7 +148,7 @@ The application independently enforces a least-privilege allowlist and pins ever
 approved identity to tenant `third-set-smiles`. Initial administrators are:
 
 - `matt@3rdsetsmiles.com`
-- `markus.phillips@gmail.com` (temporary deployment/testing access; remove after handoff)
+- `markus.phillips@aurelianware.com` (temporary deployment/testing access; remove after handoff)
 
 A matching Workspace suffix is not sufficient by itself. Any Google identity not
 explicitly listed receives HTTP 403 after authentication. Require Workspace MFA,
