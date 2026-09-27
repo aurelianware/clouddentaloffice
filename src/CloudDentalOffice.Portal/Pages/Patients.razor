@@ -94,6 +94,10 @@
                                         OnClick="@(() => OpenPatientWorkflow(context, "chart"))">
                                 Clinical Chart
                             </MudMenuItem>
+                            <MudMenuItem Icon="@Icons.Material.Filled.HealthAndSafety"
+                                        OnClick="@(() => OpenInsuranceDialog(context))">
+                                Insurance &amp; Eligibility
+                            </MudMenuItem>
                             <MudDivider />
                             <MudMenuItem Icon="@Icons.Material.Filled.Edit" 
                                         OnClick="@(() => OpenEditPatientDialog(context))">
@@ -199,6 +203,19 @@
             {
                 Snackbar.Add($"Error updating patient: {ex.Message}", Severity.Error);
             }
+        }
+    }
+
+    private async Task OpenInsuranceDialog(Patient patient)
+    {
+        var dialog = DialogService.Show<PatientInsuranceDialog>($"Insurance & Eligibility — {patient.FullName}",
+            new DialogParameters { ["Patient"] = patient },
+            new DialogOptions { MaxWidth = MaxWidth.Large, FullWidth = true, CloseOnEscapeKey = true });
+
+        var result = await dialog.Result;
+        if (!result.Canceled && result.Data is true)
+        {
+            await LoadPatients();
         }
     }
 

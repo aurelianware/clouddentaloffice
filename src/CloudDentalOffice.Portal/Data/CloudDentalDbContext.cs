@@ -329,6 +329,12 @@ public class CloudDentalDbContext : DbContext
 
             entity.HasIndex(e => e.MemberId);
             entity.HasIndex(e => e.TenantId);
+            // At most one active primary and one active secondary per patient,
+            // enforced by the database so concurrent saves cannot both succeed.
+            entity.HasIndex(e => new { e.TenantId, e.PatientId, e.SequenceNumber })
+                .IsUnique()
+                .HasDatabaseName(CloudDentalOffice.Portal.Services.PatientCoverageService.ActiveSlotIndexName)
+                .HasFilter(Database.ProviderName == "Microsoft.EntityFrameworkCore.SqlServer" ? "[IsActive] = 1" : "\"IsActive\"");
             entity.HasQueryFilter(e => e.TenantId == CurrentTenantId);
         });
 
