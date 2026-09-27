@@ -1,7 +1,7 @@
 @using CloudDentalOffice.Portal.Models
 
 @* Normalized eligibility answer. Shared by the treatment-plan estimate and the patient insurance dialog. *@
-<MudAlert Class="mt-3" Severity="@(Result.CoverageStatus == CoverageStatus.Active ? Severity.Success : Severity.Warning)">
+<MudAlert Class="mt-3" Variant="Variant.Outlined" Severity="@(Result.CoverageStatus == CoverageStatus.Active ? Severity.Success : Severity.Warning)">
     <strong>@Result.CoverageStatus coverage</strong> via @Result.Source · verified @Result.VerifiedAt.LocalDateTime.ToString("g")
     @if (!string.IsNullOrWhiteSpace(Result.PlanName))
     {

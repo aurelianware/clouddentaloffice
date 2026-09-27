@@ -8,6 +8,7 @@
 @inject IPayerTransactionRouter PayerRouter
 @inject ITenantProvider TenantProvider
 @inject ILogger<PatientInsuranceDialog> Logger
+@inject NavigationManager Navigation
 
 @* Coverage for one patient: add, edit, deactivate, and check eligibility. *@
 <MudDialog>
@@ -85,7 +86,7 @@
             }
             @if (!string.IsNullOrWhiteSpace(_eligibilityMessage))
             {
-                <MudAlert Class="mt-3" Severity="Severity.Warning">@_eligibilityMessage</MudAlert>
+                <MudAlert Class="mt-3" Severity="Severity.Warning" Variant="Variant.Outlined">@_eligibilityMessage</MudAlert>
             }
 
             <MudText Typo="Typo.h6" Class="mt-6" Style="color: #00ffff;">@(_editingId is null ? "Add coverage" : "Edit coverage")</MudText>
@@ -93,10 +94,15 @@
 
             @if (_plans.Count == 0)
             {
-                <MudAlert Severity="Severity.Info">
+                @* Outlined: the theme's filled info colour (#00ffff) makes filled alert text unreadable. *@
+                <MudAlert Severity="Severity.Info" Variant="Variant.Outlined">
                     No insurance plans yet. Add the payers this practice works with under <strong>Claims → Payers</strong>,
-                    using each insurer's clearinghouse payer ID.
+                    using each insurer's clearinghouse payer ID, then come back here to add coverage.
                 </MudAlert>
+                <MudButton Class="mt-3" Variant="Variant.Filled" Color="Color.Primary"
+                           StartIcon="@Icons.Material.Filled.Business" OnClick="GoToPayers">
+                    Go to Payers
+                </MudButton>
             }
             else
             {
@@ -152,7 +158,7 @@
 
                 @if (!string.IsNullOrWhiteSpace(_formMessage))
                 {
-                    <MudAlert Class="mt-3" Severity="Severity.Warning">@_formMessage</MudAlert>
+                    <MudAlert Class="mt-3" Severity="Severity.Warning" Variant="Variant.Outlined">@_formMessage</MudAlert>
                 }
 
                 <MudStack Row="true" Class="mt-3">
@@ -302,6 +308,12 @@
     }
 
     private void Close() => MudDialog.Close(DialogResult.Ok(_changed));
+
+    private void GoToPayers()
+    {
+        MudDialog.Close(DialogResult.Ok(_changed));
+        Navigation.NavigateTo("/payers");
+    }
 
     private static bool IsSelf(PatientInsurance c) =>
         string.IsNullOrWhiteSpace(c.RelationshipToSubscriber) ||
