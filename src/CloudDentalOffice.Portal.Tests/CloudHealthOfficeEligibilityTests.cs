@@ -186,6 +186,7 @@ public sealed class CloudHealthOfficeEligibilityTests
         var json = JsonDocument.Parse(body!).RootElement;
         Assert.Equal("PAYER1", json.GetProperty("payerId").GetString());
         Assert.Equal("1999999984", json.GetProperty("provider").GetProperty("npi").GetString());
+        Assert.Equal("Dana Dentist", json.GetProperty("provider").GetProperty("organizationName").GetString());
         Assert.Equal("MBR123", json.GetProperty("subscriber").GetProperty("memberId").GetString());
         Assert.Equal("Rowan", json.GetProperty("subscriber").GetProperty("firstName").GetString());
         Assert.Equal("1955-07-02", json.GetProperty("subscriber").GetProperty("dateOfBirth").GetString());
@@ -535,6 +536,46 @@ public sealed class CloudHealthOfficeEligibilityTests
     {
         PatientId = 7, TenantId = Tenant, FirstName = "Quinn", LastName = "Harlow", DateOfBirth = new DateTime(1958, 3, 14)
     };
+
+    [Fact]
+    public void Request_carries_the_rendering_provider_name()
+    {
+        var request = EligibilityRequestBuilder.Build(Patient(), Insurance(), Provider(), ServiceDate, Tenant);
+
+        Assert.Equal("Dana", request.ProviderFirstName);
+        Assert.Equal("Dentist", request.ProviderLastName);
+    }
+
+    [Theory]
+    [InlineData("", "Dentist")]
+    [InlineData("Dana", " ")]
+    public void Provider_without_a_name_cannot_be_checked(string first, string last)
+    {
+        var provider = Provider();
+        provider.FirstName = first;
+        provider.LastName = last;
+
+        var error = Assert.Throws<TreatmentEstimateValidationException>(() =>
+            EligibilityRequestBuilder.Build(Patient(), Insurance(), provider, ServiceDate, Tenant));
+
+        Assert.Contains("first and last name", error.Message);
+    }
+
+    [Fact]
+    public async Task Overlong_provider_name_is_left_off_the_CHO_request()
+    {
+        string? body = null;
+        var client = Client(async request =>
+        {
+            body = await request.Content!.ReadAsStringAsync();
+            return Json(HttpStatusCode.OK, ActiveResponseJson);
+        });
+
+        await client.CheckAsync(Request() with { ProviderFirstName = new string('A', 40), ProviderLastName = new string('B', 40) });
+
+        var provider = JsonDocument.Parse(body!).RootElement.GetProperty("provider");
+        Assert.False(provider.TryGetProperty("organizationName", out var name) && name.ValueKind == JsonValueKind.String);
+    }
 
     private static Provider Provider() => new()
     {

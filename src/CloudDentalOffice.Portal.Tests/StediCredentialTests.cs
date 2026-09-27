@@ -377,6 +377,8 @@ public sealed class StediCredentialTests : IDisposable
         var root = json.RootElement;
         Assert.Equal("87726", root.GetProperty("tradingPartnerServiceId").GetString());
         Assert.Equal("1999999984", root.GetProperty("provider").GetProperty("npi").GetString());
+        Assert.Equal("Dana", root.GetProperty("provider").GetProperty("firstName").GetString());
+        Assert.Equal("Dentist", root.GetProperty("provider").GetProperty("lastName").GetString());
         Assert.Equal("19610417", root.GetProperty("subscriber").GetProperty("dateOfBirth").GetString());
         Assert.Equal("20110903", root.GetProperty("dependents")[0].GetProperty("dateOfBirth").GetString());
         Assert.Equal("35", root.GetProperty("encounter").GetProperty("serviceTypeCodes")[0].GetString());
@@ -386,6 +388,20 @@ public sealed class StediCredentialTests : IDisposable
         Assert.Equal("Dental PPO", result.PlanName);
         Assert.Equal(50m, result.Deductible);
         Assert.Equal(1250m, result.AnnualMaximumRemaining);
+    }
+
+    [Fact]
+    public async Task Stedi_check_without_a_provider_name_is_refused_before_sending()
+    {
+        await Connect(TenantA);
+        var inner = new RecordingHandler(ActiveResponse);
+        var request = DependentRequest(TenantA) with { ProviderFirstName = null };
+
+        var error = await Assert.ThrowsAsync<TreatmentEstimateValidationException>(() => StediClient(inner).CheckAsync(request));
+
+        Assert.Contains("first and last name", error.Message);
+        Assert.Empty(inner.Bodies);
+        Assert.Empty(_secrets.Reads);
     }
 
     [Fact]
@@ -585,6 +601,8 @@ public sealed class StediCredentialTests : IDisposable
         SubscriberDateOfBirth = new DateOnly(1961, 4, 17),
         Dependent = new EligibilityDependent("Orlaith", "Vantasserie", new DateOnly(2011, 9, 3), EligibilityRelationship.Child),
         ProviderNpi = "1999999984",
+        ProviderFirstName = "Dana",
+        ProviderLastName = "Dentist",
         ServiceDate = DateOnly.FromDateTime(DateTime.Today),
         CorrelationId = "check-1"
     };

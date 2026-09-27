@@ -112,6 +112,12 @@ param stediSharedAccountEnabled bool = false
 @description('Key Vault secret name of the shared Stedi key (must start with stedi-shared-)')
 param stediSharedAccountSecretName string = ''
 
+@description('Payer IDs whose eligibility routes by each practice\'s clearinghouse connection')
+param clearinghouseEligibilityPayerIds array = []
+
+@description('Route every payer without its own eligibility route to Clearinghouse')
+param clearinghouseEligibilityDefault bool = false
+
 param jwtIssuer string = 'CloudDentalOffice'
 param jwtAudience string = 'CloudDentalOfficeUsers'
 
@@ -164,6 +170,8 @@ module apps 'container-apps.bicep' = {
     portalIdentityClientId: portalIdentityClientId
     stediSharedAccountEnabled: stediSharedAccountEnabled
     stediSharedAccountSecretName: stediSharedAccountSecretName
+    clearinghouseEligibilityPayerIds: clearinghouseEligibilityPayerIds
+    clearinghouseEligibilityDefault: clearinghouseEligibilityDefault
   }
 }
 

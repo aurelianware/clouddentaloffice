@@ -317,7 +317,9 @@ jobs:
               portalIdentityId='${{ steps.infra.outputs.portal_identity_id }}' \
               portalIdentityClientId='${{ steps.infra.outputs.portal_identity_client_id }}' \
               stediSharedAccountEnabled=${{ vars.STEDI_SHARED_ACCOUNT_ENABLED == 'true' }} \
-              stediSharedAccountSecretName='${{ vars.STEDI_SHARED_ACCOUNT_SECRET_NAME }}'
+              stediSharedAccountSecretName='${{ vars.STEDI_SHARED_ACCOUNT_SECRET_NAME }}' \
+              clearinghouseEligibilityPayerIds='${{ vars.CLEARINGHOUSE_ELIGIBILITY_PAYER_IDS || '[]' }}' \
+              clearinghouseEligibilityDefault=${{ vars.CLEARINGHOUSE_ELIGIBILITY_DEFAULT == 'true' }}
 
       # DNS is hosted in Cloudflare. The CNAME and asuid TXT records must exist
       # before this step runs. Keeping hostname/certificate binding here makes
