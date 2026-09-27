@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.47.16.16243",
-      "templateHash": "4397048802436866182"
+      "templateHash": "18393208879331527001"
     }
   },
   "parameters": {
@@ -238,6 +238,13 @@
         "description": "Key Vault secret name of the shared Stedi key (must start with stedi-shared-)"
       }
     },
+    "clearinghouseEligibilityPayerIds": {
+      "type": "array",
+      "defaultValue": [],
+      "metadata": {
+        "description": "Payer IDs whose eligibility routes by each practice's clearinghouse connection"
+      }
+    },
     "jwtIssuer": {
       "type": "string",
       "defaultValue": "CloudDentalOffice"
@@ -392,6 +399,9 @@
           },
           "stediSharedAccountSecretName": {
             "value": "[parameters('stediSharedAccountSecretName')]"
+          },
+          "clearinghouseEligibilityPayerIds": {
+            "value": "[parameters('clearinghouseEligibilityPayerIds')]"
           }
         },
         "template": {
@@ -401,7 +411,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.47.16.16243",
-              "templateHash": "13850336796402701859"
+              "templateHash": "12339942965593820019"
             }
           },
           "parameters": {
@@ -584,22 +594,21 @@
               "metadata": {
                 "description": "Key Vault secret name of the shared Stedi key (must start with stedi-shared-); used only when stediSharedAccountEnabled is true."
               }
+            },
+            "clearinghouseEligibilityPayerIds": {
+              "type": "array",
+              "defaultValue": [],
+              "metadata": {
+                "description": "CDO insurance-plan payer IDs whose eligibility routes by each practice's clearinghouse connection (direct to Stedi or via CHO). Takes precedence over cloudHealthOfficeEligibilityPayerIds for the same payer."
+              }
             }
           },
           "variables": {
-            "copy": [
-              {
-                "name": "choEligibilityRoutes",
-                "count": "[length(parameters('cloudHealthOfficeEligibilityPayerIds'))]",
-                "input": {
-                  "name": "[format('PayerConnectivity__Payers__{0}__Eligibility', parameters('cloudHealthOfficeEligibilityPayerIds')[copyIndex('choEligibilityRoutes')])]",
-                  "value": "CloudHealthOffice"
-                }
-              }
-            ],
-            "stediEnv": "[concat(if(empty(parameters('keyVaultUri')), createArray(), createArray(createObject('name', 'Stedi__KeyVaultUri', 'value', parameters('keyVaultUri')))), if(empty(parameters('portalIdentityClientId')), createArray(), createArray(createObject('name', 'AZURE_CLIENT_ID', 'value', parameters('portalIdentityClientId')))), createArray(createObject('name', 'Stedi__SharedAccount__Enabled', 'value', string(parameters('stediSharedAccountEnabled'))), createObject('name', 'Stedi__SharedAccount__SecretName', 'value', parameters('stediSharedAccountSecretName'))))]",
+            "clearinghouseRoutes": "[if(empty(parameters('keyVaultUri')), createArray(), map(parameters('clearinghouseEligibilityPayerIds'), lambda('payerId', createObject('name', format('PayerConnectivity__Payers__{0}__Eligibility', lambdaVariables('payerId')), 'value', 'Clearinghouse'))))]",
+            "stediEnv": "[concat(if(empty(parameters('keyVaultUri')), createArray(), createArray(createObject('name', 'Stedi__KeyVaultUri', 'value', parameters('keyVaultUri')))), if(empty(parameters('portalIdentityClientId')), createArray(), createArray(createObject('name', 'AZURE_CLIENT_ID', 'value', parameters('portalIdentityClientId')))), createArray(createObject('name', 'Stedi__SharedAccount__Enabled', 'value', string(parameters('stediSharedAccountEnabled'))), createObject('name', 'Stedi__SharedAccount__SecretName', 'value', parameters('stediSharedAccountSecretName'))), variables('clearinghouseRoutes'))]",
             "choEligibilityEnabled": "[and(not(empty(parameters('cloudHealthOfficeEligibilityBaseUrl'))), not(empty(parameters('cloudHealthOfficeEligibilityApiKey'))))]",
             "choEligibilitySecrets": "[if(variables('choEligibilityEnabled'), createArray(createObject('name', 'cho-eligibility-api-key', 'value', parameters('cloudHealthOfficeEligibilityApiKey'))), createArray())]",
+            "choEligibilityRoutes": "[map(filter(parameters('cloudHealthOfficeEligibilityPayerIds'), lambda('payerId', or(empty(variables('clearinghouseRoutes')), not(contains(parameters('clearinghouseEligibilityPayerIds'), lambdaVariables('payerId')))))), lambda('payerId', createObject('name', format('PayerConnectivity__Payers__{0}__Eligibility', lambdaVariables('payerId')), 'value', 'CloudHealthOffice')))]",
             "choEligibilityEnv": "[if(variables('choEligibilityEnabled'), concat(createArray(createObject('name', 'CloudHealthOffice__Eligibility__BaseUrl', 'value', parameters('cloudHealthOfficeEligibilityBaseUrl')), createObject('name', 'CloudHealthOffice__Eligibility__ApiKey', 'secretRef', 'cho-eligibility-api-key')), variables('choEligibilityRoutes')), createArray())]",
             "registry": [
               {

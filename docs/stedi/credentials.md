@@ -62,6 +62,11 @@ The key is read from the secret named in `Stedi:SharedAccount:SecretName` (via G
 To use per-practice routing, set a payer's route to the new adapter:
 `PayerConnectivity__Payers__{payerId}__Eligibility=Clearinghouse`.
 
+In Azure, set the GitHub variable `CLEARINGHOUSE_ELIGIBILITY_PAYER_IDS` to a JSON array of CDO insurance-plan payer IDs, e.g. `["87726","60054"]`, and redeploy:
+- The deploy sets that route for each listed payer.
+- A payer listed there is removed from `CHO_ELIGIBILITY_PAYER_IDS` routing, so each payer has exactly one route.
+- Routes are only emitted once the Key Vault is wired (`Stedi__KeyVaultUri`).
+
 Payers still routed to `CloudHealthOffice` behave exactly as before, so nothing changes until routes are switched. A practice with no active connection gets "Eligibility checks aren't set up for this practice yet". The adapter never picks a path on its behalf.
 
 On the direct path, the insurance plan's payer ID is sent to Stedi as `tradingPartnerServiceId`, so it must be a Stedi payer ID. CHO resolved payer IDs through its payer directory; the direct path does not.
