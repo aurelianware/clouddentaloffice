@@ -302,6 +302,7 @@ if (!builder.Environment.IsDevelopment())
 // Patients live only in the Portal database. SchedulingService resolves Zocdoc patients
 // through the Portal's internal match-or-create endpoint (InternalPatientApi).
 builder.Services.AddScoped<IPatientService, PatientServiceImpl>();
+builder.Services.AddScoped<IPatientCoverageService, PatientCoverageService>();
 builder.AddInternalPatientApi();
 
 // Prescription service: always use microservice mode (no monolith fallback).

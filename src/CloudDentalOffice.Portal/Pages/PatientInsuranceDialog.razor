@@ -1,0 +1,337 @@
+@using CloudDentalOffice.Portal.Components
+@using CloudDentalOffice.Portal.Models
+@using CloudDentalOffice.Portal.Services.Tenancy
+@using Models = CloudDentalOffice.Portal.Models
+@inject IPatientCoverageService Coverage
+@inject IInsurancePlanService InsurancePlans
+@inject IProviderService ProviderService
+@inject IPayerTransactionRouter PayerRouter
+@inject ITenantProvider TenantProvider
+@inject ILogger<PatientInsuranceDialog> Logger
+
+@* Coverage for one patient: add, edit, deactivate, and check eligibility. *@
+<MudDialog>
+    <DialogContent>
+        @if (_loading)
+        {
+            <MudProgressLinear Indeterminate="true" Color="Color.Info" />
+        }
+        else
+        {
+            <MudText Typo="Typo.h6" Style="color: #00ffff;">Coverage</MudText>
+            <MudDivider Class="my-2" />
+
+            @if (_coverages.Count == 0)
+            {
+                <MudText Style="color: #b0b0b0;">No insurance on file.</MudText>
+            }
+            else
+            {
+                <MudSimpleTable Dense="true" Style="background:transparent;">
+                    <thead>
+                        <tr><th scope="col">Plan</th><th scope="col">Order</th><th scope="col">Member ID</th><th scope="col">Policyholder</th><th scope="col">Dates</th><th scope="col">Status</th><th scope="col"></th></tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var c in _coverages)
+                        {
+                            <tr>
+                                <td>@c.InsurancePlan?.PayerName <span style="color:#808080;">(@c.InsurancePlan?.PayerId)</span></td>
+                                <td>@(c.SequenceNumber == 1 ? "Primary" : "Secondary")</td>
+                                <td>@c.MemberId</td>
+                                <td>@(IsSelf(c) ? "Patient" : $"{c.SubscriberFirstName} {c.SubscriberLastName} ({c.RelationshipToSubscriber})")</td>
+                                <td>@c.EffectiveDate.ToString("d") – @(c.TerminationDate?.ToString("d") ?? "present")</td>
+                                <td>@(c.IsActive ? "Active" : "Inactive")</td>
+                                <td style="white-space:nowrap;">
+                                    @if (c.IsActive)
+                                    {
+                                        <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Info"
+                                                   Disabled="@(_checkingId is not null)" OnClick="@(() => CheckEligibilityAsync(c))">
+                                            @(_checkingId == c.PatientInsuranceId ? "Checking…" : "Check Eligibility")
+                                        </MudButton>
+                                    }
+                                    <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" Title="Edit" OnClick="@(() => Edit(c))" />
+                                    @if (c.IsActive)
+                                    {
+                                        <MudIconButton Icon="@Icons.Material.Filled.Block" Size="Size.Small" Title="Deactivate"
+                                                       OnClick="@(() => DeactivateAsync(c))" />
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </MudSimpleTable>
+            }
+
+            @if (_coverages.Any(c => c.IsActive))
+            {
+                <MudGrid Class="mt-2">
+                    <MudItem xs="12" md="6">
+                        <MudSelect T="int?" Label="Rendering provider (for eligibility)" @bind-Value="_providerId" Dense="true">
+                            @foreach (var p in _providers)
+                            {
+                                <MudSelectItem T="int?" Value="@p.ProviderId">@p.FirstName @p.LastName (NPI @p.NPI)</MudSelectItem>
+                            }
+                        </MudSelect>
+                    </MudItem>
+                    <MudItem xs="12" md="6">
+                        <MudDatePicker Label="Service date" @bind-Date="_serviceDate" />
+                    </MudItem>
+                </MudGrid>
+            }
+
+            @if (_eligibility is not null)
+            {
+                <EligibilityResultView Result="_eligibility" />
+            }
+            @if (!string.IsNullOrWhiteSpace(_eligibilityMessage))
+            {
+                <MudAlert Class="mt-3" Severity="Severity.Warning">@_eligibilityMessage</MudAlert>
+            }
+
+            <MudText Typo="Typo.h6" Class="mt-6" Style="color: #00ffff;">@(_editingId is null ? "Add coverage" : "Edit coverage")</MudText>
+            <MudDivider Class="my-2" />
+
+            @if (_plans.Count == 0)
+            {
+                <MudAlert Severity="Severity.Info">
+                    No insurance plans yet. Add the payers this practice works with under <strong>Claims → Payers</strong>,
+                    using each insurer's clearinghouse payer ID.
+                </MudAlert>
+            }
+            else
+            {
+                <MudGrid>
+                    <MudItem xs="12" md="8">
+                        <MudSelect T="int" Label="Insurance plan" @bind-Value="_form.InsurancePlanId" Required="true">
+                            @foreach (var plan in _plans)
+                            {
+                                <MudSelectItem T="int" Value="@plan.InsurancePlanId">@plan.PayerName (@plan.PayerId)</MudSelectItem>
+                            }
+                        </MudSelect>
+                    </MudItem>
+                    <MudItem xs="12" md="4">
+                        <MudSelect T="int" Label="Order" @bind-Value="_form.SequenceNumber">
+                            <MudSelectItem T="int" Value="1">Primary</MudSelectItem>
+                            <MudSelectItem T="int" Value="2">Secondary</MudSelectItem>
+                        </MudSelect>
+                    </MudItem>
+                    <MudItem xs="12" md="6">
+                        <MudTextField @bind-Value="_form.MemberId" Label="Member ID" Required="true" MaxLength="50" />
+                    </MudItem>
+                    <MudItem xs="12" md="6">
+                        <MudTextField @bind-Value="_form.GroupNumber" Label="Group number" MaxLength="50" />
+                    </MudItem>
+                    <MudItem xs="12" md="6">
+                        <MudSelect T="string" Label="Patient's relationship to policyholder" @bind-Value="_form.RelationshipToSubscriber">
+                            @foreach (var r in CoverageRelationships.All)
+                            {
+                                <MudSelectItem T="string" Value="@r">@(r == CoverageRelationships.Self ? "Self (patient is the policyholder)" : r)</MudSelectItem>
+                            }
+                        </MudSelect>
+                    </MudItem>
+                    <MudItem xs="12" md="3">
+                        <MudDatePicker Label="Effective date" @bind-Date="_form.EffectiveDate" />
+                    </MudItem>
+                    <MudItem xs="12" md="3">
+                        <MudDatePicker Label="Termination date" @bind-Date="_form.TerminationDate" Clearable="true" />
+                    </MudItem>
+                    @if (_form.RelationshipToSubscriber != CoverageRelationships.Self)
+                    {
+                        <MudItem xs="12" md="4">
+                            <MudTextField @bind-Value="_form.SubscriberFirstName" Label="Policyholder first name" Required="true" MaxLength="60" />
+                        </MudItem>
+                        <MudItem xs="12" md="4">
+                            <MudTextField @bind-Value="_form.SubscriberLastName" Label="Policyholder last name" Required="true" MaxLength="60" />
+                        </MudItem>
+                        <MudItem xs="12" md="4">
+                            <MudDatePicker Label="Policyholder date of birth" @bind-Date="_form.SubscriberDateOfBirth"
+                                           MaxDate="DateTime.Today" Required="true" />
+                        </MudItem>
+                    }
+                </MudGrid>
+
+                @if (!string.IsNullOrWhiteSpace(_formMessage))
+                {
+                    <MudAlert Class="mt-3" Severity="Severity.Warning">@_formMessage</MudAlert>
+                }
+
+                <MudStack Row="true" Class="mt-3">
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="@_saving" OnClick="SaveAsync">
+                        @(_saving ? "Saving…" : _editingId is null ? "Add coverage" : "Save changes")
+                    </MudButton>
+                    @if (_editingId is not null)
+                    {
+                        <MudButton Variant="Variant.Text" OnClick="ResetForm">Cancel edit</MudButton>
+                    }
+                </MudStack>
+            }
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Close">Close</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] MudDialogInstance MudDialog { get; set; } = null!;
+    [Parameter, EditorRequired] public Models.Patient Patient { get; set; } = default!;
+
+    private bool _loading = true;
+    private bool _saving;
+    private bool _changed;
+    private int? _checkingId;
+    private int? _editingId;
+    private string? _formMessage;
+    private string? _eligibilityMessage;
+    private EligibilityResult? _eligibility;
+    private IReadOnlyList<PatientInsurance> _coverages = [];
+    private List<InsurancePlan> _plans = [];
+    private List<Provider> _providers = [];
+    private int? _providerId;
+    private DateTime? _serviceDate = DateTime.Today;
+    private CoverageForm _form = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _plans = (await InsurancePlans.GetInsurancePlansAsync()).Where(p => p.IsActive).OrderBy(p => p.PayerName).ToList();
+            _providers = (await ProviderService.GetProvidersAsync()).Where(p => p.IsActive).OrderBy(p => p.LastName).ToList();
+            _providerId = _providers.FirstOrDefault()?.ProviderId;
+            await ReloadAsync();
+            ResetForm();
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task ReloadAsync() => _coverages = await Coverage.GetCoveragesAsync(Patient.PatientId);
+
+    private void ResetForm()
+    {
+        _editingId = null;
+        _formMessage = null;
+        _form = new CoverageForm
+        {
+            InsurancePlanId = _plans.FirstOrDefault()?.InsurancePlanId ?? 0,
+            // Default to the first free slot so a second coverage starts as secondary.
+            SequenceNumber = _coverages.Any(c => c.IsActive && c.SequenceNumber == 1) ? 2 : 1
+        };
+    }
+
+    private void Edit(PatientInsurance c)
+    {
+        _editingId = c.PatientInsuranceId;
+        _formMessage = null;
+        _form = new CoverageForm
+        {
+            InsurancePlanId = c.InsurancePlanId,
+            SequenceNumber = c.SequenceNumber,
+            MemberId = c.MemberId,
+            GroupNumber = c.GroupNumber,
+            RelationshipToSubscriber = CoverageRelationships.All.FirstOrDefault(r =>
+                string.Equals(r, c.RelationshipToSubscriber, StringComparison.OrdinalIgnoreCase)) ?? CoverageRelationships.Self,
+            SubscriberFirstName = c.SubscriberFirstName,
+            SubscriberLastName = c.SubscriberLastName,
+            SubscriberDateOfBirth = c.SubscriberDateOfBirth?.Date,
+            EffectiveDate = c.EffectiveDate.Date,
+            TerminationDate = c.TerminationDate?.Date
+        };
+    }
+
+    private async Task SaveAsync()
+    {
+        _formMessage = null;
+        _saving = true;
+        try
+        {
+            var input = _form.ToInput();
+            if (_editingId is { } id)
+                await Coverage.UpdateCoverageAsync(id, input);
+            else
+                await Coverage.AddCoverageAsync(Patient.PatientId, input);
+            _changed = true;
+            await ReloadAsync();
+            ResetForm();
+        }
+        catch (CoverageValidationException ex) { _formMessage = ex.Message; }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Saving coverage failed for patient {PatientId}", Patient.PatientId);
+            _formMessage = "The coverage could not be saved. Try again.";
+        }
+        finally { _saving = false; }
+    }
+
+    private async Task DeactivateAsync(PatientInsurance c)
+    {
+        _formMessage = null;
+        try
+        {
+            await Coverage.DeactivateCoverageAsync(c.PatientInsuranceId);
+            _changed = true;
+            if (_editingId == c.PatientInsuranceId) ResetForm();
+            await ReloadAsync();
+        }
+        catch (CoverageValidationException ex) { _formMessage = ex.Message; }
+    }
+
+    private async Task CheckEligibilityAsync(PatientInsurance c)
+    {
+        _eligibility = null;
+        _eligibilityMessage = null;
+        _checkingId = c.PatientInsuranceId;
+        try
+        {
+            var provider = _providers.FirstOrDefault(p => p.ProviderId == _providerId);
+            var request = EligibilityRequestBuilder.Build(Patient, c, provider,
+                DateOnly.FromDateTime(_serviceDate ?? DateTime.Today), TenantProvider.TenantId);
+            _eligibility = await PayerRouter.CheckEligibilityAsync(request);
+        }
+        catch (TreatmentEstimateValidationException ex) { _eligibilityMessage = ex.Message; }
+        catch (TreatmentEstimateUnavailableException ex) { _eligibilityMessage = ex.Message; }
+        catch (UnauthorizedAccessException) { _eligibilityMessage = "The eligibility request was denied for this practice."; }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Unexpected error during eligibility check for patient {PatientId}", Patient.PatientId);
+            _eligibilityMessage = "The eligibility check could not be completed. Try again later.";
+        }
+        finally { _checkingId = null; }
+    }
+
+    private void Close() => MudDialog.Close(DialogResult.Ok(_changed));
+
+    private static bool IsSelf(PatientInsurance c) =>
+        string.IsNullOrWhiteSpace(c.RelationshipToSubscriber) ||
+        string.Equals(c.RelationshipToSubscriber, CoverageRelationships.Self, StringComparison.OrdinalIgnoreCase);
+
+    private sealed class CoverageForm
+    {
+        public int InsurancePlanId { get; set; }
+        public int SequenceNumber { get; set; } = 1;
+        public string MemberId { get; set; } = string.Empty;
+        public string? GroupNumber { get; set; }
+        public string RelationshipToSubscriber { get; set; } = CoverageRelationships.Self;
+        public string? SubscriberFirstName { get; set; }
+        public string? SubscriberLastName { get; set; }
+        public DateTime? SubscriberDateOfBirth { get; set; }
+        public DateTime? EffectiveDate { get; set; } = DateTime.Today;
+        public DateTime? TerminationDate { get; set; }
+
+        public CoverageInput ToInput() => new()
+        {
+            InsurancePlanId = InsurancePlanId,
+            SequenceNumber = SequenceNumber,
+            MemberId = MemberId,
+            GroupNumber = GroupNumber,
+            RelationshipToSubscriber = RelationshipToSubscriber,
+            SubscriberFirstName = SubscriberFirstName,
+            SubscriberLastName = SubscriberLastName,
+            SubscriberDateOfBirth = SubscriberDateOfBirth?.Date,
+            EffectiveDate = (EffectiveDate ?? DateTime.Today).Date,
+            TerminationDate = TerminationDate?.Date
+        };
+    }
+}
