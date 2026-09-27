@@ -3,6 +3,7 @@
 @using CloudDentalOffice.Portal.Services
 @inject IInsurancePlanService InsurancePlanService
 @inject ISnackbar Snackbar
+@inject IDialogService DialogService
 
 <PageTitle>Insurance Payers - Cloud Dental Office</PageTitle>
 
@@ -21,6 +22,14 @@
                           Immediate="true"
                           Style="max-width: 400px;" />
             
+            <MudSpacer />
+            <MudButton Variant="Variant.Outlined"
+                       Color="Color.Primary"
+                       Class="mr-2"
+                       StartIcon="@Icons.Material.Filled.TravelExplore"
+                       OnClick="OpenImportDialog">
+                Import from Clearinghouse
+            </MudButton>
             <MudButton Variant="Variant.Filled" 
                        Color="Color.Primary" 
                        StartIcon="@Icons.Material.Filled.Add"
@@ -189,6 +198,18 @@
             EdiEnabled = false
         };
         payerDialog?.Show(newPayer);
+    }
+
+    private async Task OpenImportDialog()
+    {
+        var dialog = DialogService.Show<StediPayerImportDialog>("Import payers from the clearinghouse directory",
+            new DialogOptions { MaxWidth = MaxWidth.Large, FullWidth = true, CloseOnEscapeKey = true });
+        var result = await dialog.Result;
+        if (!result.Canceled && result.Data is true)
+        {
+            await LoadPayers();
+            Snackbar.Add("Payers added", Severity.Success);
+        }
     }
 
     private void OpenEditDialog(InsurancePlan payer)
