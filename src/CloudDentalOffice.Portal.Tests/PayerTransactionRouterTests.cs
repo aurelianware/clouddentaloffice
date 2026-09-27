@@ -27,6 +27,42 @@ public sealed class PayerTransactionRouterTests
     }
 
     [Fact]
+    public async Task EligibilityUsesTheDefaultRouteForPayersWithoutOne()
+    {
+        var adapter = new FakeEligibilityAdapter("Clearinghouse");
+        var options = new PayerConnectivityOptions { DefaultEligibility = "Clearinghouse" };
+
+        var result = await Router([adapter], options).CheckEligibilityAsync(EligibilityRequest());
+
+        Assert.Equal("Clearinghouse", result.Source);
+        Assert.Equal(1, adapter.CallCount);
+    }
+
+    [Fact]
+    public async Task EligibilityPrefersThePayerRouteOverTheDefault()
+    {
+        var mock = new FakeEligibilityAdapter("Mock");
+        var clearinghouse = new FakeEligibilityAdapter("Clearinghouse");
+        var options = Routes("Mock", []);
+        options.DefaultEligibility = "Clearinghouse";
+
+        var result = await Router([mock, clearinghouse], options).CheckEligibilityAsync(EligibilityRequest());
+
+        Assert.Equal("Mock", result.Source);
+        Assert.Equal(0, clearinghouse.CallCount);
+    }
+
+    [Fact]
+    public async Task EligibilityWithoutRouteOrDefaultIsUnavailable()
+    {
+        var router = Router([new FakeEligibilityAdapter("Clearinghouse")], new PayerConnectivityOptions());
+
+        var error = await Assert.ThrowsAsync<TreatmentEstimateUnavailableException>(() => router.CheckEligibilityAsync(EligibilityRequest()));
+
+        Assert.Contains("not configured for this payer", error.Message);
+    }
+
+    [Fact]
     public async Task EligibilityRejectsAdapterWithoutCapability()
     {
         var router = Router([new FakeEstimateAdapter("Mock", Estimate())], Routes("Mock", ["Mock"]));

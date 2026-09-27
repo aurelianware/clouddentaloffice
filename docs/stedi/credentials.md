@@ -67,6 +67,13 @@ In Azure, set the GitHub variable `CLEARINGHOUSE_ELIGIBILITY_PAYER_IDS` to a JSO
 - A payer listed there is removed from `CHO_ELIGIBILITY_PAYER_IDS` routing, so each payer has exactly one route.
 - Routes are only emitted once the Key Vault is wired (`Stedi__KeyVaultUri`).
 
+To route **every** payer that has no route of its own, set `CLEARINGHOUSE_ELIGIBILITY_DEFAULT=true` instead of listing payers. The deploy then sets `PayerConnectivity__DefaultEligibility=Clearinghouse`. A payer's own route (for example in `CHO_ELIGIBILITY_PAYER_IDS`) still takes precedence over the default.
+
+**Provider name.** Stedi requires the provider's name with the NPI. Eligibility requests carry the rendering provider's first and last name:
+- **Direct path:** sends them as `provider.firstName` and `provider.lastName`.
+- **CloudHealthOffice path:** CHO's contract has only `organizationName`, so the path sends the provider's full name there, left off if it exceeds CHO's 60-character limit.
+- **Missing name:** a provider without a first and last name can't be checked, and staff see a message saying so.
+
 Payers still routed to `CloudHealthOffice` behave exactly as before, so nothing changes until routes are switched. A practice with no active connection gets "Eligibility checks aren't set up for this practice yet". The adapter never picks a path on its behalf.
 
 On the direct path, the insurance plan's payer ID is sent to Stedi as `tradingPartnerServiceId`, so it must be a Stedi payer ID. CHO resolved payer IDs through its payer directory; the direct path does not.

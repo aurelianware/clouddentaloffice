@@ -47,6 +47,9 @@ public static partial class EligibilityRequestBuilder
             throw new TreatmentEstimateValidationException("Select a rendering provider with an NPI before checking eligibility.");
         if (!NpiPattern().IsMatch(provider.NPI.Trim()))
             throw new TreatmentEstimateValidationException("The rendering provider's NPI must be 10 digits.");
+        // Clearinghouses require the provider's name alongside the NPI.
+        var providerFirst = Required(provider.FirstName, "The rendering provider's first and last name are required for eligibility checks.");
+        var providerLast = Required(provider.LastName, "The rendering provider's first and last name are required for eligibility checks.");
 
         // CHO accepts service dates from two years back to one year ahead.
         var today = DateOnly.FromDateTime(DateTime.Today);
@@ -100,6 +103,8 @@ public static partial class EligibilityRequestBuilder
             Dependent = dependent,
             GroupNumber = string.IsNullOrWhiteSpace(insurance.GroupNumber) ? null : insurance.GroupNumber.Trim(),
             ProviderNpi = provider.NPI.Trim(),
+            ProviderFirstName = providerFirst,
+            ProviderLastName = providerLast,
             ServiceDate = serviceDate
         };
     }
@@ -262,7 +267,9 @@ public sealed class CloudHealthOfficeEligibilityClient : ICloudHealthOfficeEligi
     internal static ChoEligibilityRequest ToWire(NormalizedEligibilityRequest request, string correlationId) => new()
     {
         PayerId = request.PayerId,
-        Provider = new ChoProvider { Npi = request.ProviderNpi },
+        // CHO's contract carries one provider name field; its clearinghouse
+        // requires a name with the NPI, so send the rendering provider's name.
+        Provider = new ChoProvider { Npi = request.ProviderNpi, OrganizationName = ProviderName(request) },
         Subscriber = new ChoPerson
         {
             MemberId = request.MemberId,
@@ -285,6 +292,14 @@ public sealed class CloudHealthOfficeEligibilityClient : ICloudHealthOfficeEligi
         ServiceDate = request.ServiceDate,
         CorrelationId = correlationId
     };
+
+    // CHO accepts at most 60 characters here; longer names are dropped rather than rejected.
+    internal static string? ProviderName(NormalizedEligibilityRequest request)
+    {
+        var name = string.Join(' ', new[] { request.ProviderFirstName, request.ProviderLastName }
+            .Where(p => !string.IsNullOrWhiteSpace(p)).Select(p => p!.Trim()));
+        return name.Length is > 0 and <= 60 ? name : null;
+    }
 
     private static async Task<T?> ReadAsync<T>(HttpResponseMessage response, CancellationToken cancellationToken) where T : class
     {

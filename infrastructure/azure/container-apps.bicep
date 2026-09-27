@@ -89,11 +89,18 @@ param stediSharedAccountSecretName string = ''
 @description('CDO insurance-plan payer IDs whose eligibility routes by each practice\'s clearinghouse connection (direct to Stedi or via CHO). Takes precedence over cloudHealthOfficeEligibilityPayerIds for the same payer.')
 param clearinghouseEligibilityPayerIds array = []
 
+@description('Route every payer without its own eligibility route to Clearinghouse (each practice\'s clearinghouse connection).')
+param clearinghouseEligibilityDefault bool = false
+
 // Routed only when the vault is wired; without it the Clearinghouse path would fail closed.
-var clearinghouseRoutes = empty(keyVaultUri) ? [] : map(clearinghouseEligibilityPayerIds, payerId => {
-  name: 'PayerConnectivity__Payers__${payerId}__Eligibility'
-  value: 'Clearinghouse'
-})
+var clearinghouseRoutes = concat(
+  empty(keyVaultUri) ? [] : map(clearinghouseEligibilityPayerIds, payerId => {
+    name: 'PayerConnectivity__Payers__${payerId}__Eligibility'
+    value: 'Clearinghouse'
+  }),
+  empty(keyVaultUri) || !clearinghouseEligibilityDefault ? [] : [
+    { name: 'PayerConnectivity__DefaultEligibility', value: 'Clearinghouse' }
+  ])
 
 // Per-practice Stedi keys are read from Key Vault at request time; no key is
 // passed to the app. Without a vault URI the Stedi path fails closed.
@@ -114,7 +121,7 @@ var choEligibilitySecrets = choEligibilityEnabled ? [
 ] : []
 // A payer routed to Clearinghouse is left out here: one env var per payer.
 var choEligibilityRoutes = map(
-  filter(cloudHealthOfficeEligibilityPayerIds, payerId => empty(clearinghouseRoutes) || !contains(clearinghouseEligibilityPayerIds, payerId)),
+  filter(cloudHealthOfficeEligibilityPayerIds, payerId => empty(keyVaultUri) || !contains(clearinghouseEligibilityPayerIds, payerId)),
   payerId => {
     name: 'PayerConnectivity__Payers__${payerId}__Eligibility'
     value: 'CloudHealthOffice'

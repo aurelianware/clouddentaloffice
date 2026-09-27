@@ -71,6 +71,11 @@ public sealed class StediEligibilityClient(
         if (target is null)
             throw new TreatmentEstimateUnavailableException("Eligibility checks are misconfigured. Contact support.");
 
+        // Stedi rejects a check without the provider's name; say so before spending a call.
+        if (string.IsNullOrWhiteSpace(request.ProviderFirstName) || string.IsNullOrWhiteSpace(request.ProviderLastName))
+            throw new TreatmentEstimateValidationException(
+                "The rendering provider's first and last name are required for eligibility checks.");
+
         var correlationId = request.CorrelationId ?? Guid.NewGuid().ToString("N");
         using var message = new HttpRequestMessage(HttpMethod.Post, target);
         message.Options.Set(StediRequest.Tenant, request.TenantId);
@@ -176,7 +181,8 @@ internal static class StediEligibilityWire
     {
         TradingPartnerServiceId = r.PayerId,
         ExternalPatientId = correlationId,
-        Provider = new StediProvider { Npi = r.ProviderNpi },
+        // Individual rendering provider: Stedi requires first and last name with the NPI.
+        Provider = new StediProvider { Npi = r.ProviderNpi, FirstName = r.ProviderFirstName, LastName = r.ProviderLastName },
         Subscriber = new StediPerson
         {
             MemberId = r.MemberId,
@@ -284,6 +290,8 @@ internal sealed class StediProvider
 {
     public string? Npi { get; set; }
     public string? OrganizationName { get; set; }
+    public string? FirstName { get; set; }
+    public string? LastName { get; set; }
 }
 
 internal sealed class StediPerson

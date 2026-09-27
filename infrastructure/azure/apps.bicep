@@ -115,6 +115,9 @@ param stediSharedAccountSecretName string = ''
 @description('Payer IDs whose eligibility routes by each practice\'s clearinghouse connection')
 param clearinghouseEligibilityPayerIds array = []
 
+@description('Route every payer without its own eligibility route to Clearinghouse')
+param clearinghouseEligibilityDefault bool = false
+
 param jwtIssuer string = 'CloudDentalOffice'
 param jwtAudience string = 'CloudDentalOfficeUsers'
 
@@ -168,6 +171,7 @@ module apps 'container-apps.bicep' = {
     stediSharedAccountEnabled: stediSharedAccountEnabled
     stediSharedAccountSecretName: stediSharedAccountSecretName
     clearinghouseEligibilityPayerIds: clearinghouseEligibilityPayerIds
+    clearinghouseEligibilityDefault: clearinghouseEligibilityDefault
   }
 }
 

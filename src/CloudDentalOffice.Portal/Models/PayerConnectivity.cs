@@ -37,6 +37,10 @@ public sealed record NormalizedEligibilityRequest
 
     public string? GroupNumber { get; init; }
     public required string ProviderNpi { get; init; }
+
+    /// <summary>Rendering provider's name. Stedi requires a provider name with the NPI.</summary>
+    public string? ProviderFirstName { get; init; }
+    public string? ProviderLastName { get; init; }
     public DateOnly ServiceDate { get; init; }
     public IReadOnlyList<string> ServiceTypeCodes { get; init; } = ["35"];
 
