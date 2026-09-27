@@ -97,6 +97,21 @@ param cloudHealthOfficeEligibilityApiKey string = ''
 @description('CDO insurance-plan payer IDs whose eligibility checks route through CloudHealthOffice')
 param cloudHealthOfficeEligibilityPayerIds array = []
 
+@description('Key Vault URI for per-practice Stedi keys (main.bicep output keyVaultUri)')
+param keyVaultUri string = ''
+
+@description('Portal-only identity resource ID (main.bicep output portalIdentityId)')
+param portalIdentityId string = ''
+
+@description('Portal identity client ID (main.bicep output portalIdentityClientId)')
+param portalIdentityClientId string = ''
+
+@description('Pilot only: allow Shared-mode practices to use Aurelianware\'s Stedi account')
+param stediSharedAccountEnabled bool = false
+
+@description('Key Vault secret name of the shared Stedi key (must start with stedi-shared-)')
+param stediSharedAccountSecretName string = ''
+
 param jwtIssuer string = 'CloudDentalOffice'
 param jwtAudience string = 'CloudDentalOfficeUsers'
 
@@ -144,6 +159,11 @@ module apps 'container-apps.bicep' = {
     cloudHealthOfficeEligibilityBaseUrl: cloudHealthOfficeEligibilityBaseUrl
     cloudHealthOfficeEligibilityApiKey: cloudHealthOfficeEligibilityApiKey
     cloudHealthOfficeEligibilityPayerIds: cloudHealthOfficeEligibilityPayerIds
+    keyVaultUri: keyVaultUri
+    portalIdentityId: portalIdentityId
+    portalIdentityClientId: portalIdentityClientId
+    stediSharedAccountEnabled: stediSharedAccountEnabled
+    stediSharedAccountSecretName: stediSharedAccountSecretName
   }
 }
 

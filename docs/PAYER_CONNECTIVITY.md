@@ -23,7 +23,8 @@ Adapters declare capabilities. Eligibility and estimate interfaces are separate 
 
 - `Mock`: development/test normalized eligibility only; makes no external call.
 - `CloudHealthOffice`: prospective payment estimates through the server-side adapter from PR #20, and real-time eligibility through CHO's provider eligibility API when that is configured (see below).
-- Clearinghouse/direct payer: not configured until real credentials and specifications are supplied.
+- `Clearinghouse`: eligibility routed per practice by its clearinghouse connection, either direct to Stedi with the practice's own key or through CloudHealthOffice. See [docs/stedi/credentials.md](stedi/credentials.md).
+- Direct payer: not configured until real credentials and specifications are supplied.
 
 Example environment configuration:
 

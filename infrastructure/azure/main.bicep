@@ -55,6 +55,43 @@ resource acrPullRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   }
 }
 
+// ── Key Vault for per-practice clearinghouse keys ─────────────────────────────
+// Holds stedi-apikey-{tenantId} secrets. Access is Azure RBAC only. Only the
+// Portal's own identity can read secrets (get/list); the shared cdo-identity
+// used by every container app for ACR pulls has no access. Operators write keys
+// with their own Key Vault Secrets Officer assignment, outside this template.
+
+resource portalIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
+  name: '${appName}-portal-identity'
+  location: location
+}
+
+resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' = {
+  name: '${appName}-kv-${uniqueString(resourceGroup().id)}'
+  location: location
+  properties: {
+    tenantId: subscription().tenantId
+    sku: { family: 'A', name: 'standard' }
+    enableRbacAuthorization: true
+    enableSoftDelete: true
+    softDeleteRetentionInDays: 90
+    publicNetworkAccess: 'Enabled'
+  }
+}
+
+// Key Vault Secrets User: secrets getSecret + readMetadata (get/list). No write, delete, keys or certificates.
+var vaultReaderRoleId = '4633458b-17de-408a-b874-0445c86b69e6'
+
+resource keyVaultSecretsUser 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(keyVault.id, portalIdentity.id, vaultReaderRoleId)
+  scope: keyVault
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', vaultReaderRoleId)
+    principalId: portalIdentity.properties.principalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
 // ── Container App Environment ─────────────────────────────────────────────────
 
 resource containerAppEnv 'Microsoft.App/managedEnvironments@2023-05-01' = {
@@ -169,6 +206,18 @@ output acrName string = acr.name
 
 @description('Managed identity resource ID — used by apps.bicep')
 output identityId string = identity.id
+
+@description('Portal-only identity resource ID; the only identity that can read the Key Vault')
+output portalIdentityId string = portalIdentity.id
+
+@description('Portal identity client ID — set as the Portal\'s AZURE_CLIENT_ID so DefaultAzureCredential selects it')
+output portalIdentityClientId string = portalIdentity.properties.clientId
+
+@description('Key Vault URI for per-practice clearinghouse keys')
+output keyVaultUri string = keyVault.properties.vaultUri
+
+@description('Key Vault name — operators store stedi-apikey-{tenantId} secrets here')
+output keyVaultName string = keyVault.name
 
 @description('Container App Environment resource ID — used by apps.bicep')
 output environmentId string = containerAppEnv.id

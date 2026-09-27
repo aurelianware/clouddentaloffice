@@ -57,6 +57,7 @@ public class CloudDentalDbContext : DbContext
     public DbSet<PatientPaymentAttempt> PatientPaymentAttempts => Set<PatientPaymentAttempt>();
     public DbSet<PatientPortalIdentity> PatientPortalIdentities => Set<PatientPortalIdentity>();
     public DbSet<PatientBillingNotification> PatientBillingNotifications => Set<PatientBillingNotification>();
+    public DbSet<TenantClearinghouseConnection> TenantClearinghouseConnections => Set<TenantClearinghouseConnection>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -239,6 +240,21 @@ public class CloudDentalDbContext : DbContext
         modelBuilder.Entity<FinancialAuditEvent>(entity =>
         {
             entity.HasIndex(x => new { x.TenantId, x.EntityType, x.EntityId, x.CreatedAt });
+            entity.HasQueryFilter(x => x.TenantId == CurrentTenantId);
+        });
+
+        // Clearinghouse credentials are resolved by explicit tenant; TenantId has
+        // no 'demo' default so a row can never be written for an implied tenant.
+        modelBuilder.Entity<TenantClearinghouseConnection>(entity =>
+        {
+            entity.Property(x => x.TenantId).HasMaxLength(64).IsRequired();
+            entity.Property(x => x.Provider).HasMaxLength(32).IsRequired();
+            entity.Property(x => x.Mode).HasConversion<string>().HasMaxLength(24);
+            entity.Property(x => x.Status).HasConversion<string>().HasMaxLength(24);
+            entity.Property(x => x.EligibilityGateway).HasConversion<string>().HasMaxLength(32);
+            entity.Property(x => x.StediAccountId).HasMaxLength(100);
+            entity.Property(x => x.KeyReference).HasMaxLength(127);
+            entity.HasIndex(x => new { x.TenantId, x.Provider }).IsUnique();
             entity.HasQueryFilter(x => x.TenantId == CurrentTenantId);
         });
 
@@ -739,6 +755,14 @@ public class CloudDentalDbContext : DbContext
             {
                 if (string.IsNullOrWhiteSpace(entry.Entity.TenantId))
                 {
+                    // A clearinghouse connection selects a practice's credential, so
+                    // it is never stamped from ambient state (which falls back to demo).
+                    if (entry.Entity is TenantClearinghouseConnection)
+                    {
+                        throw new InvalidOperationException(
+                            "A clearinghouse connection must be saved with an explicit tenant.");
+                    }
+
                     entry.Entity.TenantId = tenantId;
                 }
             }
