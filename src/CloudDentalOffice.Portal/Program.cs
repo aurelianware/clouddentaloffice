@@ -17,6 +17,7 @@ using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using MudBlazor;
 using MudBlazor.Services;
 using CloudDentalOffice.Messaging;
+using CloudDentalOffice.Portal.Services.Stedi;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -440,6 +441,23 @@ builder.Services.AddHttpClient<ICloudHealthOfficeEligibilityClient, CloudHealthO
 });
 builder.Services.AddScoped<IClaimLifecycleService, ClaimLifecycleService>();
 builder.Services.Configure<PayerConnectivityOptions>(builder.Configuration.GetSection("PayerConnectivity"));
+// Per-practice clearinghouse credentials. Keys live only in Key Vault
+// (stedi-apikey-{tenantId}); the handler attaches the key for the tenant stamped
+// on each request and refuses requests that carry no tenant.
+builder.Services.Configure<StediOptions>(builder.Configuration.GetSection(StediOptions.SectionName));
+builder.Services.AddMemoryCache();
+builder.Services.AddSingleton<IStediSecretReader, KeyVaultStediSecretReader>();
+builder.Services.AddSingleton<IStediCredentialProvider, StediCredentialProvider>();
+builder.Services.AddSingleton<IClearinghouseConnectionStore, ClearinghouseConnectionStore>();
+builder.Services.AddTransient<StediCredentialHandler>();
+builder.Services.AddHttpClient<IStediEligibilityClient, StediEligibilityClient>(client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(45);
+    client.DefaultRequestHeaders.Add("Accept", "application/json");
+}).AddHttpMessageHandler<StediCredentialHandler>();
+builder.Services.AddScoped<IEligibilityGateway, CloudHealthOfficeEligibilityGateway>();
+builder.Services.AddScoped<IEligibilityGateway, StediEligibilityGateway>();
+builder.Services.AddScoped<ITradingPartnerAdapter, ClearinghouseEligibilityAdapter>();
 builder.Services.AddScoped<ITradingPartnerAdapter, CloudHealthOfficeTradingPartnerAdapter>();
 if (builder.Environment.IsDevelopment())
     builder.Services.AddScoped<ITradingPartnerAdapter, MockEligibilityTradingPartnerAdapter>();
@@ -502,6 +520,7 @@ using (var scope = app.Services.CreateScope())
         // schema before the tenant bootstrap queries its settings table.
         await ReviewOutreachSchemaReconciliation.ApplyAsync(dbContext, databaseProvider, logger);
         await ClaimLifecycleSchemaReconciliation.ApplyAsync(dbContext, databaseProvider, logger);
+        await ClearinghouseConnectionSchemaReconciliation.ApplyAsync(dbContext, databaseProvider, logger);
 
         await InitialTenantBootstrap.ApplyAsync(dbContext, builder.Configuration);
 

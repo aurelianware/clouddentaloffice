@@ -71,6 +71,28 @@ param cloudHealthOfficeEligibilityApiKey string = ''
 @description('CDO insurance-plan payer IDs whose eligibility checks route through CloudHealthOffice.')
 param cloudHealthOfficeEligibilityPayerIds array = []
 
+@description('Key Vault URI holding stedi-apikey-{tenantId} secrets (main.bicep output keyVaultUri).')
+param keyVaultUri string = ''
+
+@description('Client ID of the user-assigned identity (main.bicep output identityClientId); lets DefaultAzureCredential pick it.')
+param identityClientId string = ''
+
+@description('Pilot only: allow practices in Shared mode to use Aurelianware\'s Stedi account.')
+param stediSharedAccountEnabled bool = false
+
+@description('Key Vault secret name of the shared Stedi key; used only when stediSharedAccountEnabled is true.')
+param stediSharedAccountSecretName string = ''
+
+// Per-practice Stedi keys are read from Key Vault at request time; no key is
+// passed to the app. Without a vault URI the Stedi path fails closed.
+var stediEnv = concat(
+  empty(keyVaultUri) ? [] : [ { name: 'Stedi__KeyVaultUri', value: keyVaultUri } ],
+  empty(identityClientId) ? [] : [ { name: 'AZURE_CLIENT_ID', value: identityClientId } ],
+  [
+    { name: 'Stedi__SharedAccount__Enabled', value: string(stediSharedAccountEnabled) }
+    { name: 'Stedi__SharedAccount__SecretName', value: stediSharedAccountSecretName }
+  ])
+
 // Eligibility is wired only when both the URL and the credential are supplied,
 // so a deploy without them leaves the portal exactly as before.
 var choEligibilityEnabled = !empty(cloudHealthOfficeEligibilityBaseUrl) && !empty(cloudHealthOfficeEligibilityApiKey)
@@ -171,7 +193,7 @@ resource portal 'Microsoft.App/containerApps@2024-03-01' = {
             { name: 'CloudHealthOffice__ApiKey', secretRef: 'cloudhealthoffice-api-key' }
             { name: 'CloudHealthOffice__BenefitPlanMappings__${cloudHealthOfficePayerId}', value: cloudHealthOfficeBenefitPlanId }
             { name: 'PayerConnectivity__Payers__${cloudHealthOfficePayerId}__PaymentEstimate__0', value: 'CloudHealthOffice' }
-          ], choEligibilityEnv)
+          ], choEligibilityEnv, stediEnv)
           probes: [
             // Liveness has no database dependency, so a transient database outage
             // does not cause the platform to restart an otherwise-healthy process.

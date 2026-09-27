@@ -318,7 +318,7 @@ public static class CloudHealthOfficeEligibilityMapper
     // are lifetime limits and must not be read as the annual maximum.
     private static readonly HashSet<string> AnnualServiceTypes = new(StringComparer.OrdinalIgnoreCase) { "35", "30", "" };
 
-    public static EligibilityResult ToResult(ChoEligibilityResponse response, string fallbackCorrelationId)
+    public static EligibilityResult ToResult(ChoEligibilityResponse response, string fallbackCorrelationId, string? source = null)
     {
         var status = ParseStatus(response.CoverageStatus);
         var benefits = response.Benefits ?? [];
@@ -340,7 +340,7 @@ public static class CloudHealthOfficeEligibilityMapper
             AnnualMaximumRemaining = Amount(benefits, Limitation, remaining: true),
             Benefits = benefits.Select(b => ToBenefit(b, status)).ToList(),
             Messages = messages.Distinct(StringComparer.OrdinalIgnoreCase).Take(MaxMessages).ToList(),
-            Source = CloudHealthOfficeEligibilityClient.SourceName,
+            Source = source ?? CloudHealthOfficeEligibilityClient.SourceName,
             VerifiedAt = response.CheckedAtUtc == default ? DateTimeOffset.UtcNow : response.CheckedAtUtc,
             ExternalTransactionId = response.CorrelationId
         };
