@@ -74,13 +74,13 @@ resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' = {
 }
 
 // Key Vault Secrets User: secrets getSecret + readMetadata (get/list). No write, delete, keys or certificates.
-var keyVaultSecretsUserRoleId = '4633458b-17de-408a-b874-0445c86b69e6'
+var vaultReaderRoleId = '4633458b-17de-408a-b874-0445c86b69e6'
 
 resource keyVaultSecretsUser 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(keyVault.id, identity.id, keyVaultSecretsUserRoleId)
+  name: guid(keyVault.id, identity.id, vaultReaderRoleId)
   scope: keyVault
   properties: {
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', keyVaultSecretsUserRoleId)
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', vaultReaderRoleId)
     principalId: identity.properties.principalId
     principalType: 'ServicePrincipal'
   }
