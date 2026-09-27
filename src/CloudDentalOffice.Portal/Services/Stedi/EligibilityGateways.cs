@@ -58,7 +58,8 @@ public sealed class ClearinghouseEligibilityAdapter(
             ?? throw new TreatmentEstimateUnavailableException("Eligibility checks are misconfigured. Contact support.");
 
         if (gateway.Kind == EligibilityGatewayKind.CloudHealthOffice)
-            logger.LogWarning("Tenant {TenantId} eligibility is routed through CloudHealthOffice's clearinghouse account", request.TenantId);
+            logger.LogWarning("Tenant {TenantId} eligibility is routed through CloudHealthOffice's clearinghouse account",
+                ClaimLifecycleMapper.SanitizeForLog(request.TenantId));
 
         return await gateway.CheckAsync(request, cancellationToken);
     }

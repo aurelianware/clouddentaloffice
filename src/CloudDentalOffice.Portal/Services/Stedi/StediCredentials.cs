@@ -264,7 +264,7 @@ public sealed class StediCredentialProvider : IStediCredentialProvider
             if (!StediSecretNames.IsValidSecretName(options.SharedAccount.SecretName))
                 throw Fail(tenantId, StediCredentialFailure.InvalidKeyReference, "The shared Stedi key reference is not configured.");
             secretName = options.SharedAccount.SecretName!;
-            _logger.LogWarning("Tenant {TenantId} is using the shared Aurelianware Stedi account", tenantId);
+            _logger.LogWarning("Tenant {TenantId} is using the shared Aurelianware Stedi account", ClaimLifecycleMapper.SanitizeForLog(tenantId));
         }
 
         var cacheKey = $"stedi-credential:{tenantId}:{secretName}:{connection.RotatedAt?.UtcTicks ?? 0}";
@@ -281,7 +281,8 @@ public sealed class StediCredentialProvider : IStediCredentialProvider
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            _logger.LogError("Key Vault lookup for tenant {TenantId} Stedi credential failed ({ErrorType})", tenantId, ex.GetType().Name);
+            _logger.LogError("Key Vault lookup for tenant {TenantId} Stedi credential failed ({ErrorType})",
+                ClaimLifecycleMapper.SanitizeForLog(tenantId), ex.GetType().Name);
             throw new StediCredentialUnavailableException(tenantId, StediCredentialFailure.KeyVaultUnavailable,
                 "Stedi credentials could not be read. Try again shortly.", ex);
         }
@@ -313,7 +314,7 @@ public sealed class StediCredentialProvider : IStediCredentialProvider
 
     private StediCredentialUnavailableException Fail(string tenantId, StediCredentialFailure failure, string message)
     {
-        _logger.LogWarning("Stedi credential unavailable for tenant {TenantId}: {Failure}", tenantId, failure);
+        _logger.LogWarning("Stedi credential unavailable for tenant {TenantId}: {Failure}", ClaimLifecycleMapper.SanitizeForLog(tenantId), failure);
         return new StediCredentialUnavailableException(tenantId, failure, message);
     }
 }

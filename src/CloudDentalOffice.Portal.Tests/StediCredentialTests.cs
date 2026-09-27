@@ -405,6 +405,22 @@ public sealed class StediCredentialTests : IDisposable
     }
 
     [Fact]
+    public async Task Tenant_values_cannot_forge_log_lines()
+    {
+        const string forged = "practice-a\r\nFORGED Stedi credential granted";
+
+        await Assert.ThrowsAsync<StediCredentialUnavailableException>(() => Credentials.GetAsync(forged));
+        await Assert.ThrowsAsync<TreatmentEstimateUnavailableException>(() =>
+            StediClient(new RecordingHandler(ActiveResponse)).CheckAsync(DependentRequest(forged)));
+
+        // EF Core's own SQL logs are multi-line by design; check the Stedi code's entries.
+        var ours = _logs.Entries.Where(e => e.Category.StartsWith("CloudDentalOffice.Portal.Services.Stedi", StringComparison.Ordinal)).ToList();
+        Assert.NotEmpty(ours);
+        Assert.All(ours, e => Assert.DoesNotContain('\n', e.Message));
+        Assert.All(ours, e => Assert.DoesNotContain('\r', e.Message));
+    }
+
+    [Fact]
     public async Task Nothing_logged_contains_a_key_or_patient_identity()
     {
         _options.SharedAccount = new SharedStediAccountOptions { Enabled = true, SecretName = "stedi-apikey-shared" };
@@ -542,17 +558,17 @@ public sealed class StediCredentialTests : IDisposable
 
     private sealed class CapturingLoggerProvider : ILoggerProvider
     {
-        public ConcurrentQueue<(LogLevel Level, string Message)> Entries { get; } = new();
-        public ILogger CreateLogger(string categoryName) => new Logger(Entries);
+        public ConcurrentQueue<(string Category, LogLevel Level, string Message)> Entries { get; } = new();
+        public ILogger CreateLogger(string categoryName) => new Logger(categoryName, Entries);
         public void Dispose() { }
 
-        private sealed class Logger(ConcurrentQueue<(LogLevel, string)> entries) : ILogger
+        private sealed class Logger(string category, ConcurrentQueue<(string, LogLevel, string)> entries) : ILogger
         {
             public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
             public bool IsEnabled(LogLevel logLevel) => true;
             public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception,
                 Func<TState, Exception?, string> formatter) =>
-                entries.Enqueue((logLevel, formatter(state, exception) + (exception is null ? "" : " " + exception)));
+                entries.Enqueue((category, logLevel, formatter(state, exception) + (exception is null ? "" : " " + exception)));
         }
     }
 }

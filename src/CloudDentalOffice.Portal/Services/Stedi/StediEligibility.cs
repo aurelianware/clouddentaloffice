@@ -80,13 +80,14 @@ public sealed class StediEligibilityClient(
         }
         catch (OperationCanceledException ex) when (!cancellationToken.IsCancellationRequested)
         {
-            logger.LogWarning("Stedi eligibility check {CorrelationId} for tenant {TenantId} timed out", correlationId, request.TenantId);
+            logger.LogWarning("Stedi eligibility check {CorrelationId} for tenant {TenantId} timed out",
+                ClaimLifecycleMapper.SanitizeForLog(correlationId), ClaimLifecycleMapper.SanitizeForLog(request.TenantId));
             throw new TreatmentEstimateUnavailableException("The eligibility check timed out. Try again.", ex);
         }
         catch (HttpRequestException ex)
         {
             logger.LogWarning("Stedi could not be reached for check {CorrelationId} tenant {TenantId} ({ErrorType})",
-                correlationId, request.TenantId, ex.GetType().Name);
+                ClaimLifecycleMapper.SanitizeForLog(correlationId), ClaimLifecycleMapper.SanitizeForLog(request.TenantId), ex.GetType().Name);
             throw new TreatmentEstimateUnavailableException("Eligibility checks are temporarily unavailable. Try again in a minute.", ex);
         }
 
@@ -94,7 +95,7 @@ public sealed class StediEligibilityClient(
         {
             var status = (int)response.StatusCode;
             logger.LogInformation("Stedi eligibility check {CorrelationId} for tenant {TenantId} payer {PayerId} returned HTTP {StatusCode}",
-                correlationId, request.TenantId, request.PayerId, status);
+                ClaimLifecycleMapper.SanitizeForLog(correlationId), ClaimLifecycleMapper.SanitizeForLog(request.TenantId), ClaimLifecycleMapper.SanitizeForLog(request.PayerId), status);
 
             switch (response.StatusCode)
             {
@@ -109,7 +110,8 @@ public sealed class StediEligibilityClient(
                     throw new TreatmentEstimateValidationException(
                         "The payer or clearinghouse rejected the request. Check the payer ID, member ID, names and dates of birth on the coverage.");
                 case HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden:
-                    logger.LogError("Stedi refused the credential for tenant {TenantId} (HTTP {StatusCode})", request.TenantId, status);
+                    logger.LogError("Stedi refused the credential for tenant {TenantId} (HTTP {StatusCode})",
+                        ClaimLifecycleMapper.SanitizeForLog(request.TenantId), status);
                     throw new TreatmentEstimateUnavailableException(
                         "This practice's Stedi account did not accept our credentials. Contact support.");
                 case HttpStatusCode.TooManyRequests or HttpStatusCode.ServiceUnavailable or HttpStatusCode.BadGateway or HttpStatusCode.GatewayTimeout:
