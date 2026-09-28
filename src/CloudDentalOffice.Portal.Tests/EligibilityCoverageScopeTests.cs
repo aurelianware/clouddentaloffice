@@ -55,6 +55,28 @@ public sealed class EligibilityCoverageScopeTests
     }
 
     [Fact]
+    public async Task Service_label_falls_back_to_the_service_type_code_when_names_are_omitted()
+    {
+        // serviceTypes omitted; "name" is the benefit line's name, not the service.
+        var result = await DirectCheck("""
+            {
+              "planStatus": [ { "statusCode": "1" } ],
+              "benefitsInformation": [
+                { "code": "1", "name": "Active Coverage", "serviceTypeCodes": ["35"] },
+                { "code": "I", "name": "Non-Covered", "serviceTypeCodes": ["38"] },
+                { "code": "1", "name": "Active Coverage", "serviceTypeCodes": ["ZZ"] }
+              ]
+            }
+            """);
+
+        Assert.Equal("Active coverage · Dental Care", result.Benefits.Single(b => b.ServiceTypeCode == "35").Description);
+        Assert.Equal("Not covered · Orthodontics", result.Benefits.Single(b => b.ServiceTypeCode == "38").Description);
+        // Unknown code and no name: no borrowed or duplicated label.
+        Assert.Equal("Active coverage", result.Benefits.Single(b => b.ServiceTypeCode == "ZZ").Description);
+        Assert.False(result.DentalCareNotCovered);
+    }
+
+    [Fact]
     public void Dental_plan_with_benefits_is_not_flagged()
     {
         var result = Map(

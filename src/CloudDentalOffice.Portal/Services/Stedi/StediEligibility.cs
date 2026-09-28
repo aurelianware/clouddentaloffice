@@ -233,7 +233,7 @@ internal static class StediEligibilityWire
             // Stedi's "name" is the benefit line's name ("Active Coverage", "Non-Covered");
             // the service type's own name is in serviceTypes.
             BenefitName = b.Name,
-            ServiceTypeName = b.ServiceTypes?.FirstOrDefault(),
+            ServiceTypeName = ServiceTypeName(b),
             CoverageLevel = b.CoverageLevelCode,
             // In network only when the payer says so (Y) or omits the indicator.
             InNetwork = string.IsNullOrWhiteSpace(b.InPlanNetworkIndicatorCode) ||
@@ -245,6 +245,36 @@ internal static class StediEligibilityWire
             CoinsurancePercent = string.Equals(b.Code, "A", StringComparison.OrdinalIgnoreCase) ? percent : null,
             Messages = b.AdditionalInformation?.Select(a => a.Description).Where(d => !string.IsNullOrWhiteSpace(d)).Select(d => d!).ToList()
         };
+    }
+
+    // X12 EB03 names for the service types a dental office sees. Used when Stedi
+    // omits serviceTypes, so a line keeps its service label without borrowing the
+    // line's own name (which is the benefit, e.g. "Active Coverage").
+    private static readonly Dictionary<string, string> ServiceTypeNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["1"] = "Medical Care",
+        ["23"] = "Diagnostic Dental",
+        ["24"] = "Periodontics",
+        ["25"] = "Restorative",
+        ["26"] = "Endodontics",
+        ["27"] = "Maxillofacial Prosthetics",
+        ["28"] = "Adjunctive Dental Services",
+        ["30"] = "Health Benefit Plan Coverage",
+        ["35"] = "Dental Care",
+        ["36"] = "Dental Crowns",
+        ["37"] = "Dental Accident",
+        ["38"] = "Orthodontics",
+        ["39"] = "Prosthodontics",
+        ["40"] = "Oral Surgery",
+        ["41"] = "Routine (Preventive) Dental"
+    };
+
+    internal static string? ServiceTypeName(StediBenefit b)
+    {
+        var named = b.ServiceTypes?.FirstOrDefault(n => !string.IsNullOrWhiteSpace(n));
+        if (named is not null) return named;
+        var code = b.ServiceTypeCodes?.FirstOrDefault(c => !string.IsNullOrWhiteSpace(c))?.Trim();
+        return code is not null && ServiceTypeNames.TryGetValue(code, out var name) ? name : null;
     }
 
     // Active EB01 is "1"; inactive "6". Prefer plan status, then benefit lines.
