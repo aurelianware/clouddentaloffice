@@ -469,6 +469,7 @@ builder.Services.AddScoped<ITradingPartnerAdapter, CloudHealthOfficeTradingPartn
 if (builder.Environment.IsDevelopment())
     builder.Services.AddScoped<ITradingPartnerAdapter, MockEligibilityTradingPartnerAdapter>();
 builder.Services.AddScoped<ITransactionAuditSink, LoggingTransactionAuditSink>();
+builder.Services.AddScoped<IEligibilityVerificationService, EligibilityVerificationService>();
 builder.Services.AddScoped<IPayerTransactionRouter, PayerTransactionRouter>();
 builder.Services.AddScoped<IEdiSubmissionService, EdiSubmissionService>();
 builder.Services.AddScoped<ITokenService, TokenService>();
@@ -529,6 +530,7 @@ using (var scope = app.Services.CreateScope())
         await ClaimLifecycleSchemaReconciliation.ApplyAsync(dbContext, databaseProvider, logger);
         await ClearinghouseConnectionSchemaReconciliation.ApplyAsync(dbContext, databaseProvider, logger);
         await PatientCoverageSchemaReconciliation.ApplyAsync(dbContext, databaseProvider, logger);
+        await EligibilityVerificationSchemaReconciliation.ApplyAsync(dbContext, databaseProvider, logger);
 
         await InitialTenantBootstrap.ApplyAsync(dbContext, builder.Configuration);
 

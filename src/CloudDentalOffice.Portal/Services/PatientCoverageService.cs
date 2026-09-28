@@ -183,6 +183,13 @@ public sealed class PatientCoverageService(
 
     private static void Apply(PatientInsurance coverage, CoverageInput input, bool active)
     {
+        // A previous eligibility answer was for the old details; don't show it as current.
+        if (ChangesWhatIsVerified(coverage, input))
+        {
+            coverage.LastVerifiedAt = null;
+            coverage.LastVerificationState = null;
+        }
+
         coverage.InsurancePlanId = input.InsurancePlanId;
         coverage.MemberId = input.MemberId;
         coverage.GroupNumber = input.GroupNumber;
@@ -195,6 +202,16 @@ public sealed class PatientCoverageService(
         coverage.TerminationDate = input.TerminationDate;
         coverage.IsActive = active;
     }
+
+    /// <summary>The fields an eligibility request is built from (see <see cref="EligibilityRequestBuilder"/>).</summary>
+    internal static bool ChangesWhatIsVerified(PatientInsurance coverage, CoverageInput input) =>
+        coverage.InsurancePlanId != input.InsurancePlanId ||
+        !string.Equals(coverage.MemberId, input.MemberId, StringComparison.Ordinal) ||
+        !string.Equals(coverage.GroupNumber, input.GroupNumber, StringComparison.Ordinal) ||
+        !string.Equals(coverage.RelationshipToSubscriber, input.RelationshipToSubscriber, StringComparison.Ordinal) ||
+        !string.Equals(coverage.SubscriberFirstName, input.SubscriberFirstName, StringComparison.Ordinal) ||
+        !string.Equals(coverage.SubscriberLastName, input.SubscriberLastName, StringComparison.Ordinal) ||
+        coverage.SubscriberDateOfBirth != input.SubscriberDateOfBirth;
 
     /// <summary>
     /// Active when there is no termination date or it is in the future. A
