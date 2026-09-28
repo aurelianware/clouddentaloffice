@@ -59,6 +59,7 @@ public class CloudDentalDbContext : DbContext
     public DbSet<PatientBillingNotification> PatientBillingNotifications => Set<PatientBillingNotification>();
     public DbSet<TenantClearinghouseConnection> TenantClearinghouseConnections => Set<TenantClearinghouseConnection>();
     public DbSet<EligibilityVerification> EligibilityVerifications => Set<EligibilityVerification>();
+    public DbSet<CoverageVerification> CoverageVerifications => Set<CoverageVerification>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -353,6 +354,17 @@ public class CloudDentalDbContext : DbContext
                 .HasForeignKey(x => x.PatientInsuranceId)
                 .OnDelete(DeleteBehavior.Cascade);
             entity.HasIndex(x => new { x.TenantId, x.PatientInsuranceId, x.CheckedAt });
+            entity.HasQueryFilter(x => x.TenantId == CurrentTenantId);
+        });
+
+        // Coverage status per upcoming appointment. Written with an explicit tenant.
+        modelBuilder.Entity<CoverageVerification>(entity =>
+        {
+            entity.Property(x => x.TenantId).HasMaxLength(64).IsRequired();
+            entity.Property(x => x.State).HasConversion<string>().HasMaxLength(24);
+            entity.Property(x => x.Reason).HasMaxLength(500);
+            entity.HasIndex(x => new { x.TenantId, x.AppointmentId }).IsUnique();
+            entity.HasIndex(x => new { x.TenantId, x.ClosedAt, x.AppointmentStart });
             entity.HasQueryFilter(x => x.TenantId == CurrentTenantId);
         });
 
@@ -786,7 +798,7 @@ public class CloudDentalDbContext : DbContext
                         throw new InvalidOperationException(
                             "A clearinghouse connection must be saved with an explicit tenant.");
                     }
-                    if (entry.Entity is EligibilityVerification)
+                    if (entry.Entity is EligibilityVerification or CoverageVerification)
                     {
                         throw new InvalidOperationException(
                             "An eligibility verification must be saved with an explicit tenant.");
