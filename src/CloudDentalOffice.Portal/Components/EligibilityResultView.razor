@@ -1,0 +1,74 @@
+@using CloudDentalOffice.Portal.Models
+
+@* Normalized eligibility answer. Shared by the treatment-plan estimate and the patient insurance dialog. *@
+<MudAlert Class="mt-3" Variant="Variant.Outlined" Severity="@Severity">
+    <strong>@Headline</strong> via @Result.Source · verified @Result.VerifiedAt.LocalDateTime.ToString("g")
+    @if (DentalGap)
+    {
+        <div><strong>Dental care isn't covered by this plan.</strong> It may be medical-only coverage; check whether the patient has a separate dental plan.</div>
+    }
+    @if (!string.IsNullOrWhiteSpace(Result.PlanName))
+    {
+        <div>Plan: @Result.PlanName</div>
+    }
+    @if (Result.EffectiveDate.HasValue || Result.TerminationDate.HasValue)
+    {
+        <div>Coverage: @(Result.EffectiveDate?.ToString("d") ?? "—") to @(Result.TerminationDate?.ToString("d") ?? "present")</div>
+    }
+    @if (Result.AnnualMaximum.HasValue || Result.AnnualMaximumRemaining.HasValue)
+    {
+        <div>Annual maximum: @Money(Result.AnnualMaximum) · remaining @Money(Result.AnnualMaximumRemaining)</div>
+    }
+    @if (Result.Deductible.HasValue || Result.DeductibleRemaining.HasValue)
+    {
+        <div>Deductible: @Money(Result.Deductible) · remaining @Money(Result.DeductibleRemaining)</div>
+    }
+    @if (Result.Benefits.Count > 0)
+    {
+        <MudSimpleTable Dense="true" Class="mt-2" Style="background:transparent;">
+            <thead>
+                <tr><th scope="col">Benefit</th><th scope="col">Status</th><th scope="col">Copay</th><th scope="col">Coinsurance</th><th scope="col">Limit</th><th scope="col">Remaining</th></tr>
+            </thead>
+            <tbody>
+                @foreach (var benefit in Result.Benefits)
+                {
+                    <tr>
+                        <td>@benefit.Description</td>
+                        <td>@StatusLabel(benefit.Status)</td>
+                        <td>@BenefitValue(benefit.Copay, "C2")</td>
+                        <td>@BenefitValue(benefit.Coinsurance, "P0")</td>
+                        <td>@BenefitValue(benefit.Limit, "C2")</td>
+                        <td>@BenefitValue(benefit.Remaining, "C2")</td>
+                    </tr>
+                }
+            </tbody>
+        </MudSimpleTable>
+    }
+    @foreach (var note in Result.Messages.Take(5))
+    {
+        <div class="mt-1" style="font-size: 0.85em;">• @note</div>
+    }
+</MudAlert>
+
+@code {
+    [Parameter, EditorRequired] public EligibilityResult Result { get; set; } = default!;
+
+    private bool DentalGap => Result.CoverageStatus == CoverageStatus.Active && Result.DentalCareNotCovered;
+
+    private Severity Severity => Result.CoverageStatus == CoverageStatus.Active && !DentalGap ? Severity.Success : Severity.Warning;
+
+    private string Headline => DentalGap
+        ? "Plan active, dental not covered"
+        : $"{Result.CoverageStatus} coverage";
+
+    private static string StatusLabel(CoverageStatus status) => status switch
+    {
+        CoverageStatus.Active => "Covered",
+        CoverageStatus.Inactive => "Not covered",
+        _ => "Info"
+    };
+
+    private static string Money(decimal? value) => value.HasValue ? value.Value.ToString("C2") : "not reported";
+
+    private static string BenefitValue(decimal? value, string format) => value.HasValue ? value.Value.ToString(format) : "—";
+}

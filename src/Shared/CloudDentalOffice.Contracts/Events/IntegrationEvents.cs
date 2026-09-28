@@ -116,6 +116,31 @@ public record StripeRefundWebhookEvent(
     string RefundStatus,
     bool LiveMode) : IntegrationEvent;
 
+/// <summary>
+/// A patient's answer from a coverage intake link, relayed by the public
+/// IntakeService to the portal. Carries the signed token so the portal verifies
+/// it again rather than trusting the broker. Contains patient-entered plan details.
+/// </summary>
+public record CoverageIntakeSubmittedEvent(
+    string TenantId,
+    Guid RequestId,
+    string Token,
+    string Answer) : IntegrationEvent
+{
+    public const string NoInsurance = "NoInsurance";
+    public const string Plan = "Plan";
+
+    public string? CarrierName { get; init; }
+    public string? MemberId { get; init; }
+    public string? GroupNumber { get; init; }
+    /// <summary>Self, Spouse, Child or Other.</summary>
+    public string? RelationshipToSubscriber { get; init; }
+    public string? SubscriberFirstName { get; init; }
+    public string? SubscriberLastName { get; init; }
+    public DateOnly? SubscriberDateOfBirth { get; init; }
+    public DateTime SubmittedAtUtc { get; init; }
+}
+
 // ── Claims Events ──
 public record ClaimCreatedEvent(Guid ClaimId, Guid PatientId, decimal TotalCharge) : IntegrationEvent;
 public record ClaimSubmittedEvent(Guid ClaimId, string? ClaimControlNumber, string SubmissionMethod) : IntegrationEvent;

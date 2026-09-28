@@ -192,11 +192,18 @@ public sealed class SchedulingTenantAuthorizationHandler(
         var tenantId = user.FindFirst("TenantId")?.Value ?? user.FindFirst("tenant_id")?.Value
             ?? user.FindFirst("tenantId")?.Value;
         if (string.IsNullOrWhiteSpace(tenantId)) throw new UnauthorizedAccessException("Tenant context is required.");
+        AddTenantToken(request, tenantId, user.FindAll(ClaimTypes.Role).Select(role => role.Value), configuration);
+    }
+
+    /// <summary>A short-lived scheduling token for exactly this tenant, carrying only the given roles.</summary>
+    internal static void AddTenantToken(HttpRequestMessage request, string tenantId, IEnumerable<string> roles,
+        IConfiguration configuration)
+    {
         var key = configuration["Jwt:Key"];
         if (string.IsNullOrWhiteSpace(key) || Encoding.UTF8.GetByteCount(key) < JwtSettings.MinimumKeyBytes)
             throw new InvalidOperationException("Scheduling authentication is not configured.");
         var claims = new List<Claim> { new("tenant_id", tenantId) };
-        claims.AddRange(user.FindAll(ClaimTypes.Role).Select(role => new Claim(ClaimTypes.Role, role.Value)));
+        claims.AddRange(roles.Select(role => new Claim(ClaimTypes.Role, role)));
         var token = new JwtSecurityToken(
             issuer: configuration["Jwt:Issuer"] ?? "CloudDentalOffice",
             audience: configuration["Jwt:Audience"] ?? "CloudDentalOffice",

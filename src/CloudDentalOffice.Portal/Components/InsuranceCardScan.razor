@@ -1,0 +1,176 @@
+@using CloudDentalOffice.Contracts.Vision
+@using CloudDentalOffice.Portal.Models
+@using CloudDentalOffice.Portal.Services.Stedi
+@inject IVisionService Vision
+@inject ICardPayerResolver Payers
+@inject IWebHostEnvironment Environment
+@inject ILogger<InsuranceCardScan> Logger
+
+@* Reads a dental card photo, finds the clearinghouse payer it means, and hands the
+   confirmed details to the coverage form. Nothing is saved until staff add the coverage. *@
+<MudPaper Elevation="0" Class="pa-3 mb-3" Style="background: transparent; border: 1px solid rgba(0,255,255,.3);">
+    <MudText Typo="Typo.subtitle2" Style="color:#00ffff;">Scan the patient's dental card</MudText>
+    <MudText Typo="Typo.caption" Style="color:#b0b0b0;">Photo of the front (and the back, if the payer or phone number is there). You'll confirm everything before it's saved.</MudText>
+
+    <MudStack Row="true" Class="mt-2" AlignItems="AlignItems.Center" Wrap="Wrap.Wrap">
+        <MudFileUpload T="IBrowserFile" Accept=".jpg,.jpeg,.png" FilesChanged="@(f => _front = f)">
+            <ActivatorContent>
+                <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Info" StartIcon="@Icons.Material.Filled.CameraAlt">
+                    @(_front is null ? "Front of card" : $"Front: {_front.Name}")
+                </MudButton>
+            </ActivatorContent>
+        </MudFileUpload>
+        <MudFileUpload T="IBrowserFile" Accept=".jpg,.jpeg,.png" FilesChanged="@(f => _back = f)">
+            <ActivatorContent>
+                <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Info" StartIcon="@Icons.Material.Filled.FlipCameraAndroid">
+                    @(_back is null ? "Back (optional)" : $"Back: {_back.Name}")
+                </MudButton>
+            </ActivatorContent>
+        </MudFileUpload>
+        <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Primary" Disabled="@(_front is null || _busy)" OnClick="ReadAsync">
+            @(_busy ? "Reading…" : "Read card")
+        </MudButton>
+    </MudStack>
+
+    @if (_message is not null)
+    {
+        <MudAlert Class="mt-2" Severity="@_messageSeverity" Variant="Variant.Outlined" Dense="true">@_message</MudAlert>
+    }
+
+    @if (_scan is not null && _resolution is not null)
+    {
+        <MudSimpleTable Dense="true" Class="mt-2" Style="background:transparent;">
+            <tbody>
+                <tr><td style="color:#808080;width:160px;">Company on card</td><td>@(_scan.PayerName ?? "—")</td></tr>
+                <tr><td style="color:#808080;">Payer ID on card</td><td>@(_scan.PayerId ?? "—")</td></tr>
+                <tr><td style="color:#808080;">Member ID</td><td>@(_scan.MemberId ?? "—")</td></tr>
+                <tr><td style="color:#808080;">Group</td><td>@(_scan.GroupNumber ?? "—")</td></tr>
+                <tr><td style="color:#808080;">Name on card</td><td>@(_scan.SubscriberName ?? "—")</td></tr>
+                <tr><td style="color:#808080;">Phone on card</td><td>@(_scan.PhoneNumber ?? "—")</td></tr>
+                <tr><td style="color:#808080;">Patient's state</td><td>@(string.IsNullOrWhiteSpace(Patient.State) ? "—" : Patient.State)</td></tr>
+            </tbody>
+        </MudSimpleTable>
+
+        @if (_resolution.Candidates.Count == 0)
+        {
+            <MudAlert Class="mt-2" Severity="Severity.Warning" Variant="Variant.Outlined" Dense="true">
+                No payer matched this card. Search under Payers, or call the number on the card to ask for their payer ID.
+            </MudAlert>
+        }
+        else
+        {
+            <MudText Typo="Typo.body2" Class="mt-3">Which payer is this card? @(_resolution.Suggested is null ? "More than one could match; the phone number and state can help." : "")</MudText>
+            <MudRadioGroup T="CardPayerCandidate" @bind-Value="_chosen">
+                @foreach (var candidate in _resolution.Candidates)
+                {
+                    <MudRadio T="CardPayerCandidate" Value="@candidate" Color="Color.Primary" Dense="true">
+                        <strong>@candidate.PayerName</strong> (@candidate.PayerId)
+                        <span style="color:#b0b0b0;"> — @candidate.Why@(candidate.InsurancePlanId is null ? " Will be added to your payers." : "")</span>
+                    </MudRadio>
+                }
+            </MudRadioGroup>
+            <MudButton Class="mt-2" Size="Size.Small" Variant="Variant.Filled" Color="Color.Primary"
+                       Disabled="@(_chosen is null || _busy)" OnClick="UseAsync">Use these details</MudButton>
+        }
+    }
+</MudPaper>
+
+@code {
+    [Parameter, EditorRequired] public Patient Patient { get; set; } = default!;
+
+    /// <summary>The confirmed payer plan and card details, for the coverage form.</summary>
+    [Parameter] public EventCallback<CardScanApplied> OnApplied { get; set; }
+
+    public sealed record CardScanApplied(InsurancePlan Plan, string? MemberId, string? GroupNumber, bool CardNamesSomeoneElse);
+
+    // Phone photos are large; the OCR service accepts up to 20 MB.
+    private const long MaxImageBytes = 10 * 1024 * 1024;
+
+    private IBrowserFile? _front;
+    private IBrowserFile? _back;
+    private bool _busy;
+    private string? _message;
+    private Severity _messageSeverity = Severity.Info;
+    private InsuranceCardScanDto? _scan;
+    private CardPayerResolution? _resolution;
+    private CardPayerCandidate? _chosen;
+
+    private async Task ReadAsync()
+    {
+        if (_front is null) return;
+        _busy = true;
+        _message = null;
+        _scan = null;
+        _resolution = null;
+        _chosen = null;
+        try
+        {
+            var scan = await Vision.ScanInsuranceCardAsync(new ScanInsuranceCardRequest
+            {
+                ImageBase64 = Convert.ToBase64String(await ReadAsync(_front)),
+                BackImageBase64 = _back is null ? null : Convert.ToBase64String(await ReadAsync(_back))
+            });
+            // A simulated read invents a card; outside development it must never reach a patient's record.
+            if (scan.Simulated && !Environment.IsDevelopment())
+            {
+                Show("Card reading isn't set up for this practice yet. Enter the details from the card by hand.", Severity.Warning);
+                return;
+            }
+
+            _resolution = await Payers.ResolveAsync(scan.PayerName, scan.PayerId, Patient.State);
+            _scan = scan;
+            _chosen = _resolution.Suggested;
+            if (scan.Simulated) Show("Development: the scanner is simulated, so these details are made up.", Severity.Warning);
+            else if (_resolution.Message is not null) Show(_resolution.Message, Severity.Info);
+            else if (scan.MemberId is null) Show("The member ID couldn't be read. Type it in after using these details.", Severity.Info);
+        }
+        catch (IOException)
+        {
+            Show("That photo is too large. Use one under 10 MB.", Severity.Warning);
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or InvalidOperationException)
+        {
+            Logger.LogWarning("Card scan failed for patient {PatientId} ({FailureKind}).", Patient.PatientId, ex.GetType().Name);
+            Show("The card couldn't be read right now. Try again, or enter the details by hand.", Severity.Warning);
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task UseAsync()
+    {
+        if (_chosen is null || _scan is null) return;
+        _busy = true;
+        try
+        {
+            var plan = await Payers.UseAsync(_chosen);
+            await OnApplied.InvokeAsync(new(plan, _scan.MemberId, _scan.GroupNumber, NamesSomeoneElse(_scan.SubscriberName)));
+            Show($"Filled in from the card with {plan.PayerName}. Check the details, then add the coverage.", Severity.Success);
+        }
+        catch (StediPayerDirectoryException ex) { Show(ex.Message, Severity.Warning); }
+        catch (UnauthorizedAccessException) { Show("Only practice staff can add payers.", Severity.Warning); }
+        finally { _busy = false; }
+    }
+
+    /// <summary>True when the card names someone and it isn't clearly the patient.</summary>
+    private bool NamesSomeoneElse(string? cardName)
+    {
+        if (string.IsNullOrWhiteSpace(cardName)) return false;
+        var words = cardName.Split(new[] { ' ', ',', '.' }, StringSplitOptions.RemoveEmptyEntries)
+            .Select(w => w.ToLowerInvariant()).ToHashSet();
+        return !(words.Contains(Patient.FirstName.Trim().ToLowerInvariant()) && words.Contains(Patient.LastName.Trim().ToLowerInvariant()));
+    }
+
+    private static async Task<byte[]> ReadAsync(IBrowserFile file)
+    {
+        await using var stream = file.OpenReadStream(MaxImageBytes);
+        using var buffer = new MemoryStream();
+        await stream.CopyToAsync(buffer);
+        return buffer.ToArray();
+    }
+
+    private void Show(string message, Severity severity)
+    {
+        _message = message;
+        _messageSeverity = severity;
+    }
+}

@@ -47,6 +47,9 @@ public static partial class EligibilityRequestBuilder
             throw new TreatmentEstimateValidationException("Select a rendering provider with an NPI before checking eligibility.");
         if (!NpiPattern().IsMatch(provider.NPI.Trim()))
             throw new TreatmentEstimateValidationException("The rendering provider's NPI must be 10 digits.");
+        // Clearinghouses require the provider's name alongside the NPI.
+        var providerFirst = Required(provider.FirstName, "The rendering provider's first and last name are required for eligibility checks.");
+        var providerLast = Required(provider.LastName, "The rendering provider's first and last name are required for eligibility checks.");
 
         // CHO accepts service dates from two years back to one year ahead.
         var today = DateOnly.FromDateTime(DateTime.Today);
@@ -100,6 +103,8 @@ public static partial class EligibilityRequestBuilder
             Dependent = dependent,
             GroupNumber = string.IsNullOrWhiteSpace(insurance.GroupNumber) ? null : insurance.GroupNumber.Trim(),
             ProviderNpi = provider.NPI.Trim(),
+            ProviderFirstName = providerFirst,
+            ProviderLastName = providerLast,
             ServiceDate = serviceDate
         };
     }
@@ -177,13 +182,18 @@ public sealed class CloudHealthOfficeEligibilityClient : ICloudHealthOfficeEligi
     {
         if (!_options.IsConfigured)
             throw new TreatmentEstimateUnavailableException("Eligibility checks are not configured for this environment.");
-        if (!Uri.TryCreate(_options.BaseUrl, UriKind.Absolute, out var baseUri) ||
+        // The request carries the API key and the member's identity, so only a plain HTTPS origin is accepted.
+        if (!Uri.TryCreate(_options.BaseUrl, UriKind.Absolute, out var baseUri) || baseUri.Scheme != Uri.UriSchemeHttps ||
+            !string.IsNullOrEmpty(baseUri.UserInfo) || baseUri.AbsolutePath != "/" || !string.IsNullOrEmpty(baseUri.Query) || !string.IsNullOrEmpty(baseUri.Fragment) ||
             !Uri.TryCreate(_options.CheckPath, UriKind.Relative, out _) || _options.CheckPath.StartsWith("//", StringComparison.Ordinal))
             throw new TreatmentEstimateUnavailableException("Eligibility checks are misconfigured. Contact support.");
         if (string.IsNullOrWhiteSpace(_tenantProvider.TenantId) || request.TenantId != _tenantProvider.TenantId)
             throw new UnauthorizedAccessException("The eligibility request is outside the active tenant.");
 
         var correlationId = request.CorrelationId ?? Guid.NewGuid().ToString("N");
+        var logCorrelationId = ForLog(correlationId);
+        var logTenantId = ForLog(request.TenantId);
+        var logPayerId = ForLog(request.PayerId);
         using var message = new HttpRequestMessage(HttpMethod.Post, new Uri(baseUri, _options.CheckPath));
         message.Headers.Add("X-Api-Key", _options.ApiKey);
         message.Headers.Add("X-Tenant-ID", request.TenantId);
@@ -197,13 +207,13 @@ public sealed class CloudHealthOfficeEligibilityClient : ICloudHealthOfficeEligi
         catch (OperationCanceledException ex) when (!cancellationToken.IsCancellationRequested)
         {
             _logger.LogWarning("Eligibility check {CorrelationId} for tenant {TenantId} payer {PayerId} timed out",
-                correlationId, request.TenantId, request.PayerId);
+                logCorrelationId, logTenantId, logPayerId);
             throw new TreatmentEstimateUnavailableException("The eligibility check timed out. Try again.", ex);
         }
         catch (HttpRequestException ex)
         {
             _logger.LogWarning(ex, "Eligibility service could not be reached for check {CorrelationId} tenant {TenantId}",
-                correlationId, request.TenantId);
+                logCorrelationId, logTenantId);
             throw new TreatmentEstimateUnavailableException("Eligibility checks are temporarily unavailable. Try again in a minute.", ex);
         }
 
@@ -211,7 +221,7 @@ public sealed class CloudHealthOfficeEligibilityClient : ICloudHealthOfficeEligi
         {
             var status = (int)response.StatusCode;
             _logger.LogInformation("Eligibility check {CorrelationId} for tenant {TenantId} payer {PayerId} returned HTTP {StatusCode}",
-                correlationId, request.TenantId, request.PayerId, status);
+                logCorrelationId, logTenantId, logPayerId, status);
 
             switch (response.StatusCode)
             {
@@ -233,7 +243,7 @@ public sealed class CloudHealthOfficeEligibilityClient : ICloudHealthOfficeEligi
                 }
                 case HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden:
                     _logger.LogError("Eligibility service refused CDO's credential for tenant {TenantId} (HTTP {StatusCode})",
-                        request.TenantId, status);
+                        logTenantId, status);
                     throw new TreatmentEstimateUnavailableException(
                         "Eligibility checks are not authorized for this practice yet. Contact support.");
                 case HttpStatusCode.ServiceUnavailable or HttpStatusCode.TooManyRequests:
@@ -246,10 +256,20 @@ public sealed class CloudHealthOfficeEligibilityClient : ICloudHealthOfficeEligi
         }
     }
 
+    // Tenant, payer and correlation IDs come from stored or caller-supplied data; strip line breaks
+    // and other control characters so a value can't forge extra log entries. The trailing Replace
+    // calls are what CodeQL's log-forging query recognizes as a sanitizer.
+    internal static string ForLog(string? value) =>
+        string.IsNullOrEmpty(value)
+            ? string.Empty
+            : new string(value.Where(c => !char.IsControl(c)).ToArray()).Replace("\r", string.Empty).Replace("\n", string.Empty);
+
     internal static ChoEligibilityRequest ToWire(NormalizedEligibilityRequest request, string correlationId) => new()
     {
         PayerId = request.PayerId,
-        Provider = new ChoProvider { Npi = request.ProviderNpi },
+        // CHO's contract carries one provider name field; its clearinghouse
+        // requires a name with the NPI, so send the rendering provider's name.
+        Provider = new ChoProvider { Npi = request.ProviderNpi, OrganizationName = ProviderName(request) },
         Subscriber = new ChoPerson
         {
             MemberId = request.MemberId,
@@ -272,6 +292,14 @@ public sealed class CloudHealthOfficeEligibilityClient : ICloudHealthOfficeEligi
         ServiceDate = request.ServiceDate,
         CorrelationId = correlationId
     };
+
+    // CHO accepts at most 60 characters here; longer names are dropped rather than rejected.
+    internal static string? ProviderName(NormalizedEligibilityRequest request)
+    {
+        var name = string.Join(' ', new[] { request.ProviderFirstName, request.ProviderLastName }
+            .Where(p => !string.IsNullOrWhiteSpace(p)).Select(p => p!.Trim()));
+        return name.Length is > 0 and <= 60 ? name : null;
+    }
 
     private static async Task<T?> ReadAsync<T>(HttpResponseMessage response, CancellationToken cancellationToken) where T : class
     {
@@ -305,7 +333,7 @@ public static class CloudHealthOfficeEligibilityMapper
     // are lifetime limits and must not be read as the annual maximum.
     private static readonly HashSet<string> AnnualServiceTypes = new(StringComparer.OrdinalIgnoreCase) { "35", "30", "" };
 
-    public static EligibilityResult ToResult(ChoEligibilityResponse response, string fallbackCorrelationId)
+    public static EligibilityResult ToResult(ChoEligibilityResponse response, string fallbackCorrelationId, string? source = null)
     {
         var status = ParseStatus(response.CoverageStatus);
         var benefits = response.Benefits ?? [];
@@ -318,6 +346,7 @@ public static class CloudHealthOfficeEligibilityMapper
         {
             CorrelationId = string.IsNullOrWhiteSpace(response.CorrelationId) ? fallbackCorrelationId : response.CorrelationId,
             CoverageStatus = status,
+            DentalCareNotCovered = DentalNotCovered(benefits),
             PlanName = response.PlanName,
             EffectiveDate = response.CoverageStart,
             TerminationDate = response.CoverageEnd,
@@ -327,7 +356,7 @@ public static class CloudHealthOfficeEligibilityMapper
             AnnualMaximumRemaining = Amount(benefits, Limitation, remaining: true),
             Benefits = benefits.Select(b => ToBenefit(b, status)).ToList(),
             Messages = messages.Distinct(StringComparer.OrdinalIgnoreCase).Take(MaxMessages).ToList(),
-            Source = CloudHealthOfficeEligibilityClient.SourceName,
+            Source = source ?? CloudHealthOfficeEligibilityClient.SourceName,
             VerifiedAt = response.CheckedAtUtc == default ? DateTimeOffset.UtcNow : response.CheckedAtUtc,
             ExternalTransactionId = response.CorrelationId
         };
@@ -381,7 +410,9 @@ public static class CloudHealthOfficeEligibilityMapper
         var status = code switch
         {
             "1" => CoverageStatus.Active,
-            "6" => CoverageStatus.Inactive,
+            "6" or NonCovered => CoverageStatus.Inactive,
+            // Informational lines describe other payers or contacts, not coverage.
+            _ when code is not null && InformationalCodes.Contains(code) => CoverageStatus.Unknown,
             _ => overall
         };
 
@@ -406,7 +437,9 @@ public static class CloudHealthOfficeEligibilityMapper
             CoInsurance => "Coinsurance",
             CoPayment => "Copay",
             "G" => "Out-of-pocket",
-            _ => null
+            NonCovered => "Not covered",
+            // Otherwise use the payer's own name for the line (e.g. "Other Source of Data").
+            _ => string.IsNullOrWhiteSpace(b.BenefitName) ? null : b.BenefitName.Trim()
         };
         var parts = new[]
         {
@@ -417,6 +450,32 @@ public static class CloudHealthOfficeEligibilityMapper
         };
         var text = string.Join(" · ", parts.Where(p => !string.IsNullOrWhiteSpace(p)));
         return string.IsNullOrWhiteSpace(text) ? "Benefit" : text;
+    }
+
+    // EB01 "I" = Non-Covered. Informational EB01 codes: L primary care provider,
+    // N services restricted to provider, P benefit disclaimer, R other or
+    // additional payer, U contact following entity, W other source of data,
+    // X health care facility, Y spend down.
+    private const string NonCovered = "I";
+    private const string DentalCare = "35";
+    private static readonly HashSet<string> InformationalCodes = new(StringComparer.OrdinalIgnoreCase)
+        { "L", "N", "P", "R", "U", "W", "X", "Y" };
+
+    /// <summary>
+    /// Dental care is not covered when the payer says so for service type 35, or
+    /// sends a non-covered line without a service type while reporting nothing
+    /// dental as covered (the inquiry itself asked about dental care).
+    /// </summary>
+    internal static bool DentalNotCovered(IReadOnlyList<ChoBenefit> benefits)
+    {
+        static string? Code(ChoBenefit b) => b.BenefitCode?.Trim().ToUpperInvariant();
+        static bool IsDental(ChoBenefit b) => string.Equals(b.ServiceTypeCode?.Trim(), DentalCare, StringComparison.Ordinal);
+
+        if (benefits.Any(b => Code(b) == NonCovered && IsDental(b))) return true;
+        var unscopedNonCovered = benefits.Any(b => Code(b) == NonCovered && string.IsNullOrWhiteSpace(b.ServiceTypeCode));
+        var dentalCovered = benefits.Any(b => IsDental(b) && Code(b) is not (NonCovered or "6") &&
+                                              !InformationalCodes.Contains(Code(b) ?? string.Empty));
+        return unscopedNonCovered && !dentalCovered;
     }
 
     private static CoverageStatus ParseStatus(string? value) =>
@@ -505,6 +564,9 @@ public sealed class ChoEligibilityResponse
 public sealed class ChoBenefit
 {
     public string? BenefitCode { get; set; }
+
+    /// <summary>The payer's name for the benefit line (e.g. "Non-Covered"). Set by the direct Stedi path.</summary>
+    public string? BenefitName { get; set; }
     public string? ServiceTypeCode { get; set; }
     public string? ServiceTypeName { get; set; }
     public string? CoverageLevel { get; set; }

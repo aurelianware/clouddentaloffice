@@ -30,6 +30,12 @@ public interface IPayerTransactionRouter
 public sealed class PayerConnectivityOptions
 {
     public Dictionary<string, PayerRouteOptions> Payers { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Eligibility adapter for payers without their own route (e.g. "Clearinghouse",
+    /// which follows each practice's clearinghouse connection). Empty means no default.
+    /// </summary>
+    public string? DefaultEligibility { get; set; }
 }
 
 public sealed class PayerRouteOptions
@@ -75,12 +81,15 @@ public sealed class PayerTransactionRouter : IPayerTransactionRouter
     public async Task<EligibilityResult> CheckEligibilityAsync(NormalizedEligibilityRequest request, CancellationToken cancellationToken = default)
     {
         ValidateTenant(request.TenantId);
-        var routes = RouteFor(request.PayerId);
-        if (string.IsNullOrWhiteSpace(routes.Eligibility))
+        // A payer's own route wins; otherwise the configured default applies.
+        var route = _options.Payers.TryGetValue(request.PayerId, out var payerRoute) && !string.IsNullOrWhiteSpace(payerRoute.Eligibility)
+            ? payerRoute.Eligibility
+            : _options.DefaultEligibility;
+        if (string.IsNullOrWhiteSpace(route))
             throw new TreatmentEstimateUnavailableException("Eligibility connectivity is not configured for this payer.");
-        if (!_adapters.TryGetValue(routes.Eligibility, out var adapter) || adapter is not IEligibilityTradingPartnerAdapter eligibility ||
+        if (!_adapters.TryGetValue(route, out var adapter) || adapter is not IEligibilityTradingPartnerAdapter eligibility ||
             !adapter.Capabilities.HasFlag(TradingPartnerCapability.Eligibility))
-            throw new TreatmentEstimateUnavailableException($"The {routes.Eligibility} adapter does not support eligibility.");
+            throw new TreatmentEstimateUnavailableException($"The {route} adapter does not support eligibility.");
 
         // One correlation ID for the audit record and the downstream call, so
         // CDO and CHO logs for the same check can be matched.

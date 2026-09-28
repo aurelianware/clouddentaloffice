@@ -4,6 +4,7 @@
 @using MudBlazor
 @inject IPatientService PatientService
 @inject IPayerTransactionRouter PayerRouter
+@inject IEligibilityVerificationService Verification
 @inject ITenantProvider TenantProvider
 @inject Microsoft.Extensions.Options.IOptions<CloudHealthOfficeOptions> EstimateOptions
 @inject ILogger<TreatmentPlanInsuranceEstimate> Logger
@@ -26,7 +27,7 @@
     }
     else if (!_coverages.Any())
     {
-        <MudAlert Severity="Severity.Warning">This patient does not have active insurance on file.</MudAlert>
+        <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined">This patient does not have active insurance on file.</MudAlert>
     }
     else
     {
@@ -53,34 +54,12 @@
 
     @if (_eligibility is not null)
     {
-        <MudAlert Class="mt-3" Severity="@(_eligibility.CoverageStatus == CoverageStatus.Active ? Severity.Success : Severity.Warning)">
-            <strong>@_eligibility.CoverageStatus coverage</strong> via @_eligibility.Source · verified @_eligibility.VerifiedAt.LocalDateTime.ToString("g")
-            @if (!string.IsNullOrWhiteSpace(_eligibility.PlanName))
-            {
-                <div>Plan: @_eligibility.PlanName</div>
-            }
-            @if (_eligibility.EffectiveDate.HasValue || _eligibility.TerminationDate.HasValue)
-            {
-                <div>Coverage: @(_eligibility.EffectiveDate?.ToString("d") ?? "—") to @(_eligibility.TerminationDate?.ToString("d") ?? "present")</div>
-            }
-            @if (_eligibility.AnnualMaximum.HasValue || _eligibility.AnnualMaximumRemaining.HasValue)
-            {
-                <div>Annual maximum: @Money(_eligibility.AnnualMaximum) · remaining @Money(_eligibility.AnnualMaximumRemaining)</div>
-            }
-            @if (_eligibility.Deductible.HasValue || _eligibility.DeductibleRemaining.HasValue)
-            {
-                <div>Deductible: @Money(_eligibility.Deductible) · remaining @Money(_eligibility.DeductibleRemaining)</div>
-            }
-            @foreach (var note in _eligibility.Messages.Take(5))
-            {
-                <div class="mt-1" style="font-size: 0.85em;">• @note</div>
-            }
-        </MudAlert>
+        <EligibilityResultView Result="_eligibility" />
     }
 
     @if (!string.IsNullOrWhiteSpace(_message))
     {
-        <MudAlert Class="mt-3" Severity="Severity.Warning">@_message</MudAlert>
+        <MudAlert Class="mt-3" Severity="Severity.Warning" Variant="Variant.Outlined">@_message</MudAlert>
     }
 
     @if (_result is not null)
@@ -141,7 +120,7 @@
 
         @foreach (var warning in _result.Warnings)
         {
-            <MudAlert Class="mt-2" Severity="Severity.Warning">@warning.Message</MudAlert>
+            <MudAlert Class="mt-2" Severity="Severity.Warning" Variant="Variant.Outlined">@warning.Message</MudAlert>
         }
         <MudAlert Class="mt-3" Severity="Severity.Info" Variant="Variant.Outlined">@_result.Disclaimer</MudAlert>
     }
@@ -216,12 +195,11 @@
             _checkingEligibility = true;
             var insurance = _coverages.FirstOrDefault(x => x.PatientInsuranceId == _selectedInsuranceId);
             var provider = Providers.FirstOrDefault(x => x.ProviderId == ProviderId);
-            var request = EligibilityRequestBuilder.Build(_patient, insurance, provider,
-                DateOnly.FromDateTime(_serviceDate ?? DateTime.Today), TenantProvider.TenantId);
-            _eligibility = await PayerRouter.CheckEligibilityAsync(request);
+            var outcome = await Verification.VerifyAsync(_patient, insurance, provider,
+                DateOnly.FromDateTime(_serviceDate ?? DateTime.Today));
+            _eligibility = outcome.Result;
+            if (outcome.Result is null) _message = outcome.Message;
         }
-        catch (TreatmentEstimateValidationException ex) { _message = ex.Message; }
-        catch (TreatmentEstimateUnavailableException ex) { _message = ex.Message; }
         catch (UnauthorizedAccessException) { _message = "The eligibility request was denied for this practice."; }
         catch (Exception ex)
         {
@@ -230,8 +208,6 @@
         }
         finally { _checkingEligibility = false; }
     }
-
-    private static string Money(decimal? value) => value.HasValue ? value.Value.ToString("C2") : "not reported";
 
     internal static IEnumerable<(string Label, decimal Value)> SummaryTotals(TreatmentEstimateResult result) =>
     [

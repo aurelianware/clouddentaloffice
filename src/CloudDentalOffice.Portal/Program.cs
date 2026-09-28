@@ -17,6 +17,7 @@ using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using MudBlazor;
 using MudBlazor.Services;
 using CloudDentalOffice.Messaging;
+using CloudDentalOffice.Portal.Services.Stedi;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -238,7 +239,8 @@ builder.Services.AddRazorPages()
 builder.Services.AddHttpClient();
 
 // Tenant resolution (Blazor Server-compatible)
-builder.Services.AddScoped<ITenantProvider, BlazorTenantProvider>();
+// Background workers pin a tenant on their own scope; everything else uses the signed-in user's.
+PinnedTenantScope.Register<BlazorTenantProvider>(builder.Services);
 
 // Configure database
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection") 
@@ -301,6 +303,7 @@ if (!builder.Environment.IsDevelopment())
 // Patients live only in the Portal database. SchedulingService resolves Zocdoc patients
 // through the Portal's internal match-or-create endpoint (InternalPatientApi).
 builder.Services.AddScoped<IPatientService, PatientServiceImpl>();
+builder.Services.AddScoped<IPatientCoverageService, PatientCoverageService>();
 builder.AddInternalPatientApi();
 
 // Prescription service: always use microservice mode (no monolith fallback).
@@ -357,6 +360,29 @@ builder.Services.AddHttpClient<IAppointmentService, AppointmentServiceHttpClient
     client.Timeout = TimeSpan.FromSeconds(30);
 }).AddHttpMessageHandler<SchedulingTenantAuthorizationHandler>();
 builder.Services.AddSingleton(TimeProvider.System);
+// Coverage verification: a worker keeps each upcoming appointment's dental coverage
+// checked. It reads the schedule with a per-tenant service token (there is no user).
+builder.Services.AddOptions<CoverageVerificationOptions>()
+    .Bind(builder.Configuration.GetSection(CoverageVerificationOptions.SectionName))
+    .ValidateDataAnnotations();
+builder.Services.AddHttpClient<IScheduledAppointmentFeed, SchedulingAppointmentFeed>(client =>
+{
+    client.BaseAddress = new Uri(visionGatewayUrl);
+    client.DefaultRequestHeaders.Add("Accept", "application/json");
+    client.Timeout = TimeSpan.FromSeconds(30);
+});
+builder.Services.AddScoped<ICoverageVerificationSweep, CoverageVerificationSweep>();
+builder.Services.AddScoped<ICoverageVerificationQueue, CoverageVerificationQueue>();
+builder.Services.AddSingleton<ICoverageVerificationRunner, CoverageVerificationRunner>();
+builder.Services.AddHostedService<CoverageVerificationWorker>();
+// Coverage intake: emails patients with no coverage on file a signed link to the
+// public IntakeService form; answers come back over Service Bus.
+builder.Services.AddOptions<CoverageIntakeOptions>()
+    .Bind(builder.Configuration.GetSection(CoverageIntakeOptions.SectionName))
+    .ValidateDataAnnotations();
+builder.Services.AddScoped<ICoverageIntakeService, CoverageIntakeService>();
+builder.Services.AddScoped<ICoverageIntakeProcessor, CoverageIntakeProcessor>();
+builder.Services.AddHostedService<CoverageIntakeConsumer>();
 builder.Services.AddEventPublishing(builder.Configuration);
 builder.Services.Configure<ReviewEmailOptions>(builder.Configuration.GetSection(ReviewEmailOptions.SectionName));
 builder.Services.Configure<ReviewOutreachWorkerOptions>(builder.Configuration.GetSection(ReviewOutreachWorkerOptions.SectionName));
@@ -440,10 +466,35 @@ builder.Services.AddHttpClient<ICloudHealthOfficeEligibilityClient, CloudHealthO
 });
 builder.Services.AddScoped<IClaimLifecycleService, ClaimLifecycleService>();
 builder.Services.Configure<PayerConnectivityOptions>(builder.Configuration.GetSection("PayerConnectivity"));
+// Per-practice clearinghouse credentials. Keys live only in Key Vault
+// (stedi-apikey-{tenantId}); the handler attaches the key for the tenant stamped
+// on each request and refuses requests that carry no tenant.
+builder.Services.Configure<StediOptions>(builder.Configuration.GetSection(StediOptions.SectionName));
+builder.Services.AddMemoryCache();
+builder.Services.AddSingleton<IStediSecretReader, KeyVaultStediSecretReader>();
+builder.Services.AddSingleton<IStediCredentialProvider, StediCredentialProvider>();
+builder.Services.AddSingleton<IClearinghouseConnectionStore, ClearinghouseConnectionStore>();
+builder.Services.AddTransient<StediCredentialHandler>();
+builder.Services.AddHttpClient<IStediEligibilityClient, StediEligibilityClient>(client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(45);
+    client.DefaultRequestHeaders.Add("Accept", "application/json");
+}).AddHttpMessageHandler<StediCredentialHandler>();
+builder.Services.AddHttpClient<IStediPayerSearchClient, StediPayerSearchClient>(client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(20);
+    client.DefaultRequestHeaders.Add("Accept", "application/json");
+}).AddHttpMessageHandler<StediCredentialHandler>();
+builder.Services.AddScoped<IPayerImportService, PayerImportService>();
+builder.Services.AddScoped<ICardPayerResolver, CardPayerResolver>();
+builder.Services.AddScoped<IEligibilityGateway, CloudHealthOfficeEligibilityGateway>();
+builder.Services.AddScoped<IEligibilityGateway, StediEligibilityGateway>();
+builder.Services.AddScoped<ITradingPartnerAdapter, ClearinghouseEligibilityAdapter>();
 builder.Services.AddScoped<ITradingPartnerAdapter, CloudHealthOfficeTradingPartnerAdapter>();
 if (builder.Environment.IsDevelopment())
     builder.Services.AddScoped<ITradingPartnerAdapter, MockEligibilityTradingPartnerAdapter>();
 builder.Services.AddScoped<ITransactionAuditSink, LoggingTransactionAuditSink>();
+builder.Services.AddScoped<IEligibilityVerificationService, EligibilityVerificationService>();
 builder.Services.AddScoped<IPayerTransactionRouter, PayerTransactionRouter>();
 builder.Services.AddScoped<IEdiSubmissionService, EdiSubmissionService>();
 builder.Services.AddScoped<ITokenService, TokenService>();
@@ -502,6 +553,11 @@ using (var scope = app.Services.CreateScope())
         // schema before the tenant bootstrap queries its settings table.
         await ReviewOutreachSchemaReconciliation.ApplyAsync(dbContext, databaseProvider, logger);
         await ClaimLifecycleSchemaReconciliation.ApplyAsync(dbContext, databaseProvider, logger);
+        await ClearinghouseConnectionSchemaReconciliation.ApplyAsync(dbContext, databaseProvider, logger);
+        await PatientCoverageSchemaReconciliation.ApplyAsync(dbContext, databaseProvider, logger);
+        await EligibilityVerificationSchemaReconciliation.ApplyAsync(dbContext, databaseProvider, logger);
+        await CoverageVerificationSchemaReconciliation.ApplyAsync(dbContext, databaseProvider, logger);
+        await CoverageIntakeSchemaReconciliation.ApplyAsync(dbContext, databaseProvider, logger);
 
         await InitialTenantBootstrap.ApplyAsync(dbContext, builder.Configuration);
 

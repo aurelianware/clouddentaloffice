@@ -37,6 +37,10 @@ public sealed record NormalizedEligibilityRequest
 
     public string? GroupNumber { get; init; }
     public required string ProviderNpi { get; init; }
+
+    /// <summary>Rendering provider's name. Stedi requires a provider name with the NPI.</summary>
+    public string? ProviderFirstName { get; init; }
+    public string? ProviderLastName { get; init; }
     public DateOnly ServiceDate { get; init; }
     public IReadOnlyList<string> ServiceTypeCodes { get; init; } = ["35"];
 
@@ -74,6 +78,13 @@ public sealed record EligibilityResult
     public IReadOnlyList<string> Messages { get; init; } = [];
     public required string Source { get; init; }
     public DateTimeOffset VerifiedAt { get; init; }
+
+    /// <summary>
+    /// True when the payer reports dental care (service type 35) as not covered.
+    /// A medical plan can be active while covering no dental services; staff
+    /// must see that rather than a plain "Active coverage".
+    /// </summary>
+    public bool DentalCareNotCovered { get; init; }
     public string? ExternalTransactionId { get; init; }
 }
 

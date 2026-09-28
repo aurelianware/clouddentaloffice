@@ -283,6 +283,12 @@ public class CabinetAccessLogDto
 public class InsuranceCardScanDto
 {
     public Guid Id { get; set; }
+
+    /// <summary>
+    /// Set on a fresh scan when no OCR provider read the image (mock): the fields are made up
+    /// and must never be applied to a patient. Not stored, so scan history reports false.
+    /// </summary>
+    public bool Simulated { get; set; }
     public Guid DeviceId { get; set; }
     public DateTime Timestamp { get; set; }
     public double OcrConfidence { get; set; }

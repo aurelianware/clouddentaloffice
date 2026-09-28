@@ -34,6 +34,12 @@ param jwtAudience string
 param serviceBusSendConnection string
 @secure()
 param serviceBusListenConnection string
+param coverageIntakeEnabled bool = false
+@secure()
+param coverageIntakeSigningKey string = ''
+param coverageIntakeLinkBaseUrl string = ''
+@secure()
+param coverageIntakeListenConnection string = ''
 @secure()
 param publicBookingApiKey string
 @secure()
@@ -45,6 +51,10 @@ param publicAvailabilitySlotKey string
 param zocdocWebhookIntegrationId string = ''
 @secure()
 param zocdocWebhookSecret string = ''
+param zocdocCredentialReference string = 'third-set-smiles-zocdoc'
+param zocdocClientId string = ''
+@secure()
+param zocdocClientSecret string = ''
 @secure()
 param integrationInboxAdminApiKey string = ''
 param initialTenantId string = 'third-set-smiles'
@@ -67,20 +77,84 @@ param cloudHealthOfficeEligibilityApiKey string = ''
 @description('CDO insurance-plan payer IDs whose eligibility checks route through CloudHealthOffice.')
 param cloudHealthOfficeEligibilityPayerIds array = []
 
+@description('Key Vault URI holding stedi-apikey-{tenantId} secrets (main.bicep output keyVaultUri).')
+param keyVaultUri string = ''
+
+@description('Portal-only identity (main.bicep output portalIdentityId); the only identity with Key Vault access.')
+param portalIdentityId string = ''
+
+@description('Client ID of the Portal identity (main.bicep output portalIdentityClientId); lets DefaultAzureCredential pick it.')
+param portalIdentityClientId string = ''
+
+@description('Pilot only: allow practices in Shared mode to use Aurelianware\'s Stedi account.')
+param stediSharedAccountEnabled bool = false
+
+@description('Key Vault secret name of the shared Stedi key (must start with stedi-shared-); used only when stediSharedAccountEnabled is true.')
+param stediSharedAccountSecretName string = ''
+
+@description('CDO insurance-plan payer IDs whose eligibility routes by each practice\'s clearinghouse connection (direct to Stedi or via CHO). Takes precedence over cloudHealthOfficeEligibilityPayerIds for the same payer.')
+param clearinghouseEligibilityPayerIds array = []
+
+@description('Route every payer without its own eligibility route to Clearinghouse (each practice\'s clearinghouse connection).')
+param clearinghouseEligibilityDefault bool = false
+
+// Routed only when the vault is wired; without it the Clearinghouse path would fail closed.
+var clearinghouseRoutes = concat(
+  empty(keyVaultUri) ? [] : map(clearinghouseEligibilityPayerIds, payerId => {
+    name: 'PayerConnectivity__Payers__${payerId}__Eligibility'
+    value: 'Clearinghouse'
+  }),
+  empty(keyVaultUri) || !clearinghouseEligibilityDefault ? [] : [
+    { name: 'PayerConnectivity__DefaultEligibility', value: 'Clearinghouse' }
+  ])
+
+// Per-practice Stedi keys are read from Key Vault at request time; no key is
+// passed to the app. Without a vault URI the Stedi path fails closed.
+var stediEnv = concat(
+  empty(keyVaultUri) ? [] : [ { name: 'Stedi__KeyVaultUri', value: keyVaultUri } ],
+  empty(portalIdentityClientId) ? [] : [ { name: 'AZURE_CLIENT_ID', value: portalIdentityClientId } ],
+  [
+    { name: 'Stedi__SharedAccount__Enabled', value: string(stediSharedAccountEnabled) }
+    { name: 'Stedi__SharedAccount__SecretName', value: stediSharedAccountSecretName }
+  ],
+  clearinghouseRoutes)
+
 // Eligibility is wired only when both the URL and the credential are supplied,
 // so a deploy without them leaves the portal exactly as before.
 var choEligibilityEnabled = !empty(cloudHealthOfficeEligibilityBaseUrl) && !empty(cloudHealthOfficeEligibilityApiKey)
 var choEligibilitySecrets = choEligibilityEnabled ? [
   { name: 'cho-eligibility-api-key', value: cloudHealthOfficeEligibilityApiKey }
 ] : []
-var choEligibilityRoutes = [for payerId in cloudHealthOfficeEligibilityPayerIds: {
-  name: 'PayerConnectivity__Payers__${payerId}__Eligibility'
-  value: 'CloudHealthOffice'
-}]
+// A payer routed to Clearinghouse is left out here: one env var per payer.
+var choEligibilityRoutes = map(
+  filter(cloudHealthOfficeEligibilityPayerIds, payerId => empty(keyVaultUri) || !contains(clearinghouseEligibilityPayerIds, payerId)),
+  payerId => {
+    name: 'PayerConnectivity__Payers__${payerId}__Eligibility'
+    value: 'CloudHealthOffice'
+  })
 var choEligibilityEnv = choEligibilityEnabled ? concat([
   { name: 'CloudHealthOffice__Eligibility__BaseUrl', value: cloudHealthOfficeEligibilityBaseUrl }
   { name: 'CloudHealthOffice__Eligibility__ApiKey', secretRef: 'cho-eligibility-api-key' }
 ], choEligibilityRoutes) : []
+
+// Coverage intake links: on only when switched on with a key. The Portal consumes
+// answers with a listen-only key for its own topic, never the namespace connection.
+var coverageIntakeOn = coverageIntakeEnabled && !empty(coverageIntakeSigningKey)
+var coverageIntakeKeySecret = coverageIntakeOn ? [
+  { name: 'coverage-intake-key', value: coverageIntakeSigningKey }
+] : []
+var coverageIntakeCommonEnv = coverageIntakeOn ? [
+  { name: 'CoverageIntake__Enabled', value: 'true' }
+  { name: 'CoverageIntake__SigningKey', secretRef: 'coverage-intake-key' }
+] : []
+var coverageIntakePortalSecrets = concat(coverageIntakeKeySecret, coverageIntakeOn && !empty(coverageIntakeListenConnection) ? [
+  { name: 'coverage-intake-listen', value: coverageIntakeListenConnection }
+] : [])
+var coverageIntakePortalEnv = concat(coverageIntakeCommonEnv, coverageIntakeOn ? [
+  { name: 'CoverageIntake__LinkBaseUrl', value: coverageIntakeLinkBaseUrl }
+] : [], coverageIntakeOn && !empty(coverageIntakeListenConnection) ? [
+  { name: 'CoverageIntake__ServiceBusConnectionString', secretRef: 'coverage-intake-listen' }
+] : [])
 
 // Shared registry config — Managed Identity pulls from ACR (no admin credentials)
 var registry = [
@@ -97,6 +171,15 @@ var identityObj = {
   }
 }
 
+// The Portal also carries its own identity, which alone can read Key Vault.
+var portalIdentityObj = empty(portalIdentityId) ? identityObj : {
+  type: 'UserAssigned'
+  userAssignedIdentities: {
+    '${identityId}': {}
+    '${portalIdentityId}': {}
+  }
+}
+
 // ── portal ────────────────────────────────────────────────────────────────────
 // External HTTPS ingress — public-facing Blazor Server UI.
 // Port 5091 is published only inside the environment (external: false) for
@@ -106,7 +189,7 @@ var identityObj = {
 resource portal 'Microsoft.App/containerApps@2024-03-01' = {
   name: 'portal'
   location: location
-  identity: identityObj
+  identity: portalIdentityObj
   properties: {
     environmentId: environmentId
     configuration: {
@@ -126,7 +209,7 @@ resource portal 'Microsoft.App/containerApps@2024-03-01' = {
         { name: 'jwt-key', value: jwtKey }
         { name: 'google-oauth-client-secret', value: googleOAuthClientSecret }
         { name: 'cloudhealthoffice-api-key', value: cloudHealthOfficeApiKey }
-      ], choEligibilitySecrets)
+      ], choEligibilitySecrets, coverageIntakePortalSecrets)
     }
     template: {
       containers: [
@@ -156,7 +239,7 @@ resource portal 'Microsoft.App/containerApps@2024-03-01' = {
             { name: 'StaffAuth__TenantId', value: initialTenantId }
             { name: 'StaffAuth__Users__0__Email', value: 'matt@3rdsetsmiles.com' }
             { name: 'StaffAuth__Users__0__Role', value: 'Admin' }
-            { name: 'StaffAuth__Users__1__Email', value: 'markus.phillips@gmail.com' }
+            { name: 'StaffAuth__Users__1__Email', value: 'markus.phillips@aurelianware.com' }
             { name: 'StaffAuth__Users__1__Role', value: 'Admin' }
             { name: 'StaffAuth__Users__2__Email', value: 'cindy@3rdsetsmiles.com' }
             { name: 'StaffAuth__Users__2__Role', value: 'Admin' }
@@ -167,7 +250,7 @@ resource portal 'Microsoft.App/containerApps@2024-03-01' = {
             { name: 'CloudHealthOffice__ApiKey', secretRef: 'cloudhealthoffice-api-key' }
             { name: 'CloudHealthOffice__BenefitPlanMappings__${cloudHealthOfficePayerId}', value: cloudHealthOfficeBenefitPlanId }
             { name: 'PayerConnectivity__Payers__${cloudHealthOfficePayerId}__PaymentEstimate__0', value: 'CloudHealthOffice' }
-          ], choEligibilityEnv)
+          ], choEligibilityEnv, stediEnv, coverageIntakePortalEnv)
           probes: [
             // Liveness has no database dependency, so a transient database outage
             // does not cause the platform to restart an otherwise-healthy process.
@@ -287,6 +370,10 @@ resource schedulingService 'Microsoft.App/containerApps@2023-05-01' = {
         { name: 'public-slot-key', value: publicAvailabilitySlotKey }
       ], empty(searchConsoleServiceAccountEmail) || empty(searchConsolePrivateKey) ? [] : [
         { name: 'search-console-private-key', value: searchConsolePrivateKey }
+      ], empty(zocdocClientId) || empty(zocdocClientSecret) ? [] : [
+        { name: 'zocdoc-client-secret', value: zocdocClientSecret }
+      ], empty(zocdocClientId) || empty(zocdocClientSecret) || empty(zocdocWebhookSecret) ? [] : [
+        { name: 'zocdoc-webhook-secret', value: zocdocWebhookSecret }
       ])
     }
     template: {
@@ -318,6 +405,13 @@ resource schedulingService 'Microsoft.App/containerApps@2023-05-01' = {
             { name: 'SearchConsoleBootstrap__PropertyUrl', value: 'sc-domain:3rdsetsmiles.com' }
             { name: 'SearchConsoleBootstrap__CredentialReference', value: 'third-set-smiles' }
             { name: 'SearchConsoleBootstrap__CanonicalHost', value: 'www.3rdsetsmiles.com' }
+          ], empty(zocdocClientId) || empty(zocdocClientSecret) ? [] : [
+            // Outbound Zocdoc API credentials, resolved through the tenant's opaque CredentialReference.
+            { name: 'SchedulingCredentials__${zocdocCredentialReference}__ClientId', value: zocdocClientId }
+            { name: 'SchedulingCredentials__${zocdocCredentialReference}__ClientSecret', secretRef: 'zocdoc-client-secret' }
+          ], empty(zocdocClientId) || empty(zocdocClientSecret) || empty(zocdocWebhookSecret) ? [] : [
+            // Readiness reports the webhook as configured only when this key is present.
+            { name: 'SchedulingCredentials__${zocdocCredentialReference}__WebhookSecret', secretRef: 'zocdoc-webhook-secret' }
           ])
         }
       ]
@@ -422,7 +516,7 @@ resource intakeService 'Microsoft.App/containerApps@2023-05-01' = {
         { name: 'zocdoc-webhook-secret', value: zocdocWebhookSecret }
       ], empty(integrationInboxAdminApiKey) ? [] : [
         { name: 'inbox-admin-key', value: integrationInboxAdminApiKey }
-      ])
+      ], coverageIntakeKeySecret)
     }
     template: {
       containers: [
@@ -451,7 +545,7 @@ resource intakeService 'Microsoft.App/containerApps@2023-05-01' = {
           ], empty(integrationInboxAdminApiKey) ? [] : [
             { name: 'IntegrationInbox__AdminClients__0__TenantId', value: initialTenantId }
             { name: 'IntegrationInbox__AdminClients__0__ApiKey', secretRef: 'inbox-admin-key' }
-          ])
+          ], coverageIntakeCommonEnv)
           probes: [
             // Liveness has no database dependency, so a transient database outage
             // does not cause the platform to restart an otherwise-healthy process.

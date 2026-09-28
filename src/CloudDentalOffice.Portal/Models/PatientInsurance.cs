@@ -56,6 +56,15 @@ public class PatientInsurance : ITenantEntity
 
     public DateTime? SubscriberDateOfBirth { get; set; }
 
+    // Latest eligibility check (details in EligibilityVerifications). Cleared when
+    // the coverage is edited, since the old answer was for different details.
+    public DateTimeOffset? LastVerifiedAt { get; set; }
+    public EligibilityVerificationState? LastVerificationState { get; set; }
+
+    // Held (UTC) while one instance checks this coverage in the background, so
+    // appointments sharing it, on any replica, never bill the practice twice.
+    public DateTime? VerificationLockedUntil { get; set; }
+
     // Audit
     public DateTime CreatedDate { get; set; } = DateTime.UtcNow;
     public DateTime? ModifiedDate { get; set; }

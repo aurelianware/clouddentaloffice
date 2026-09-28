@@ -184,8 +184,6 @@ namespace CloudDentalOffice.Portal.Migrations
                     b.HasIndex("ClaimNumber")
                         .IsUnique();
 
-                    b.HasIndex("TenantId", "CloudHealthOfficeClaimId");
-
                     b.HasIndex("PatientId");
 
                     b.HasIndex("PatientInsuranceId");
@@ -197,6 +195,8 @@ namespace CloudDentalOffice.Portal.Migrations
                     b.HasIndex("SubmittedDate");
 
                     b.HasIndex("TenantId");
+
+                    b.HasIndex("TenantId", "CloudHealthOfficeClaimId");
 
                     b.ToTable("Claims");
                 });
@@ -331,6 +331,210 @@ namespace CloudDentalOffice.Portal.Migrations
                     b.HasIndex("TenantId");
 
                     b.ToTable("ClinicalNotes");
+                });
+
+            modelBuilder.Entity("CloudDentalOffice.Portal.Models.CoverageIntakeRequest", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Answer")
+                        .HasMaxLength(16)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("AnsweredAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CarrierName")
+                        .HasMaxLength(120)
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("CoverageVerificationId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("ExpiresAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("GroupNumber")
+                        .HasMaxLength(50)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("LastAttemptAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("LastError")
+                        .HasMaxLength(128)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("MemberId")
+                        .HasMaxLength(50)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("PatientId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("RecipientEmail")
+                        .IsRequired()
+                        .HasMaxLength(320)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("RelationshipToSubscriber")
+                        .HasMaxLength(20)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("ReminderSentAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("SendAttempts")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime?>("SentAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateOnly?>("SubscriberDateOfBirth")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("SubscriberFirstName")
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("SubscriberLastName")
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("TenantId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId", "PatientId", "CreatedAt");
+
+                    b.ToTable("CoverageIntakeRequests");
+                });
+
+            modelBuilder.Entity("CloudDentalOffice.Portal.Models.CoverageVerification", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<Guid>("AppointmentId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("AppointmentStart")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Attempts")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime?>("ClosedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("LastCheckedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("NextCheckAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("PatientId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int?>("PatientInsuranceId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("ProviderId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Reason")
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("State")
+                        .HasMaxLength(24)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("TenantId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId", "AppointmentId")
+                        .IsUnique();
+
+                    b.HasIndex("TenantId", "ClosedAt", "AppointmentStart");
+
+                    b.ToTable("CoverageVerifications");
+                });
+
+            modelBuilder.Entity("CloudDentalOffice.Portal.Models.EligibilityVerification", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTimeOffset>("CheckedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CorrelationId")
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("PatientId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("PatientInsuranceId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Reason")
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ResultJson")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateOnly>("ServiceDate")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Source")
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("State")
+                        .IsRequired()
+                        .HasMaxLength(24)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("TenantId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PatientInsuranceId");
+
+                    b.HasIndex("TenantId", "PatientInsuranceId", "CheckedAt");
+
+                    b.ToTable("EligibilityVerifications");
                 });
 
             modelBuilder.Entity("CloudDentalOffice.Portal.Models.FinancialAuditEvent", b =>
@@ -810,6 +1014,13 @@ namespace CloudDentalOffice.Portal.Migrations
                     b.Property<bool>("IsActive")
                         .HasColumnType("INTEGER");
 
+                    b.Property<string>("LastVerificationState")
+                        .HasMaxLength(24)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset?>("LastVerifiedAt")
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("MemberId")
                         .IsRequired()
                         .HasMaxLength(50)
@@ -853,6 +1064,9 @@ namespace CloudDentalOffice.Portal.Migrations
                     b.Property<DateTime?>("TerminationDate")
                         .HasColumnType("TEXT");
 
+                    b.Property<DateTime?>("VerificationLockedUntil")
+                        .HasColumnType("TEXT");
+
                     b.HasKey("PatientInsuranceId");
 
                     b.HasIndex("InsurancePlanId");
@@ -862,6 +1076,11 @@ namespace CloudDentalOffice.Portal.Migrations
                     b.HasIndex("PatientId");
 
                     b.HasIndex("TenantId");
+
+                    b.HasIndex("TenantId", "PatientId", "SequenceNumber")
+                        .IsUnique()
+                        .HasDatabaseName("IX_PatientInsurances_TenantId_PatientId_SequenceNumber_Active")
+                        .HasFilter("\"IsActive\"");
 
                     b.ToTable("PatientInsurances");
                 });
@@ -2562,6 +2781,62 @@ namespace CloudDentalOffice.Portal.Migrations
                     b.ToTable("ReviewOutreachSettings");
                 });
 
+            modelBuilder.Entity("CloudDentalOffice.Portal.Models.TenantClearinghouseConnection", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("EligibilityGateway")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("KeyReference")
+                        .HasMaxLength(127)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Mode")
+                        .IsRequired()
+                        .HasMaxLength(24)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Provider")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset?>("RotatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(24)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("StediAccountId")
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("TenantId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId", "Provider")
+                        .IsUnique();
+
+                    b.ToTable("TenantClearinghouseConnections");
+                });
+
             modelBuilder.Entity("CloudDentalOffice.Portal.Models.TenantRegistry", b =>
                 {
                     b.Property<string>("TenantId")
@@ -2763,6 +3038,17 @@ namespace CloudDentalOffice.Portal.Migrations
                         .IsRequired();
 
                     b.Navigation("Claim");
+                });
+
+            modelBuilder.Entity("CloudDentalOffice.Portal.Models.EligibilityVerification", b =>
+                {
+                    b.HasOne("CloudDentalOffice.Portal.Models.PatientInsurance", "PatientInsurance")
+                        .WithMany()
+                        .HasForeignKey("PatientInsuranceId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("PatientInsurance");
                 });
 
             modelBuilder.Entity("CloudDentalOffice.Portal.Models.PatientBillingNotification", b =>

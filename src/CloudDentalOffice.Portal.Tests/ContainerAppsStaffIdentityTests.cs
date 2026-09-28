@@ -12,7 +12,7 @@ public sealed class ContainerAppsStaffIdentityTests
 {
     [Theory]
     [InlineData("matt@3rdsetsmiles.com")]
-    [InlineData("markus.phillips@gmail.com")]
+    [InlineData("markus.phillips@aurelianware.com")]
     public void AllowlistedGoogleIdentityGetsAdminRoleAndInitialTenant(string email)
     {
         var principal = ContainerAppsStaffIdentity.Resolve(Context(email), Configuration());
@@ -120,7 +120,7 @@ public sealed class ContainerAppsStaffIdentityTests
             ["StaffAuth:TenantId"] = "third-set-smiles",
             ["StaffAuth:Users:0:Email"] = "matt@3rdsetsmiles.com",
             ["StaffAuth:Users:0:Role"] = "Admin",
-            ["StaffAuth:Users:1:Email"] = "markus.phillips@gmail.com",
+            ["StaffAuth:Users:1:Email"] = "markus.phillips@aurelianware.com",
             ["StaffAuth:Users:1:Role"] = "Admin"
         })
         .Build();

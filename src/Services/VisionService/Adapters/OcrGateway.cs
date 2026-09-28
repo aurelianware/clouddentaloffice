@@ -17,6 +17,8 @@ public interface IOcrGateway
 
 public class InsuranceCardOcrResult
 {
+    /// <summary>True when no OCR provider read the image (the mock gateway): the fields are made up.</summary>
+    public bool Simulated { get; set; }
     public double Confidence { get; set; }
     public string? PayerName { get; set; }
     public string? PayerId { get; set; }
@@ -119,21 +121,24 @@ public class AzureAiVisionOcrGateway : IOcrGateway
         return ExtractTextFromReadResponse(json);
     }
 
-    private static string ExtractTextFromReadResponse(string json)
+    /// <summary>
+    /// The text lines of an Image Analysis "read" response
+    /// (<c>{ readResult: { blocks: [ { lines: [ { text } ] } ] } }</c>), in reading order.
+    /// </summary>
+    public static string ExtractTextFromReadResponse(string json)
     {
-        // Simplified extraction — in production, use System.Text.Json deserialization
-        // The Read API returns { readResult: { blocks: [ { lines: [ { text: "..." } ] } ] } }
         var lines = new List<string>();
-        var textMarker = "\"text\":\"";
-        var idx = 0;
-        while ((idx = json.IndexOf(textMarker, idx, StringComparison.Ordinal)) >= 0)
+        using var document = System.Text.Json.JsonDocument.Parse(json);
+        if (document.RootElement.TryGetProperty("readResult", out var read) &&
+            read.TryGetProperty("blocks", out var blocks) && blocks.ValueKind == System.Text.Json.JsonValueKind.Array)
         {
-            idx += textMarker.Length;
-            var endIdx = json.IndexOf("\"", idx, StringComparison.Ordinal);
-            if (endIdx > idx)
+            foreach (var block in blocks.EnumerateArray())
             {
-                lines.Add(json[idx..endIdx]);
-                idx = endIdx;
+                if (!block.TryGetProperty("lines", out var blockLines) || blockLines.ValueKind != System.Text.Json.JsonValueKind.Array)
+                    continue;
+                foreach (var line in blockLines.EnumerateArray())
+                    if (line.TryGetProperty("text", out var text) && text.GetString() is { Length: > 0 } value)
+                        lines.Add(value);
             }
         }
         return string.Join("\n", lines);
@@ -227,6 +232,7 @@ public class MockOcrGateway : IOcrGateway
     {
         return Task.FromResult(new InsuranceCardOcrResult
         {
+            Simulated = true,
             Confidence = 0.92,
             PayerName = "Delta Dental of Texas",
             PayerId = "86027",

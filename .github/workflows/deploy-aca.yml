@@ -45,17 +45,55 @@ permissions:
   id-token: write   # Required for OIDC token exchange with Azure
   contents: read
 
+# One production deploy at a time. Runs queue rather than collide on the ARM
+# deployments named "main"/"apps", and a running deploy is never cancelled.
+concurrency:
+  group: deploy-aca-production
+  cancel-in-progress: false
+
 jobs:
   validate-manual:
     name: Validate manual deployment
     if: ${{ github.event_name == 'workflow_dispatch' }}
     uses: ./.github/workflows/ci.yml
 
+  # workflow_run always executes the workflow file from the tip of main, but
+  # checks out the commit whose CI finished. When PRs merge close together, an
+  # older run would pair a newer workflow with older templates (e.g. passing a
+  # parameter the older apps.bicep does not declare). Deploy only the commit
+  # that is still the tip of main; the run for the newer commit deploys it.
+  freshness:
+    name: Check commit is still main
+    runs-on: ubuntu-latest
+    outputs:
+      current: ${{ steps.check.outputs.current }}
+    steps:
+      - name: Compare with main
+        id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          RUN_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" != "workflow_run" ]; then
+            echo "current=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          main_sha=$(gh api "repos/${GITHUB_REPOSITORY}/commits/main" --jq .sha)
+          if [ "$main_sha" = "$RUN_SHA" ]; then
+            echo "current=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "current=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Skipping deploy of ${RUN_SHA:0:7}; main is now ${main_sha:0:7}, whose run deploys it."
+          fi
+
   build-and-deploy:
     name: Build, Push & Deploy
-    needs: [validate-manual]
+    needs: [validate-manual, freshness]
     if: >-
       ${{ always() &&
+          needs.freshness.outputs.current == 'true' &&
           ((github.event_name == 'workflow_run' &&
             github.event.workflow_run.event == 'push' &&
             github.event.workflow_run.conclusion == 'success') ||
@@ -104,8 +142,25 @@ jobs:
             --resource-group "${{ env.RESOURCE_GROUP }}" \
             --name main \
             --query properties.outputs.identityId.value -o tsv)
-          echo "environment_id=$ENVIRONMENT_ID" >> "$GITHUB_OUTPUT"
-          echo "identity_id=$IDENTITY_ID" >> "$GITHUB_OUTPUT"
+          PORTAL_IDENTITY_ID=$(az deployment group show \
+            --resource-group "${{ env.RESOURCE_GROUP }}" \
+            --name main \
+            --query properties.outputs.portalIdentityId.value -o tsv)
+          PORTAL_IDENTITY_CLIENT_ID=$(az deployment group show \
+            --resource-group "${{ env.RESOURCE_GROUP }}" \
+            --name main \
+            --query properties.outputs.portalIdentityClientId.value -o tsv)
+          KEY_VAULT_URI=$(az deployment group show \
+            --resource-group "${{ env.RESOURCE_GROUP }}" \
+            --name main \
+            --query properties.outputs.keyVaultUri.value -o tsv)
+          {
+            echo "environment_id=$ENVIRONMENT_ID"
+            echo "identity_id=$IDENTITY_ID"
+            echo "portal_identity_id=$PORTAL_IDENTITY_ID"
+            echo "portal_identity_client_id=$PORTAL_IDENTITY_CLIENT_ID"
+            echo "key_vault_uri=$KEY_VAULT_URI"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Login to Azure Container Registry
         run: az acr login --name ${{ secrets.ACR_NAME }}
@@ -212,12 +267,28 @@ jobs:
             --namespace-name "$namespace" \
             --name booking-scheduling-listen \
             --query primaryConnectionString -o tsv)
+          # Topic-scoped listen key for the Portal's coverage intake consumer.
+          coverage_intake_listen=$(az servicebus topic authorization-rule keys list \
+            --resource-group "${{ env.RESOURCE_GROUP }}" \
+            --namespace-name "$namespace" \
+            --topic-name coverage-intake \
+            --name portal-listen \
+            --query primaryConnectionString -o tsv)
           echo "::add-mask::$send_connection"
           echo "::add-mask::$listen_connection"
+          echo "::add-mask::$coverage_intake_listen"
           echo "send_connection=$send_connection" >> "$GITHUB_OUTPUT"
           echo "listen_connection=$listen_connection" >> "$GITHUB_OUTPUT"
+          echo "coverage_intake_listen=$coverage_intake_listen" >> "$GITHUB_OUTPUT"
 
       - name: Deploy Container Apps (Bicep)
+        env:
+          ZOCDOC_CREDENTIAL_REFERENCE: ${{ vars.ZOCDOC_CREDENTIAL_REFERENCE || 'third-set-smiles-zocdoc' }}
+          ZOCDOC_WEBHOOK_INTEGRATION_ID: ${{ secrets.ZOCDOC_WEBHOOK_INTEGRATION_ID }}
+          ZOCDOC_WEBHOOK_SECRET: ${{ secrets.ZOCDOC_WEBHOOK_SECRET }}
+          ZOCDOC_CLIENT_ID: ${{ secrets.ZOCDOC_CLIENT_ID }}
+          ZOCDOC_CLIENT_SECRET: ${{ secrets.ZOCDOC_CLIENT_SECRET }}
+          INTEGRATION_INBOX_ADMIN_API_KEY: ${{ secrets.INTEGRATION_INBOX_ADMIN_API_KEY }}
         run: |
           az deployment group create \
             --resource-group ${{ env.RESOURCE_GROUP }} \
@@ -233,10 +304,20 @@ jobs:
               jwtKey=${{ secrets.JWT_KEY }} \
               serviceBusSendConnection='${{ steps.servicebus.outputs.send_connection }}' \
               serviceBusListenConnection='${{ steps.servicebus.outputs.listen_connection }}' \
+              coverageIntakeEnabled=${{ vars.COVERAGE_INTAKE_ENABLED == 'true' }} \
+              coverageIntakeSigningKey='${{ secrets.COVERAGE_INTAKE_SIGNING_KEY }}' \
+              coverageIntakeLinkBaseUrl='${{ vars.COVERAGE_INTAKE_LINK_BASE_URL }}' \
+              coverageIntakeListenConnection='${{ steps.servicebus.outputs.coverage_intake_listen }}' \
               publicBookingApiKey='${{ secrets.PUBLIC_BOOKING_API_KEY }}' \
               patientServiceApiKey='${{ secrets.PATIENT_SERVICE_API_KEY }}' \
               publicSchedulingServiceApiKey='${{ secrets.PUBLIC_SCHEDULING_SERVICE_API_KEY }}' \
               publicAvailabilitySlotKey='${{ secrets.PUBLIC_AVAILABILITY_SLOT_KEY }}' \
+              zocdocCredentialReference="$ZOCDOC_CREDENTIAL_REFERENCE" \
+              zocdocWebhookIntegrationId="$ZOCDOC_WEBHOOK_INTEGRATION_ID" \
+              zocdocWebhookSecret="$ZOCDOC_WEBHOOK_SECRET" \
+              zocdocClientId="$ZOCDOC_CLIENT_ID" \
+              zocdocClientSecret="$ZOCDOC_CLIENT_SECRET" \
+              integrationInboxAdminApiKey="$INTEGRATION_INBOX_ADMIN_API_KEY" \
               googleOAuthClientId='${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}' \
               googleOAuthClientSecret='${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}' \
               searchConsoleServiceAccountEmail='${{ secrets.SEARCH_CONSOLE_SERVICE_ACCOUNT_EMAIL }}' \
@@ -244,7 +325,14 @@ jobs:
               cloudHealthOfficeApiKey='${{ secrets.CHO_ESTIMATE_API_KEY }}' \
               cloudHealthOfficeEligibilityBaseUrl='${{ vars.CHO_ELIGIBILITY_BASE_URL }}' \
               cloudHealthOfficeEligibilityApiKey='${{ secrets.CHO_ELIGIBILITY_API_KEY }}' \
-              cloudHealthOfficeEligibilityPayerIds='${{ vars.CHO_ELIGIBILITY_PAYER_IDS || '[]' }}'
+              cloudHealthOfficeEligibilityPayerIds='${{ vars.CHO_ELIGIBILITY_PAYER_IDS || '[]' }}' \
+              keyVaultUri='${{ steps.infra.outputs.key_vault_uri }}' \
+              portalIdentityId='${{ steps.infra.outputs.portal_identity_id }}' \
+              portalIdentityClientId='${{ steps.infra.outputs.portal_identity_client_id }}' \
+              stediSharedAccountEnabled=${{ vars.STEDI_SHARED_ACCOUNT_ENABLED == 'true' }} \
+              stediSharedAccountSecretName='${{ vars.STEDI_SHARED_ACCOUNT_SECRET_NAME }}' \
+              clearinghouseEligibilityPayerIds='${{ vars.CLEARINGHOUSE_ELIGIBILITY_PAYER_IDS || '[]' }}' \
+              clearinghouseEligibilityDefault=${{ vars.CLEARINGHOUSE_ELIGIBILITY_DEFAULT == 'true' }}
 
       # DNS is hosted in Cloudflare. The CNAME and asuid TXT records must exist
       # before this step runs. Keeping hostname/certificate binding here makes

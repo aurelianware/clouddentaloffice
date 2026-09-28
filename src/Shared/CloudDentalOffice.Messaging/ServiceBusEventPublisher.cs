@@ -18,6 +18,7 @@ public sealed class ServiceBusEventPublisher : IEventPublisher, IAsyncDisposable
     private readonly ServiceBusSender _zocdocWebhookSender;
     private readonly ServiceBusSender _appointmentLifecycleSender;
     private readonly ServiceBusSender _stripeWebhookSender;
+    private readonly ServiceBusSender _coverageIntakeSender;
     private readonly ILogger<ServiceBusEventPublisher> _logger;
 
     public ServiceBusEventPublisher(ServiceBusOptions options, ILogger<ServiceBusEventPublisher> logger)
@@ -30,6 +31,7 @@ public sealed class ServiceBusEventPublisher : IEventPublisher, IAsyncDisposable
         _zocdocWebhookSender = _client.CreateSender(options.ZocdocWebhookTopic);
         _appointmentLifecycleSender = _client.CreateSender(options.AppointmentLifecycleTopic);
         _stripeWebhookSender = _client.CreateSender(options.StripeWebhookTopic);
+        _coverageIntakeSender = _client.CreateSender(options.CoverageIntakeTopic);
         _logger = logger;
     }
 
@@ -51,6 +53,7 @@ public sealed class ServiceBusEventPublisher : IEventPublisher, IAsyncDisposable
             ZocdocAppointmentWebhookEvent => _zocdocWebhookSender,
             AppointmentLifecycleChangedEvent => _appointmentLifecycleSender,
             StripePaymentWebhookEvent or StripeRefundWebhookEvent => _stripeWebhookSender,
+            CoverageIntakeSubmittedEvent => _coverageIntakeSender,
             _ => _bookingSender
         };
         await sender.SendMessageAsync(message, cancellationToken);
@@ -64,6 +67,7 @@ public sealed class ServiceBusEventPublisher : IEventPublisher, IAsyncDisposable
         await _zocdocWebhookSender.DisposeAsync();
         await _appointmentLifecycleSender.DisposeAsync();
         await _stripeWebhookSender.DisposeAsync();
+        await _coverageIntakeSender.DisposeAsync();
         await _client.DisposeAsync();
     }
 }
