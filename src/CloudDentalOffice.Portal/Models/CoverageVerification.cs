@@ -39,9 +39,6 @@ public class CoverageVerification : ITenantEntity
     /// <summary>When an Unavailable check may be retried.</summary>
     public DateTime? NextCheckAt { get; set; }
 
-    /// <summary>Held while one worker instance checks this row, so replicas don't bill the practice twice.</summary>
-    public DateTime? LockedUntil { get; set; }
-
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
 

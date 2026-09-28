@@ -357,9 +357,6 @@ namespace CloudDentalOffice.Portal.Migrations
                     b.Property<DateTime?>("LastCheckedAt")
                         .HasColumnType("TEXT");
 
-                    b.Property<DateTime?>("LockedUntil")
-                        .HasColumnType("TEXT");
-
                     b.Property<DateTime?>("NextCheckAt")
                         .HasColumnType("TEXT");
 
@@ -975,6 +972,9 @@ namespace CloudDentalOffice.Portal.Migrations
                         .HasDefaultValue("demo");
 
                     b.Property<DateTime?>("TerminationDate")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("VerificationLockedUntil")
                         .HasColumnType("TEXT");
 
                     b.HasKey("PatientInsuranceId");

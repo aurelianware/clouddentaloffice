@@ -76,11 +76,11 @@ public sealed class CoverageVerificationTests : IDisposable
         Assert.Equal(CoverageId, row.PatientInsuranceId);
         Assert.Equal(Tenant, row.TenantId);
         Assert.Equal(0, row.Attempts);
-        Assert.Null(row.LockedUntil);
 
         await using var db = Db(Tenant);
         var coverage = await db.PatientInsurances.SingleAsync(x => x.PatientInsuranceId == CoverageId);
         Assert.Equal(coverage.LastVerifiedAt!.Value.UtcDateTime, row.LastCheckedAt);
+        Assert.Null(coverage.VerificationLockedUntil);
         Assert.Single(await db.EligibilityVerifications.ToListAsync());
 
         _clock.Advance(TimeSpan.FromMinutes(15));
@@ -182,6 +182,21 @@ public sealed class CoverageVerificationTests : IDisposable
     }
 
     [Fact]
+    public async Task A_manual_check_for_another_month_is_not_adopted()
+    {
+        var appointment = _feed.Add(Start.AddDays(5));
+        await Sweep();
+
+        // Checked from the treatment-plan screen for a visit next month.
+        _clock.Advance(TimeSpan.FromHours(1));
+        await ManualCheck(CoverageStatus.Inactive, new DateOnly(2026, 11, 20));
+        await Sweep();
+
+        Assert.Equal(EligibilityVerificationState.Verified, (await Row(appointment)).State);
+        Assert.Equal(2, _router.Calls);
+    }
+
+    [Fact]
     public async Task A_newer_manual_check_is_adopted_without_calling_the_payer()
     {
         var appointment = _feed.Add(Start.AddDays(5));
@@ -189,14 +204,7 @@ public sealed class CoverageVerificationTests : IDisposable
 
         // A staff member checks from the insurance dialog an hour later.
         _clock.Advance(TimeSpan.FromHours(1));
-        await using (var db = Db(Tenant))
-        {
-            var service = new EligibilityVerificationService(db, _options, _router, new FixedTenantProvider(Tenant), _clock,
-                NullLogger<EligibilityVerificationService>.Instance);
-            _router.Result = Result(CoverageStatus.Inactive);
-            var patient = await db.Patients.Include(p => p.Insurances).ThenInclude(i => i.InsurancePlan).SingleAsync(p => p.PatientId == PatientId);
-            await service.VerifyAsync(patient, patient.PrimaryInsurance, await db.Providers.SingleAsync(), DateOnly.FromDateTime(Start.UtcDateTime.AddDays(5)));
-        }
+        await ManualCheck(CoverageStatus.Inactive, DateOnly.FromDateTime(Start.UtcDateTime.AddDays(5)));
         Assert.Equal(2, _router.Calls);
 
         await Sweep();
@@ -303,24 +311,45 @@ public sealed class CoverageVerificationTests : IDisposable
     }
 
     [Fact]
-    public async Task A_row_leased_by_another_instance_is_not_checked()
+    public async Task A_coverage_leased_by_another_instance_is_not_checked()
     {
-        var appointment = _feed.Add(Start.AddDays(5));
-        _router.Throw = new TreatmentEstimateUnavailableException("down");
-        await Sweep();
-        _router.Throw = null;
         await using (var db = Db(Tenant))
         {
-            var row = await db.CoverageVerifications.SingleAsync();
-            row.LockedUntil = Start.UtcDateTime.AddHours(2);
-            row.NextCheckAt = null;
+            var coverage = await db.PatientInsurances.SingleAsync(x => x.PatientInsuranceId == CoverageId);
+            coverage.VerificationLockedUntil = Start.UtcDateTime.AddMinutes(3);
             await db.SaveChangesAsync();
         }
+        var appointment = _feed.Add(Start.AddDays(5));
+
+        await Sweep();
+        Assert.Equal(0, _router.Calls);
+        Assert.Null((await Row(appointment)).State);
+
+        // The other instance's lease expires without being released.
+        _clock.Advance(TimeSpan.FromMinutes(5));
+        await Sweep();
+        Assert.Equal(1, _router.Calls);
+    }
+
+    [Fact]
+    public async Task A_result_arriving_after_the_appointment_closed_is_not_applied()
+    {
+        var appointment = _feed.Add(Start.AddDays(5));
+        // Another instance closes the row while the payer call is in flight.
+        _router.During = () =>
+        {
+            using var db = Db(Tenant);
+            db.CoverageVerifications.Single().ClosedAt = Start.UtcDateTime;
+            db.SaveChanges();
+        };
 
         await Sweep();
 
-        Assert.Equal(1, _router.Calls);
-        Assert.Equal(EligibilityVerificationState.Unavailable, (await Row(appointment)).State);
+        var row = await Row(appointment);
+        Assert.NotNull(row.ClosedAt);
+        Assert.Null(row.State);
+        await using var check = Db(Tenant);
+        Assert.Null((await check.PatientInsurances.SingleAsync(x => x.PatientInsuranceId == CoverageId)).VerificationLockedUntil);
     }
 
     [Fact]
@@ -357,6 +386,55 @@ public sealed class CoverageVerificationTests : IDisposable
         Assert.NotNull((await Row(cancelled)).ClosedAt);
         Assert.NotNull((await Row(removed)).ClosedAt);
         Assert.Null((await Row(kept)).ClosedAt);
+    }
+
+    [Fact]
+    public async Task Appointments_close_once_they_have_started()
+    {
+        var appointment = _feed.Add(Start.AddHours(2));
+        await Sweep();
+        Assert.Null((await Row(appointment)).ClosedAt);
+
+        _clock.Advance(TimeSpan.FromHours(3));
+        await Sweep();
+
+        Assert.NotNull((await Row(appointment)).ClosedAt);
+    }
+
+    [Fact]
+    public async Task A_forced_check_never_calls_the_payer_for_a_closed_appointment()
+    {
+        var appointment = _feed.Add(Start.AddDays(3));
+        await Sweep();
+        _feed.SetStatus(appointment, SchedStatus.Cancelled);
+        await Sweep();
+        var id = (await Row(appointment)).Id;
+
+        await using var db = Db(Tenant);
+        var sweep = NewSweep(db, Tenant);
+        var row = await sweep.CheckAsync(id, force: true);
+
+        Assert.NotNull(row!.ClosedAt);
+
+        Assert.Equal(1, _router.Calls);
+    }
+
+    [Fact]
+    public async Task Only_the_appointments_own_provider_is_sent()
+    {
+        await using (var db = Db(Tenant))
+        {
+            db.Providers.Add(new Provider { ProviderId = 8, TenantId = Tenant, NPI = "", FirstName = "Ari", LastName = "Hygienist", IsActive = true });
+            await db.SaveChangesAsync();
+        }
+        var appointment = _feed.Add(Start.AddDays(5), providerId: 8);
+
+        await Sweep();
+
+        var row = await Row(appointment);
+        Assert.Equal(EligibilityVerificationState.NeedsInfo, row.State);
+        Assert.Contains("NPI", row.Reason);
+        Assert.Equal(0, _router.Calls);
     }
 
     [Fact]
@@ -463,7 +541,7 @@ public sealed class CoverageVerificationTests : IDisposable
 
         await using var queueDb = Db(Tenant);
         var queue = new CoverageVerificationQueue(queueDb, new ServiceCollection().BuildServiceProvider(),
-            new FixedTenantProvider(Tenant), Options.Create(_settings), _clock);
+            new FixedTenantProvider(Tenant, User("Staff")), Options.Create(_settings), _clock);
 
         var item = Assert.Single(await queue.GetAsync(3, includeVerified: false));
         Assert.Equal("Rowan Vale", item.PatientName);
@@ -475,18 +553,47 @@ public sealed class CoverageVerificationTests : IDisposable
         Assert.Equal("Delta Dental Arizona", all[0].PlanName);
     }
 
+    [Fact]
+    public async Task Queue_refuses_non_staff()
+    {
+        await using var db = Db(Tenant);
+        var queue = new CoverageVerificationQueue(db, new ServiceCollection().BuildServiceProvider(),
+            new FixedTenantProvider(Tenant, User("Patient")), Options.Create(_settings), _clock);
+
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => queue.GetAsync(3, includeVerified: true));
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => queue.CheckNowAsync(1));
+    }
+
     // ── Helpers ────────────────────────────────────────────────────────────
 
     private async Task<CoverageSweepResult> Sweep()
     {
         await using var db = Db(Tenant);
-        var tenant = new FixedTenantProvider(Tenant);
+        return await NewSweep(db, Tenant).RunAsync();
+    }
+
+    private CoverageVerificationSweep NewSweep(CloudDentalDbContext db, string tenantId)
+    {
+        var tenant = new FixedTenantProvider(tenantId);
         var verification = new EligibilityVerificationService(db, _options, _router, tenant, _clock,
             NullLogger<EligibilityVerificationService>.Instance);
-        var sweep = new CoverageVerificationSweep(db, _feed, verification, tenant, Options.Create(_settings), _clock,
+        return new CoverageVerificationSweep(db, _feed, verification, tenant, Options.Create(_settings), _clock,
             NullLogger<CoverageVerificationSweep>.Instance);
-        return await sweep.RunAsync();
     }
+
+    /// <summary>A staff check from the insurance dialog.</summary>
+    private async Task ManualCheck(CoverageStatus status, DateOnly serviceDate)
+    {
+        await using var db = Db(Tenant);
+        var service = new EligibilityVerificationService(db, _options, _router, new FixedTenantProvider(Tenant), _clock,
+            NullLogger<EligibilityVerificationService>.Instance);
+        _router.Result = Result(status);
+        var patient = await db.Patients.Include(p => p.Insurances).ThenInclude(i => i.InsurancePlan).SingleAsync(p => p.PatientId == PatientId);
+        await service.VerifyAsync(patient, patient.PrimaryInsurance, await db.Providers.SingleAsync(p => p.ProviderId == ProviderId), serviceDate);
+    }
+
+    private static ClaimsPrincipal User(string role) =>
+        new(new ClaimsIdentity([new System.Security.Claims.Claim(ClaimTypes.Role, role)], "test"));
 
     private async Task<CoverageVerification> Row(Guid appointmentId)
     {
@@ -534,10 +641,10 @@ public sealed class CoverageVerificationTests : IDisposable
         public bool Truncated { get; set; }
         public List<string> Tenants { get; } = [];
 
-        public Guid Add(DateTimeOffset start, int patientId = PatientId)
+        public Guid Add(DateTimeOffset start, int patientId = PatientId, int providerId = ProviderId)
         {
             var id = Guid.NewGuid();
-            _appointments[id] = new(id, patientId, ProviderId, start.UtcDateTime, SchedStatus.Scheduled);
+            _appointments[id] = new(id, patientId, providerId, start.UtcDateTime, SchedStatus.Scheduled);
             return id;
         }
 
@@ -558,12 +665,14 @@ public sealed class CoverageVerificationTests : IDisposable
     {
         public EligibilityResult? Result { get; set; }
         public Exception? Throw { get; set; }
+        public Action? During { get; set; }
         public int Calls => Requests.Count;
         public List<NormalizedEligibilityRequest> Requests { get; } = [];
 
         public Task<EligibilityResult> CheckEligibilityAsync(NormalizedEligibilityRequest request, CancellationToken cancellationToken = default)
         {
             Requests.Add(request);
+            During?.Invoke();
             if (Throw is not null) throw Throw;
             return Task.FromResult(Result ?? throw new InvalidOperationException("No result configured."));
         }
@@ -579,9 +688,9 @@ public sealed class CoverageVerificationTests : IDisposable
         public void Advance(TimeSpan duration) => now = now.Add(duration);
     }
 
-    private sealed class FixedTenantProvider(string tenantId) : ITenantProvider
+    private sealed class FixedTenantProvider(string tenantId, ClaimsPrincipal? user = null) : ITenantProvider
     {
         public string TenantId => tenantId;
-        public ClaimsPrincipal? User => null;
+        public ClaimsPrincipal? User => user;
     }
 }

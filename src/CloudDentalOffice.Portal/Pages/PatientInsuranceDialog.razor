@@ -182,6 +182,9 @@
 @code {
     [CascadingParameter] MudDialogInstance MudDialog { get; set; } = null!;
     [Parameter, EditorRequired] public Models.Patient Patient { get; set; } = default!;
+    /// <summary>Preselects the service date and provider, e.g. for an upcoming appointment.</summary>
+    [Parameter] public DateOnly? ServiceDate { get; set; }
+    [Parameter] public int? ProviderId { get; set; }
 
     private bool _loading = true;
     private bool _saving;
@@ -204,7 +207,8 @@
         {
             _plans = (await InsurancePlans.GetInsurancePlansAsync()).Where(p => p.IsActive).OrderBy(p => p.PayerName).ToList();
             _providers = (await ProviderService.GetProvidersAsync()).Where(p => p.IsActive).OrderBy(p => p.LastName).ToList();
-            _providerId = _providers.FirstOrDefault()?.ProviderId;
+            _providerId = _providers.Any(p => p.ProviderId == ProviderId) ? ProviderId : _providers.FirstOrDefault()?.ProviderId;
+            if (ServiceDate is { } date) _serviceDate = date.ToDateTime(TimeOnly.MinValue);
             await ReloadAsync();
             ResetForm();
         }

@@ -11,6 +11,12 @@ namespace CloudDentalOffice.Portal.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
+            migrationBuilder.AddColumn<DateTime>(
+                name: "VerificationLockedUntil",
+                table: "PatientInsurances",
+                type: "TEXT",
+                nullable: true);
+
             migrationBuilder.CreateTable(
                 name: "CoverageVerifications",
                 columns: table => new
@@ -28,7 +34,6 @@ namespace CloudDentalOffice.Portal.Migrations
                     LastCheckedAt = table.Column<DateTime>(type: "TEXT", nullable: true),
                     Attempts = table.Column<int>(type: "INTEGER", nullable: false),
                     NextCheckAt = table.Column<DateTime>(type: "TEXT", nullable: true),
-                    LockedUntil = table.Column<DateTime>(type: "TEXT", nullable: true),
                     CreatedAt = table.Column<DateTime>(type: "TEXT", nullable: false),
                     UpdatedAt = table.Column<DateTime>(type: "TEXT", nullable: false),
                     ClosedAt = table.Column<DateTime>(type: "TEXT", nullable: true)
@@ -55,6 +60,10 @@ namespace CloudDentalOffice.Portal.Migrations
         {
             migrationBuilder.DropTable(
                 name: "CoverageVerifications");
+
+            migrationBuilder.DropColumn(
+                name: "VerificationLockedUntil",
+                table: "PatientInsurances");
         }
     }
 }

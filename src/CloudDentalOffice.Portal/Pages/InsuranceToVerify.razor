@@ -1,4 +1,5 @@
 @page "/insurance-to-verify"
+@attribute [Authorize(Roles = CloudDentalOffice.Portal.Services.Auth.StaffRoles.PayerManagers)]
 @using CloudDentalOffice.Portal.Models
 @using Microsoft.Extensions.Options
 @inject ICoverageVerificationQueue Queue
@@ -120,7 +121,13 @@
             return;
         }
         var dialog = DialogService.Show<PatientInsuranceDialog>($"Insurance & Eligibility — {patient.FullName}",
-            new DialogParameters { ["Patient"] = patient },
+            // Check against this appointment's date and provider, not today's defaults.
+            new DialogParameters
+            {
+                ["Patient"] = patient,
+                ["ServiceDate"] = DateOnly.FromDateTime(Local(item.AppointmentStart)),
+                ["ProviderId"] = item.ProviderId
+            },
             new DialogOptions { MaxWidth = MaxWidth.Large, FullWidth = true, CloseOnEscapeKey = true });
         await dialog.Result;
         // Pick up what changed in the dialog: a check there applies to this appointment,

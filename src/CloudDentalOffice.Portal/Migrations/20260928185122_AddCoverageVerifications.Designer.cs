@@ -11,7 +11,7 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace CloudDentalOffice.Portal.Migrations
 {
     [DbContext(typeof(CloudDentalDbContext))]
-    [Migration("20260928183505_AddCoverageVerifications")]
+    [Migration("20260928185122_AddCoverageVerifications")]
     partial class AddCoverageVerifications
     {
         /// <inheritdoc />
@@ -358,9 +358,6 @@ namespace CloudDentalOffice.Portal.Migrations
                         .HasColumnType("TEXT");
 
                     b.Property<DateTime?>("LastCheckedAt")
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTime?>("LockedUntil")
                         .HasColumnType("TEXT");
 
                     b.Property<DateTime?>("NextCheckAt")
@@ -978,6 +975,9 @@ namespace CloudDentalOffice.Portal.Migrations
                         .HasDefaultValue("demo");
 
                     b.Property<DateTime?>("TerminationDate")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("VerificationLockedUntil")
                         .HasColumnType("TEXT");
 
                     b.HasKey("PatientInsuranceId");

@@ -5,6 +5,7 @@ using System.Text.Json.Serialization;
 using CloudDentalOffice.Contracts.Scheduling;
 using CloudDentalOffice.Portal.Data;
 using CloudDentalOffice.Portal.Models;
+using CloudDentalOffice.Portal.Services.Auth;
 using CloudDentalOffice.Portal.Services.Tenancy;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
@@ -145,7 +146,7 @@ public sealed class CoverageVerificationSweep(
         var tenantId = RequireTenant();
         var now = time.GetUtcNow().UtcDateTime;
         var zone = Options.ResolveTimeZone(time);
-        var scheduleRead = await SyncScheduleAsync(tenantId, now, zone, cancellationToken);
+        var scheduleRead = await SyncScheduleAsync(tenantId, now, cancellationToken);
         var checkedCount = await CheckDueAsync(now, zone, onlyId: null, force: false, cancellationToken);
         return new(scheduleRead, checkedCount);
     }
@@ -169,7 +170,7 @@ public sealed class CoverageVerificationSweep(
     // ── Schedule sync ──
 
     /// <returns>False when the schedule couldn't be read; existing rows are still checked.</returns>
-    private async Task<bool> SyncScheduleAsync(string tenantId, DateTime now, TimeZoneInfo zone, CancellationToken cancellationToken)
+    private async Task<bool> SyncScheduleAsync(string tenantId, DateTime now, CancellationToken cancellationToken)
     {
         var horizonEnd = now.AddDays(Options.HorizonDays);
         var appointments = new Dictionary<Guid, ScheduledAppointment>();
@@ -199,7 +200,6 @@ public sealed class CoverageVerificationSweep(
             .Where(x => x.ClosedAt == null || ids.Contains(x.AppointmentId))
             .ToListAsync(cancellationToken);
         var byAppointment = rows.ToDictionary(x => x.AppointmentId);
-        var todayStart = LocalDayStart(now, zone);
 
         foreach (var appointment in appointments.Values)
         {
@@ -239,11 +239,11 @@ public sealed class CoverageVerificationSweep(
 
         foreach (var row in rows.Where(x => x.ClosedAt is null && !appointments.ContainsKey(x.AppointmentId)))
         {
-            // Earlier today's appointments aren't in the feed (it starts at now), so
-            // only a start inside the window read proves the appointment is gone.
-            var past = row.AppointmentStart < todayStart;
-            var gone = !truncated && row.AppointmentStart >= now && row.AppointmentStart <= horizonEnd;
-            if (past || gone) Close(row, now);
+            // Once an appointment has started there's nothing left to verify. A later
+            // one missing from a complete read has been cancelled or moved away.
+            var started = row.AppointmentStart < now;
+            var gone = !truncated && row.AppointmentStart <= horizonEnd;
+            if (started || gone) Close(row, now);
         }
 
         try
@@ -265,9 +265,10 @@ public sealed class CoverageVerificationSweep(
 
     private async Task<int> CheckDueAsync(DateTime now, TimeZoneInfo zone, long? onlyId, bool force, CancellationToken cancellationToken)
     {
-        var todayStart = LocalDayStart(now, zone);
-        var query = db.CoverageVerifications.Where(x => x.ClosedAt == null && x.AppointmentStart >= todayStart);
-        if (onlyId is { } id) query = db.CoverageVerifications.Where(x => x.Id == id);
+        // Only appointments still ahead, including for a forced check: a stale click on a
+        // cancelled or past appointment must not call the payer.
+        var query = db.CoverageVerifications.Where(x => x.ClosedAt == null && x.AppointmentStart >= now);
+        if (onlyId is { } id) query = query.Where(x => x.Id == id);
         var rows = await query.OrderBy(x => x.AppointmentStart).ToListAsync(cancellationToken);
         if (rows.Count == 0) return 0;
 
@@ -277,7 +278,12 @@ public sealed class CoverageVerificationSweep(
             .Include(p => p.Insurances).ThenInclude(i => i.InsurancePlan)
             .Where(p => patientIds.Contains(p.PatientId))
             .ToDictionaryAsync(p => p.PatientId, cancellationToken);
-        var providers = await db.Providers.AsNoTracking().Where(p => p.IsActive).ToListAsync(cancellationToken);
+        // Only the appointment's own provider: eligibility is asked for the rendering provider,
+        // and the request builder turns a missing provider or NPI into NeedsInfo.
+        var providerIds = rows.Select(x => x.ProviderId).Distinct().ToList();
+        var providers = await db.Providers.AsNoTracking()
+            .Where(p => providerIds.Contains(p.ProviderId))
+            .ToDictionaryAsync(p => p.ProviderId, cancellationToken);
 
         var checkedCount = 0;
         foreach (var row in rows)
@@ -289,17 +295,37 @@ public sealed class CoverageVerificationSweep(
             }
 
             var coverage = patient.PrimaryInsurance;
-            await ReconcileAsync(row, coverage, now, cancellationToken);
+            await ReconcileAsync(row, coverage, zone, now, cancellationToken);
             if (coverage is null || !(force || IsDue(row, patient, now, zone))) continue;
-            if (!await TryLeaseAsync(row, now, cancellationToken)) continue;
 
-            var before = coverage.LastVerifiedAt;
-            var outcome = await verification.VerifyAsync(
-                patient, coverage, ProviderFor(row, providers), ServiceDate(row, zone), cancellationToken);
-            Apply(row, outcome, coverage.LastVerifiedAt != before ? coverage.LastVerifiedAt : null, now);
-            checkedCount++;
-            // Save after each check so an answer the practice paid for is never lost.
+            // Save what reconciling found; the payer's answer is written separately below.
             await db.SaveChangesAsync(cancellationToken);
+            var lease = await TryLeaseCoverageAsync(coverage.PatientInsuranceId, now, cancellationToken);
+            if (lease is null) continue;
+            try
+            {
+                // Another instance may have checked this coverage since it was loaded.
+                if (await RefreshCoverageAsync(coverage, cancellationToken))
+                {
+                    await ReconcileAsync(row, coverage, zone, now, cancellationToken);
+                    if (!force && !IsDue(row, patient, now, zone))
+                    {
+                        await db.SaveChangesAsync(cancellationToken);
+                        continue;
+                    }
+                }
+
+                var before = coverage.LastVerifiedAt;
+                var outcome = await verification.VerifyAsync(patient, coverage,
+                    providers.GetValueOrDefault(row.ProviderId), ServiceDate(row, zone), cancellationToken);
+                Apply(row, outcome, coverage.LastVerifiedAt != before ? coverage.LastVerifiedAt : null, now);
+                await WriteResultAsync(row, cancellationToken);
+                checkedCount++;
+            }
+            finally
+            {
+                await ReleaseCoverageAsync(coverage.PatientInsuranceId, lease.Value);
+            }
         }
 
         await db.SaveChangesAsync(cancellationToken);
@@ -307,7 +333,8 @@ public sealed class CoverageVerificationSweep(
     }
 
     /// <summary>Brings the row in line with the patient's current primary coverage and its latest answer.</summary>
-    private async Task ReconcileAsync(CoverageVerification row, PatientInsurance? coverage, DateTime now, CancellationToken cancellationToken)
+    private async Task ReconcileAsync(CoverageVerification row, PatientInsurance? coverage, TimeZoneInfo zone, DateTime now,
+        CancellationToken cancellationToken)
     {
         if (coverage is null)
         {
@@ -328,13 +355,19 @@ public sealed class CoverageVerificationSweep(
         if (verifiedAt is { } at && (row.LastCheckedAt is null || at > row.LastCheckedAt))
         {
             // A newer answer for this coverage: a manual check, or another appointment's.
-            var reason = await db.EligibilityVerifications.AsNoTracking()
+            // It stands for this appointment only if it was asked for the same month, since
+            // dental coverage starts and ends on month boundaries; otherwise this
+            // appointment keeps its own answer and schedule.
+            var latest = await db.EligibilityVerifications.AsNoTracking()
                 .Where(x => x.PatientInsuranceId == coverage.PatientInsuranceId)
                 .OrderByDescending(x => x.Id)
-                .Select(x => x.Reason)
+                .Select(x => new { x.Reason, x.ServiceDate })
                 .FirstOrDefaultAsync(cancellationToken);
+            var serviceDate = ServiceDate(row, zone);
+            if (latest is null || latest.ServiceDate.Year != serviceDate.Year || latest.ServiceDate.Month != serviceDate.Month)
+                return;
             row.State = coverage.LastVerificationState;
-            row.Reason = reason;
+            row.Reason = latest.Reason;
             row.LastCheckedAt = at;
             row.Attempts = 0;
             row.NextCheckAt = null;
@@ -374,18 +407,70 @@ public sealed class CoverageVerificationSweep(
         };
     }
 
-    /// <summary>Claims the row for this instance, so two replicas never check the same appointment at once.</summary>
-    private async Task<bool> TryLeaseAsync(CoverageVerification row, DateTime now, CancellationToken cancellationToken)
+    /// <summary>
+    /// Claims the coverage for this instance. Checks are billed per coverage, so the
+    /// lease is on the coverage row: one atomic update that appointments sharing it,
+    /// on any replica, all contend for. Null if someone else holds it.
+    /// </summary>
+    private async Task<DateTime?> TryLeaseCoverageAsync(int patientInsuranceId, DateTime now, CancellationToken cancellationToken)
     {
-        var until = now.AddMinutes(Options.LeaseMinutes);
-        var claimed = await db.CoverageVerifications
-            .Where(x => x.Id == row.Id && (x.LockedUntil == null || x.LockedUntil <= now))
-            .ExecuteUpdateAsync(s => s.SetProperty(x => x.LockedUntil, until), cancellationToken);
-        if (claimed != 1) return false;
-        // Match the tracked copy to the database, so releasing the lease is saved.
-        db.Entry(row).Property(x => x.LockedUntil).OriginalValue = until;
-        row.LockedUntil = until;
+        // Whole seconds, so releasing can match it exactly after the database rounds it.
+        var expiry = now.AddMinutes(Options.LeaseMinutes);
+        var until = new DateTime(expiry.Ticks - expiry.Ticks % TimeSpan.TicksPerSecond, DateTimeKind.Utc);
+        var claimed = await db.PatientInsurances
+            .Where(x => x.PatientInsuranceId == patientInsuranceId &&
+                        (x.VerificationLockedUntil == null || x.VerificationLockedUntil <= now))
+            .ExecuteUpdateAsync(s => s.SetProperty(x => x.VerificationLockedUntil, until), cancellationToken);
+        return claimed == 1 ? until : null;
+    }
+
+    private async Task ReleaseCoverageAsync(int patientInsuranceId, DateTime until)
+    {
+        // Even when the sweep is being cancelled; otherwise the lease simply expires.
+        try
+        {
+            await db.PatientInsurances
+                .Where(x => x.PatientInsuranceId == patientInsuranceId && x.VerificationLockedUntil == until)
+                .ExecuteUpdateAsync(s => s.SetProperty(x => x.VerificationLockedUntil, (DateTime?)null), CancellationToken.None);
+        }
+        catch (Exception ex) when (ex is DbUpdateException or InvalidOperationException)
+        {
+            logger.LogWarning(ex, "Could not release the verification lease on coverage {PatientInsuranceId}.", patientInsuranceId);
+        }
+    }
+
+    /// <summary>Re-reads the coverage's latest answer under the lease. True if it changed since loading.</summary>
+    private async Task<bool> RefreshCoverageAsync(PatientInsurance coverage, CancellationToken cancellationToken)
+    {
+        var latest = await db.PatientInsurances.AsNoTracking()
+            .Where(x => x.PatientInsuranceId == coverage.PatientInsuranceId)
+            .Select(x => new { x.LastVerifiedAt, x.LastVerificationState })
+            .SingleAsync(cancellationToken);
+        if (latest.LastVerifiedAt == coverage.LastVerifiedAt) return false;
+        coverage.LastVerifiedAt = latest.LastVerifiedAt;
+        coverage.LastVerificationState = latest.LastVerificationState;
         return true;
+    }
+
+    /// <summary>
+    /// Writes the payer's answer only while the appointment is still open, so a result
+    /// that arrives after another instance closed the row never lands on it.
+    /// </summary>
+    private async Task WriteResultAsync(CoverageVerification row, CancellationToken cancellationToken)
+    {
+        var written = await db.CoverageVerifications
+            .Where(x => x.Id == row.Id && x.ClosedAt == null)
+            .ExecuteUpdateAsync(s => s
+                .SetProperty(x => x.State, row.State)
+                .SetProperty(x => x.Reason, row.Reason)
+                .SetProperty(x => x.LastCheckedAt, row.LastCheckedAt)
+                .SetProperty(x => x.Attempts, row.Attempts)
+                .SetProperty(x => x.NextCheckAt, row.NextCheckAt)
+                .SetProperty(x => x.UpdatedAt, row.UpdatedAt), cancellationToken);
+        if (written == 0)
+            logger.LogInformation("Coverage verification {VerificationId} closed during its check; result not applied.", row.Id);
+        // Written directly; the tracked copy must not be saved over it.
+        db.Entry(row).State = EntityState.Detached;
     }
 
     private void Apply(CoverageVerification row, EligibilityVerificationOutcome outcome, DateTimeOffset? recordedAt, DateTime now)
@@ -406,14 +491,8 @@ public sealed class CoverageVerificationSweep(
             row.Attempts = 0;
             row.NextCheckAt = null;
         }
-        row.LockedUntil = null;
         Touch(row, now);
     }
-
-    private static Provider? ProviderFor(CoverageVerification row, IReadOnlyList<Provider> providers) =>
-        providers.FirstOrDefault(p => p.ProviderId == row.ProviderId && !string.IsNullOrWhiteSpace(p.NPI))
-        ?? providers.FirstOrDefault(p => !string.IsNullOrWhiteSpace(p.NPI))
-        ?? providers.FirstOrDefault(p => p.ProviderId == row.ProviderId);
 
     private static void SetState(CoverageVerification row, EligibilityVerificationState state, string reason, DateTime now)
     {
@@ -526,12 +605,12 @@ public sealed class CoverageVerificationWorker(
 // ── Staff queue ────────────────────────────────────────────────────────────
 
 public sealed record CoverageQueueItem(
-    long Id, DateTime AppointmentStart, int PatientId, string PatientName, string? PlanName,
+    long Id, DateTime AppointmentStart, int PatientId, int ProviderId, string PatientName, string? PlanName,
     EligibilityVerificationState? State, string? Reason, DateTime? LastCheckedAt, int Attempts);
 
 public interface ICoverageVerificationQueue
 {
-    /// <summary>Open appointments from the start of today through <paramref name="days"/> days ahead.</summary>
+    /// <summary>Open appointments from now through the end of the <paramref name="days"/>th day (1 = today).</summary>
     Task<IReadOnlyList<CoverageQueueItem>> GetAsync(int days, bool includeVerified, CancellationToken cancellationToken = default);
 
     /// <summary>Checks one appointment now, the same way the worker would.</summary>
@@ -551,9 +630,10 @@ public sealed class CoverageVerificationQueue(
     public async Task<IReadOnlyList<CoverageQueueItem>> GetAsync(int days, bool includeVerified,
         CancellationToken cancellationToken = default)
     {
+        RequireStaff();
         var zone = options.Value.ResolveTimeZone(time);
-        var from = CoverageVerificationSweep.LocalDayStart(time.GetUtcNow().UtcDateTime, zone);
-        var to = from.AddDays(Math.Clamp(days, 1, 30));
+        var from = time.GetUtcNow().UtcDateTime;
+        var to = CoverageVerificationSweep.LocalDayStart(from, zone).AddDays(Math.Clamp(days, 1, 30));
         var rows = await db.CoverageVerifications.AsNoTracking()
             .Where(x => x.ClosedAt == null && x.AppointmentStart >= from && x.AppointmentStart < to)
             .Where(x => includeVerified || x.State == null || x.State != EligibilityVerificationState.Verified)
@@ -572,7 +652,7 @@ public sealed class CoverageVerificationQueue(
             .ToDictionaryAsync(c => c.PatientInsuranceId, c => c.PayerName, cancellationToken);
 
         return rows.Select(x => new CoverageQueueItem(
-            x.Id, x.AppointmentStart, x.PatientId,
+            x.Id, x.AppointmentStart, x.PatientId, x.ProviderId,
             patients.TryGetValue(x.PatientId, out var p) ? $"{p.FirstName} {p.LastName}" : $"Patient #{x.PatientId}",
             x.PatientInsuranceId is { } c && plans.TryGetValue(c, out var plan) ? plan : null,
             x.State, x.Reason, x.LastCheckedAt, x.Attempts)).ToList();
@@ -586,11 +666,20 @@ public sealed class CoverageVerificationQueue(
 
     private async Task CheckAsync(long id, bool force, CancellationToken cancellationToken)
     {
+        RequireStaff();
         // A scope of its own, pinned to the signed-in practice: the same code path as
         // the worker, and nothing pending on the page's context gets saved with it.
         var tenantId = tenantProvider.TenantId;
         await using var scope = services.CreateAsyncScope();
         scope.ServiceProvider.GetRequiredService<PinnedTenantScope>().Pin(tenantId);
         await scope.ServiceProvider.GetRequiredService<ICoverageVerificationSweep>().CheckAsync(id, force, cancellationToken);
+    }
+
+    // The page is staff-only too; this keeps a Patient-role session from reading the
+    // list or triggering payer calls through the service.
+    private void RequireStaff()
+    {
+        if (!StaffRoles.CanManagePayers(tenantProvider.User))
+            throw new UnauthorizedAccessException("Practice staff access is required.");
     }
 }
