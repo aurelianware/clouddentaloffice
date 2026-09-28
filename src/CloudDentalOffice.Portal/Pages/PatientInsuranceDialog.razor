@@ -5,7 +5,7 @@
 @inject IPatientCoverageService Coverage
 @inject IInsurancePlanService InsurancePlans
 @inject IProviderService ProviderService
-@inject IPayerTransactionRouter PayerRouter
+@inject IEligibilityVerificationService Verification
 @inject ITenantProvider TenantProvider
 @inject ILogger<PatientInsuranceDialog> Logger
 @inject NavigationManager Navigation
@@ -30,7 +30,7 @@
             {
                 <MudSimpleTable Dense="true" Style="background:transparent;">
                     <thead>
-                        <tr><th scope="col">Plan</th><th scope="col">Order</th><th scope="col">Member ID</th><th scope="col">Policyholder</th><th scope="col">Dates</th><th scope="col">Status</th><th scope="col"></th></tr>
+                        <tr><th scope="col">Plan</th><th scope="col">Order</th><th scope="col">Member ID</th><th scope="col">Policyholder</th><th scope="col">Dates</th><th scope="col">Status</th><th scope="col">Last verified</th><th scope="col"></th></tr>
                     </thead>
                     <tbody>
                         @foreach (var c in _coverages)
@@ -42,6 +42,7 @@
                                 <td>@(IsSelf(c) ? "Patient" : $"{c.SubscriberFirstName} {c.SubscriberLastName} ({c.RelationshipToSubscriber})")</td>
                                 <td>@c.EffectiveDate.ToString("d") – @(c.TerminationDate?.ToString("d") ?? "present")</td>
                                 <td>@(c.IsActive ? "Active" : "Inactive")</td>
+                                <td>@VerificationLabel(c)</td>
                                 <td style="white-space:nowrap;">
                                     @if (c.IsActive)
                                     {
@@ -292,12 +293,12 @@
         try
         {
             var provider = _providers.FirstOrDefault(p => p.ProviderId == _providerId);
-            var request = EligibilityRequestBuilder.Build(Patient, c, provider,
-                DateOnly.FromDateTime(_serviceDate ?? DateTime.Today), TenantProvider.TenantId);
-            _eligibility = await PayerRouter.CheckEligibilityAsync(request);
+            var outcome = await Verification.VerifyAsync(Patient, c, provider,
+                DateOnly.FromDateTime(_serviceDate ?? DateTime.Today));
+            _eligibility = outcome.Result;
+            // With an answer, the result view explains it; otherwise show why there is none.
+            if (outcome.Result is null) _eligibilityMessage = outcome.Message;
         }
-        catch (TreatmentEstimateValidationException ex) { _eligibilityMessage = ex.Message; }
-        catch (TreatmentEstimateUnavailableException ex) { _eligibilityMessage = ex.Message; }
         catch (UnauthorizedAccessException) { _eligibilityMessage = "The eligibility request was denied for this practice."; }
         catch (Exception ex)
         {
@@ -306,6 +307,21 @@
         }
         finally { _checkingId = null; }
     }
+
+    internal static string VerificationLabel(PatientInsurance c) => c.LastVerifiedAt is not { } at
+        ? "Not verified"
+        : $"{StateLabel(c.LastVerificationState)} · {at.LocalDateTime:d}";
+
+    internal static string StateLabel(EligibilityVerificationState? state) => state switch
+    {
+        EligibilityVerificationState.Verified => "Verified",
+        EligibilityVerificationState.NotDental => "No dental coverage",
+        EligibilityVerificationState.Inactive => "Inactive",
+        EligibilityVerificationState.Unconfirmed => "Unconfirmed",
+        EligibilityVerificationState.NeedsInfo => "Needs correction",
+        EligibilityVerificationState.Unavailable => "Check failed",
+        _ => "Unknown"
+    };
 
     private void Close() => MudDialog.Close(DialogResult.Ok(_changed));
 

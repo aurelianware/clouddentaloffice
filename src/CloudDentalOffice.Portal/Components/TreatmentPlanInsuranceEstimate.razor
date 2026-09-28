@@ -4,6 +4,7 @@
 @using MudBlazor
 @inject IPatientService PatientService
 @inject IPayerTransactionRouter PayerRouter
+@inject IEligibilityVerificationService Verification
 @inject ITenantProvider TenantProvider
 @inject Microsoft.Extensions.Options.IOptions<CloudHealthOfficeOptions> EstimateOptions
 @inject ILogger<TreatmentPlanInsuranceEstimate> Logger
@@ -194,12 +195,11 @@
             _checkingEligibility = true;
             var insurance = _coverages.FirstOrDefault(x => x.PatientInsuranceId == _selectedInsuranceId);
             var provider = Providers.FirstOrDefault(x => x.ProviderId == ProviderId);
-            var request = EligibilityRequestBuilder.Build(_patient, insurance, provider,
-                DateOnly.FromDateTime(_serviceDate ?? DateTime.Today), TenantProvider.TenantId);
-            _eligibility = await PayerRouter.CheckEligibilityAsync(request);
+            var outcome = await Verification.VerifyAsync(_patient, insurance, provider,
+                DateOnly.FromDateTime(_serviceDate ?? DateTime.Today));
+            _eligibility = outcome.Result;
+            if (outcome.Result is null) _message = outcome.Message;
         }
-        catch (TreatmentEstimateValidationException ex) { _message = ex.Message; }
-        catch (TreatmentEstimateUnavailableException ex) { _message = ex.Message; }
         catch (UnauthorizedAccessException) { _message = "The eligibility request was denied for this practice."; }
         catch (Exception ex)
         {

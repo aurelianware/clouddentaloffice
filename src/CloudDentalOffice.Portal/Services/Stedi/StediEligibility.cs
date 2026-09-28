@@ -216,24 +216,53 @@ internal static class StediEligibilityWire
             GroupNumber = s.PlanInformation?.GroupNumber,
             CoverageStart = ParseDate(s.PlanDateInformation?.EligibilityBegin) ?? ParseDate(s.PlanDateInformation?.PlanBegin),
             CoverageEnd = ParseDate(s.PlanDateInformation?.EligibilityEnd) ?? ParseDate(s.PlanDateInformation?.PlanEnd),
-            Benefits = benefits.Select(ToBenefit).ToList(),
+            Benefits = benefits.SelectMany(ToBenefits).ToList(),
             CorrelationId = correlationId,
             CheckedAtUtc = DateTimeOffset.UtcNow
         };
     }
 
-    private static ChoBenefit ToBenefit(StediBenefit b)
+    /// <summary>
+    /// One summary line per service type on the benefit line. Payers often put a
+    /// single amount or percent on several service types at once (a basic-services
+    /// coinsurance for periodontics, restorative and endodontics, say); keeping
+    /// only the first code would file it under one of them.
+    /// </summary>
+    internal static IEnumerable<ChoBenefit> ToBenefits(StediBenefit b)
+    {
+        var codes = b.ServiceTypeCodes ?? [];
+        var distinct = codes.Where(c => !string.IsNullOrWhiteSpace(c)).Select(c => c.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase).Count();
+        if (distinct <= 1)
+        {
+            yield return ToBenefit(b, codes.FirstOrDefault(c => !string.IsNullOrWhiteSpace(c))?.Trim(), ServiceTypeName(b));
+            yield break;
+        }
+
+        // serviceTypes is parallel to serviceTypeCodes when the payer sends both.
+        var names = b.ServiceTypes is { } n && n.Count == codes.Count ? n : null;
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        for (var i = 0; i < codes.Count; i++)
+        {
+            var code = codes[i]?.Trim();
+            if (string.IsNullOrEmpty(code) || !seen.Add(code)) continue;
+            var name = names?[i];
+            yield return ToBenefit(b, code, string.IsNullOrWhiteSpace(name) ? ServiceTypeNameFor(code) : name.Trim());
+        }
+    }
+
+    private static ChoBenefit ToBenefit(StediBenefit b, string? serviceTypeCode, string? serviceTypeName)
     {
         var amount = ParseDecimal(b.BenefitAmount);
         var percent = ParseDecimal(b.BenefitPercent) is { } p && p > 1m ? p / 100m : ParseDecimal(b.BenefitPercent);
         return new ChoBenefit
         {
             BenefitCode = b.Code,
-            ServiceTypeCode = b.ServiceTypeCodes?.FirstOrDefault(),
+            ServiceTypeCode = serviceTypeCode,
             // Stedi's "name" is the benefit line's name ("Active Coverage", "Non-Covered");
             // the service type's own name is in serviceTypes.
             BenefitName = b.Name,
-            ServiceTypeName = ServiceTypeName(b),
+            ServiceTypeName = serviceTypeName,
             CoverageLevel = b.CoverageLevelCode,
             // In network only when the payer says so (Y) or omits the indicator.
             InNetwork = string.IsNullOrWhiteSpace(b.InPlanNetworkIndicatorCode) ||
@@ -273,9 +302,11 @@ internal static class StediEligibilityWire
     {
         var named = b.ServiceTypes?.FirstOrDefault(n => !string.IsNullOrWhiteSpace(n));
         if (named is not null) return named;
-        var code = b.ServiceTypeCodes?.FirstOrDefault(c => !string.IsNullOrWhiteSpace(c))?.Trim();
-        return code is not null && ServiceTypeNames.TryGetValue(code, out var name) ? name : null;
+        return ServiceTypeNameFor(b.ServiceTypeCodes?.FirstOrDefault(c => !string.IsNullOrWhiteSpace(c))?.Trim());
     }
+
+    private static string? ServiceTypeNameFor(string? code) =>
+        code is not null && ServiceTypeNames.TryGetValue(code, out var name) ? name : null;
 
     // Active EB01 is "1"; inactive "6". Prefer plan status, then benefit lines.
     private static CoverageStatus CoverageFrom(List<StediPlanStatus>? planStatus, List<StediBenefit> benefits)
