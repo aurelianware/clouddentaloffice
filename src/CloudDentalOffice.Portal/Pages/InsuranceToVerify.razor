@@ -1,0 +1,169 @@
+@page "/insurance-to-verify"
+@attribute [Authorize(Roles = CloudDentalOffice.Portal.Services.Auth.StaffRoles.PayerManagers)]
+@using CloudDentalOffice.Portal.Models
+@using Microsoft.Extensions.Options
+@inject ICoverageVerificationQueue Queue
+@inject IPatientService PatientService
+@inject IOptions<CoverageVerificationOptions> VerificationOptions
+@inject TimeProvider Time
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+@inject ILogger<InsuranceToVerify> Logger
+
+<PageTitle>Insurance to Verify - Cloud Dental Office</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-4">
+    <MudPaper Class="pa-4" Style="background:#0a0a0a;border:1px solid #00ffff;">
+        <MudStack Row Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center">
+            <div>
+                <MudText Typo="Typo.h4" Color="Color.Primary"><MudIcon Icon="@Icons.Material.Filled.VerifiedUser" /> Insurance to Verify</MudText>
+                <MudText Typo="Typo.body2">Upcoming appointments whose dental coverage isn't confirmed. Coverage is checked automatically; these need the front desk.</MudText>
+            </div>
+            <MudStack Row AlignItems="AlignItems.Center">
+                <MudSwitch T="bool" Value="_includeVerified" ValueChanged="IncludeVerifiedChanged" Color="Color.Primary" Label="Show verified" />
+                <MudSelect T="int" Value="_days" ValueChanged="DaysChanged" Label="Appointments" Dense Variant="Variant.Outlined">
+                    <MudSelectItem Value="1">Today</MudSelectItem>
+                    <MudSelectItem Value="3">Next 3 days</MudSelectItem>
+                    <MudSelectItem Value="7">Next 7 days</MudSelectItem>
+                    <MudSelectItem Value="14">Next 14 days</MudSelectItem>
+                </MudSelect>
+            </MudStack>
+        </MudStack>
+    </MudPaper>
+
+    <MudPaper Class="pa-4 mt-4" Style="background:#0a0a0a;border:1px solid rgba(0,255,255,.3);">
+        @if (_loading) { <MudProgressLinear Indeterminate Color="Color.Primary" /> }
+        else
+        {
+            <MudTable Items="_items" Hover Dense>
+                <HeaderContent>
+                    <MudTh>Appointment</MudTh><MudTh>Patient</MudTh><MudTh>Plan</MudTh><MudTh>Status</MudTh>
+                    <MudTh>What to do</MudTh><MudTh>Last checked</MudTh><MudTh></MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd DataLabel="Appointment">@Local(context.AppointmentStart).ToString("ddd M/d h:mm tt")</MudTd>
+                    <MudTd DataLabel="Patient">@context.PatientName</MudTd>
+                    <MudTd DataLabel="Plan">@(context.PlanName ?? "—")</MudTd>
+                    <MudTd DataLabel="Status"><MudChip T="string" Size="Size.Small" Color="@StateColor(context.State)">@StateLabel(context.State)</MudChip></MudTd>
+                    <MudTd DataLabel="What to do">@WhatToDo(context)</MudTd>
+                    <MudTd DataLabel="Last checked">@(context.LastCheckedAt is { } at ? Local(at).ToString("M/d h:mm tt") : "—")</MudTd>
+                    <MudTd>
+                        <MudStack Row Spacing="1">
+                            <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Primary" OnClick="@(() => OpenInsurance(context))">Insurance</MudButton>
+                            <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Primary" Disabled="@(_checkingId is not null)"
+                                       OnClick="@(() => CheckNow(context))">
+                                @(_checkingId == context.Id ? "Checking…" : "Check now")
+                            </MudButton>
+                        </MudStack>
+                    </MudTd>
+                </RowTemplate>
+                <NoRecordsContent><MudText>@(_includeVerified ? "No upcoming appointments." : "Every upcoming appointment's coverage is verified.")</MudText></NoRecordsContent>
+            </MudTable>
+            @if (!VerificationOptions.Value.Enabled)
+            {
+                <MudAlert Severity="Severity.Info" Dense Class="mt-3">Automatic checks are turned off; this list updates only when staff check coverage.</MudAlert>
+            }
+        }
+    </MudPaper>
+</MudContainer>
+
+@code {
+    private IReadOnlyList<CoverageQueueItem> _items = [];
+    private int _days = 3;
+    private bool _includeVerified;
+    private bool _loading = true;
+    private long? _checkingId;
+    private TimeZoneInfo _zone = TimeZoneInfo.Local;
+
+    protected override Task OnInitializedAsync()
+    {
+        _zone = VerificationOptions.Value.ResolveTimeZone(Time);
+        return Load();
+    }
+
+    private async Task Load()
+    {
+        _loading = true;
+        try { _items = await Queue.GetAsync(_days, _includeVerified); }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Could not load the insurance verification queue");
+            Snackbar.Add("Unable to load the verification list.", Severity.Error);
+        }
+        finally { _loading = false; }
+    }
+
+    private async Task DaysChanged(int value) { _days = value; await Load(); }
+    private async Task IncludeVerifiedChanged(bool value) { _includeVerified = value; await Load(); }
+
+    private async Task CheckNow(CoverageQueueItem item)
+    {
+        _checkingId = item.Id;
+        try
+        {
+            await Queue.CheckNowAsync(item.Id);
+            await Load();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Coverage check failed for verification {VerificationId}", item.Id);
+            Snackbar.Add("The check could not be completed. Try again later.", Severity.Error);
+        }
+        finally { _checkingId = null; }
+    }
+
+    private async Task OpenInsurance(CoverageQueueItem item)
+    {
+        var patient = await PatientService.GetPatientByIdAsync(item.PatientId.ToString());
+        if (patient is null)
+        {
+            Snackbar.Add("This patient could not be found.", Severity.Warning);
+            return;
+        }
+        var dialog = DialogService.Show<PatientInsuranceDialog>($"Insurance & Eligibility — {patient.FullName}",
+            // Check against this appointment's date and provider, not today's defaults.
+            new DialogParameters
+            {
+                ["Patient"] = patient,
+                ["ServiceDate"] = DateOnly.FromDateTime(Local(item.AppointmentStart)),
+                ["ProviderId"] = item.ProviderId
+            },
+            new DialogOptions { MaxWidth = MaxWidth.Large, FullWidth = true, CloseOnEscapeKey = true });
+        await dialog.Result;
+        // Pick up what changed in the dialog: a check there applies to this appointment,
+        // and an edited coverage is checked again. Nothing changed means no payer call.
+        try
+        {
+            await Queue.RefreshAsync(item.Id);
+            await Load();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Coverage refresh failed for verification {VerificationId}", item.Id);
+            Snackbar.Add("The coverage could not be re-checked. Try Check now.", Severity.Error);
+        }
+    }
+
+    private DateTime Local(DateTime utc) => TimeZoneInfo.ConvertTimeFromUtc(DateTime.SpecifyKind(utc, DateTimeKind.Utc), _zone);
+
+    private static string StateLabel(EligibilityVerificationState? state) =>
+        state is null ? "Not checked yet" : PatientInsuranceDialog.StateLabel(state);
+
+    private string WhatToDo(CoverageQueueItem item) => item.State switch
+    {
+        null => "Waiting for the first check.",
+        EligibilityVerificationState.Verified => "Nothing: coverage is active and includes dental.",
+        EligibilityVerificationState.Unavailable when item.Attempts >= VerificationOptions.Value.MaxAttempts =>
+            $"Couldn't reach the payer after {item.Attempts} tries. Verify by phone or the payer's portal.",
+        EligibilityVerificationState.Unavailable => item.Reason is { } r ? $"{r} Retrying automatically." : "Retrying automatically.",
+        _ => item.Reason ?? "Review the patient's coverage."
+    };
+
+    private static Color StateColor(EligibilityVerificationState? state) => state switch
+    {
+        EligibilityVerificationState.Verified => Color.Success,
+        EligibilityVerificationState.NotDental or EligibilityVerificationState.Inactive => Color.Error,
+        EligibilityVerificationState.NeedsInfo or EligibilityVerificationState.Unconfirmed => Color.Warning,
+        _ => Color.Info
+    };
+}

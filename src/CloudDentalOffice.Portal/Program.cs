@@ -239,7 +239,8 @@ builder.Services.AddRazorPages()
 builder.Services.AddHttpClient();
 
 // Tenant resolution (Blazor Server-compatible)
-builder.Services.AddScoped<ITenantProvider, BlazorTenantProvider>();
+// Background workers pin a tenant on their own scope; everything else uses the signed-in user's.
+PinnedTenantScope.Register<BlazorTenantProvider>(builder.Services);
 
 // Configure database
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection") 
@@ -359,6 +360,21 @@ builder.Services.AddHttpClient<IAppointmentService, AppointmentServiceHttpClient
     client.Timeout = TimeSpan.FromSeconds(30);
 }).AddHttpMessageHandler<SchedulingTenantAuthorizationHandler>();
 builder.Services.AddSingleton(TimeProvider.System);
+// Coverage verification: a worker keeps each upcoming appointment's dental coverage
+// checked. It reads the schedule with a per-tenant service token (there is no user).
+builder.Services.AddOptions<CoverageVerificationOptions>()
+    .Bind(builder.Configuration.GetSection(CoverageVerificationOptions.SectionName))
+    .ValidateDataAnnotations();
+builder.Services.AddHttpClient<IScheduledAppointmentFeed, SchedulingAppointmentFeed>(client =>
+{
+    client.BaseAddress = new Uri(visionGatewayUrl);
+    client.DefaultRequestHeaders.Add("Accept", "application/json");
+    client.Timeout = TimeSpan.FromSeconds(30);
+});
+builder.Services.AddScoped<ICoverageVerificationSweep, CoverageVerificationSweep>();
+builder.Services.AddScoped<ICoverageVerificationQueue, CoverageVerificationQueue>();
+builder.Services.AddSingleton<ICoverageVerificationRunner, CoverageVerificationRunner>();
+builder.Services.AddHostedService<CoverageVerificationWorker>();
 builder.Services.AddEventPublishing(builder.Configuration);
 builder.Services.Configure<ReviewEmailOptions>(builder.Configuration.GetSection(ReviewEmailOptions.SectionName));
 builder.Services.Configure<ReviewOutreachWorkerOptions>(builder.Configuration.GetSection(ReviewOutreachWorkerOptions.SectionName));
@@ -531,6 +547,7 @@ using (var scope = app.Services.CreateScope())
         await ClearinghouseConnectionSchemaReconciliation.ApplyAsync(dbContext, databaseProvider, logger);
         await PatientCoverageSchemaReconciliation.ApplyAsync(dbContext, databaseProvider, logger);
         await EligibilityVerificationSchemaReconciliation.ApplyAsync(dbContext, databaseProvider, logger);
+        await CoverageVerificationSchemaReconciliation.ApplyAsync(dbContext, databaseProvider, logger);
 
         await InitialTenantBootstrap.ApplyAsync(dbContext, builder.Configuration);
 
