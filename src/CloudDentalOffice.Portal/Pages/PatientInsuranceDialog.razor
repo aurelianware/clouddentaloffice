@@ -90,8 +90,20 @@
                 <MudAlert Class="mt-3" Severity="Severity.Warning" Variant="Variant.Outlined">@_eligibilityMessage</MudAlert>
             }
 
-            <MudText Typo="Typo.h6" Class="mt-6" Style="color: #00ffff;">@(_editingId is null ? "Add coverage" : "Edit coverage")</MudText>
+            <MudStack Row="true" Class="mt-6" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center">
+                <MudText Typo="Typo.h6" Style="color: #00ffff;">@(_editingId is null ? "Add coverage" : "Edit coverage")</MudText>
+                @if (_editingId is null)
+                {
+                    <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Info" StartIcon="@Icons.Material.Filled.DocumentScanner"
+                               OnClick="@(() => _showScan = !_showScan)">@(_showScan ? "Hide card scan" : "Scan card")</MudButton>
+                }
+            </MudStack>
             <MudDivider Class="my-2" />
+
+            @if (_showScan && _editingId is null)
+            {
+                <InsuranceCardScan Patient="Patient" OnApplied="ApplyCardAsync" />
+            }
 
             @if (SentPlan is { } sent && _editingId is null)
             {
@@ -250,6 +262,21 @@
             // Default to the first free slot so a second coverage starts as secondary.
             SequenceNumber = _coverages.Any(c => c.IsActive && c.SequenceNumber == 1) ? 2 : 1
         };
+    }
+
+    private bool _showScan;
+
+    /// <summary>Fills the add form from a scanned card; the payer may have just been added, so plans reload.</summary>
+    private async Task ApplyCardAsync(InsuranceCardScan.CardScanApplied applied)
+    {
+        _plans = (await InsurancePlans.GetInsurancePlansAsync()).Where(p => p.IsActive).OrderBy(p => p.PayerName).ToList();
+        ResetForm();
+        _form.InsurancePlanId = applied.Plan.InsurancePlanId;
+        _form.MemberId = applied.MemberId ?? string.Empty;
+        _form.GroupNumber = applied.GroupNumber;
+        _formMessage = applied.CardNamesSomeoneElse
+            ? "The card names someone other than the patient. Set the patient's relationship and the policyholder's details before adding."
+            : null;
     }
 
     private void UseSentPlan()
