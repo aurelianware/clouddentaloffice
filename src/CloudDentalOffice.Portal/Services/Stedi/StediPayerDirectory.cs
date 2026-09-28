@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using CloudDentalOffice.Portal.Data;
 using CloudDentalOffice.Portal.Models;
+using CloudDentalOffice.Portal.Services.Auth;
 using CloudDentalOffice.Portal.Services.Tenancy;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
@@ -164,11 +165,17 @@ public sealed class StediPayerSearchClient(
         p.TransactionSupport?.DentalClaimSubmission ?? "NOT_SUPPORTED");
 }
 
-public sealed record PayerImportResult(InsurancePlan Plan, bool Created);
+public sealed record PayerImportResult(InsurancePlan Plan, bool Created, bool Reactivated = false);
 
 public interface IPayerImportService
 {
-    /// <summary>Adds the payer as an insurance plan for the caller's practice, or returns the existing active one.</summary>
+    /// <summary>Searches the directory for the caller's practice. Staff only.</summary>
+    Task<IReadOnlyList<StediPayerSummary>> SearchAsync(StediPayerSearchRequest request, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Adds the payer as an insurance plan for the caller's practice. Returns the
+    /// existing active plan, or reactivates an inactive one, rather than duplicating it. Staff only.
+    /// </summary>
     Task<PayerImportResult> AddAsync(StediPayerSummary payer, CancellationToken cancellationToken = default);
 
     /// <summary>Payer IDs of the practice's active plans, for marking search results already added.</summary>
@@ -178,18 +185,29 @@ public interface IPayerImportService
 /// <summary>
 /// Turns a Stedi directory payer into an insurance plan in the caller's
 /// practice, using Stedi's primary payer ID so eligibility checks route
-/// correctly. Adding the same payer twice returns the existing plan.
+/// correctly. Adding the same payer twice returns the existing plan, and an
+/// inactive plan for it is reactivated. Search and add are limited to practice
+/// staff, because they use the practice's clearinghouse credential and change
+/// its payer configuration. The tenant always comes from the signed-in user.
 /// </summary>
 public sealed class PayerImportService(
-    CloudDentalDbContext db, ITenantProvider tenantProvider, TimeProvider time, ILogger<PayerImportService> logger)
+    CloudDentalDbContext db, ITenantProvider tenantProvider, IStediPayerSearchClient search,
+    TimeProvider time, ILogger<PayerImportService> logger)
     : IPayerImportService
 {
+    public Task<IReadOnlyList<StediPayerSummary>> SearchAsync(StediPayerSearchRequest request, CancellationToken cancellationToken = default)
+    {
+        EnsureStaff();
+        return search.SearchAsync(tenantProvider.TenantId, request, cancellationToken);
+    }
+
     // InsurancePlan column limits.
     internal const int MaxPayerIdLength = 10;
     internal const int MaxPayerNameLength = 255;
 
     public async Task<PayerImportResult> AddAsync(StediPayerSummary payer, CancellationToken cancellationToken = default)
     {
+        EnsureStaff();
         var payerId = payer.PrimaryPayerId?.Trim() ?? string.Empty;
         if (payerId.Length == 0 || payerId.Length > MaxPayerIdLength)
             throw new StediPayerDirectoryException(
@@ -199,13 +217,24 @@ public sealed class PayerImportService(
             throw new StediPayerDirectoryException("This payer has no name in the directory.");
         if (name.Length > MaxPayerNameLength) name = name[..MaxPayerNameLength];
 
-        // Query filters scope this to the caller's practice.
+        // Query filters scope this to the caller's practice. Prefer an active plan;
+        // otherwise bring back an inactive one instead of adding a duplicate.
         var existing = await db.InsurancePlans
-            .Where(p => p.PayerId == payerId && p.IsActive)
-            .OrderBy(p => p.InsurancePlanId)
+            .Where(p => p.PayerId == payerId)
+            .OrderByDescending(p => p.IsActive)
+            .ThenBy(p => p.InsurancePlanId)
             .FirstOrDefaultAsync(cancellationToken);
-        if (existing is not null)
+        if (existing is { IsActive: true })
             return new PayerImportResult(existing, Created: false);
+        if (existing is not null)
+        {
+            existing.IsActive = true;
+            existing.ModifiedDate = time.GetUtcNow().UtcDateTime;
+            await db.SaveChangesAsync(cancellationToken);
+            logger.LogInformation("Reactivated plan {InsurancePlanId} for payer {PayerId} from the Stedi directory for tenant {TenantId}",
+                existing.InsurancePlanId, ClaimLifecycleMapper.SanitizeForLog(payerId), ClaimLifecycleMapper.SanitizeForLog(tenantProvider.TenantId));
+            return new PayerImportResult(existing, Created: false, Reactivated: true);
+        }
 
         var plan = new InsurancePlan
         {
@@ -224,9 +253,18 @@ public sealed class PayerImportService(
         return new PayerImportResult(plan, Created: true);
     }
 
-    public async Task<IReadOnlySet<string>> ExistingPayerIdsAsync(CancellationToken cancellationToken = default) =>
-        (await db.InsurancePlans.Where(p => p.IsActive).Select(p => p.PayerId).ToListAsync(cancellationToken))
-        .ToHashSet(StringComparer.OrdinalIgnoreCase);
+    public async Task<IReadOnlySet<string>> ExistingPayerIdsAsync(CancellationToken cancellationToken = default)
+    {
+        EnsureStaff();
+        return (await db.InsurancePlans.Where(p => p.IsActive).Select(p => p.PayerId).ToListAsync(cancellationToken))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+    }
+
+    private void EnsureStaff()
+    {
+        if (!StaffRoles.CanManagePayers(tenantProvider.User))
+            throw new UnauthorizedAccessException("Only practice staff can search or add payers.");
+    }
 }
 
 // Stedi payer search wire shape: items[] of { payer, score }.

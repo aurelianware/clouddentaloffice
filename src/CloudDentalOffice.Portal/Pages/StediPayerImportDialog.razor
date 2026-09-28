@@ -1,8 +1,6 @@
 @using CloudDentalOffice.Portal.Services.Stedi
 @using CloudDentalOffice.Portal.Services.Tenancy
-@inject IStediPayerSearchClient PayerSearch
 @inject IPayerImportService PayerImport
-@inject ITenantProvider TenantProvider
 @inject ILogger<StediPayerImportDialog> Logger
 
 @* Search the clearinghouse payer directory with the practice's own connection and add payers as insurance plans. *@
@@ -126,7 +124,7 @@
         _searching = true;
         try
         {
-            _results = await PayerSearch.SearchAsync(TenantProvider.TenantId, new StediPayerSearchRequest
+            _results = await PayerImport.SearchAsync(new StediPayerSearchRequest
             {
                 Query = _query,
                 DentalOnly = _dentalOnly,
@@ -135,6 +133,7 @@
             });
         }
         catch (StediPayerDirectoryException ex) { _message = ex.Message; }
+        catch (UnauthorizedAccessException) { _message = "Only practice staff can search payers."; }
         catch (Exception ex)
         {
             Logger.LogError(ex, "Payer search failed");
@@ -154,6 +153,7 @@
             _changed = true;
         }
         catch (StediPayerDirectoryException ex) { _message = ex.Message; }
+        catch (UnauthorizedAccessException) { _message = "Only practice staff can add payers."; }
         catch (Exception ex)
         {
             Logger.LogError(ex, "Adding payer from the directory failed");

@@ -212,6 +212,72 @@ public sealed class StediPayerDirectoryTests : IDisposable
         Assert.False(await db.InsurancePlans.AnyAsync());
     }
 
+    [Fact]
+    public async Task Importing_a_payer_with_an_inactive_plan_reactivates_it()
+    {
+        await using var db = Db(TenantA);
+        var service = Import(db, TenantA);
+        var first = await service.AddAsync(Payer("86027", "Delta Dental Arizona"));
+        first.Plan.IsActive = false;
+        await db.SaveChangesAsync();
+
+        var again = await service.AddAsync(Payer("86027", "Delta Dental Arizona"));
+
+        Assert.False(again.Created);
+        Assert.True(again.Reactivated);
+        Assert.Equal(first.Plan.InsurancePlanId, again.Plan.InsurancePlanId);
+        var plan = await db.InsurancePlans.SingleAsync();
+        Assert.True(plan.IsActive);
+    }
+
+    [Fact]
+    public async Task Staff_search_runs_for_the_signed_in_practice()
+    {
+        await using var db = Db(TenantA);
+        var handler = new RecordingHandler(DirectoryJson);
+        var credentials = new FixedCredentials();
+
+        var results = await Import(db, TenantA, "BillingStaff", Client(handler, credentials))
+            .SearchAsync(new StediPayerSearchRequest { Query = "dental" });
+
+        Assert.NotEmpty(results);
+        Assert.Equal(new[] { TenantA }, credentials.Requested.ToArray());
+    }
+
+    [Theory]
+    [InlineData("Patient")]
+    [InlineData(null)]
+    public async Task Non_staff_cannot_search_add_or_list_payers(string? role)
+    {
+        await using var db = Db(TenantA);
+        var handler = new RecordingHandler(DirectoryJson);
+        var credentials = new FixedCredentials();
+        var service = Import(db, TenantA, role, Client(handler, credentials));
+
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() =>
+            service.SearchAsync(new StediPayerSearchRequest { Query = "dental" }));
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => service.AddAsync(Payer("86027", "Delta Dental Arizona")));
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => service.ExistingPayerIdsAsync());
+
+        Assert.Empty(handler.Requests);
+        Assert.Empty(credentials.Requested);
+        Assert.False(await db.InsurancePlans.IgnoreQueryFilters().AnyAsync());
+    }
+
+    [Fact]
+    public void Payers_page_is_restricted_to_staff_roles()
+    {
+        var attribute = typeof(CloudDentalOffice.Portal.Pages.Payers)
+            .GetCustomAttributes(typeof(Microsoft.AspNetCore.Authorization.AuthorizeAttribute), inherit: true)
+            .Cast<Microsoft.AspNetCore.Authorization.AuthorizeAttribute>()
+            .Single(a => a.Roles is not null);
+
+        var roles = attribute.Roles!.Split(',');
+        Assert.DoesNotContain("Patient", roles);
+        Assert.Contains("Staff", roles);
+        Assert.Contains("Admin", roles);
+    }
+
     // ── Helpers ─────────────────────────────────────────────────────────────
 
     // Six payers: four dental with eligibility (AZ, national, CA, multi-state incl. AZ via national),
@@ -253,8 +319,9 @@ public sealed class StediPayerDirectoryTests : IDisposable
         return db;
     }
 
-    private static PayerImportService Import(CloudDentalDbContext db, string tenant) =>
-        new(db, new FixedTenantProvider(tenant), TimeProvider.System, NullLogger<PayerImportService>.Instance);
+    private PayerImportService Import(CloudDentalDbContext db, string tenant, string? role = "Staff", IStediPayerSearchClient? search = null) =>
+        new(db, new FixedTenantProvider(tenant, role), search ?? Client(new RecordingHandler(DirectoryJson)),
+            TimeProvider.System, NullLogger<PayerImportService>.Instance);
 
     private static StediPayerSummary Payer(string id, string name) =>
         new("S-" + id, id, name, [], ["dental"], ["AZ"], "SUPPORTED", "SUPPORTED");
@@ -287,9 +354,11 @@ public sealed class StediPayerDirectoryTests : IDisposable
         }
     }
 
-    private sealed class FixedTenantProvider(string tenantId) : ITenantProvider
+    private sealed class FixedTenantProvider(string tenantId, string? role = null) : ITenantProvider
     {
         public string TenantId => tenantId;
-        public ClaimsPrincipal? User => null;
+        public ClaimsPrincipal? User => role is null
+            ? new ClaimsPrincipal(new ClaimsIdentity())
+            : new ClaimsPrincipal(new ClaimsIdentity([new System.Security.Claims.Claim(ClaimTypes.Role, role)], "test"));
     }
 }

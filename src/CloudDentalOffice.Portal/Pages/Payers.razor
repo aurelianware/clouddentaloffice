@@ -1,4 +1,5 @@
 @page "/payers"
+@attribute [Authorize(Roles = CloudDentalOffice.Portal.Services.Auth.StaffRoles.PayerManagers)]
 @using CloudDentalOffice.Portal.Models
 @using CloudDentalOffice.Portal.Services
 @inject IInsurancePlanService InsurancePlanService
