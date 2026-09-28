@@ -48,7 +48,9 @@ which the deploy passes to the Portal as `CoverageVerification__Enabled`) and an
 (`ReviewOutreach:Email`, shared with billing notifications). The worker checks only practices
 with an active clearinghouse connection.
 
-The deploy workflow wires everything; set these on the GitHub environment:
+The deploy workflow wires everything. Set these as **repository** Actions secrets and variables
+(Settings → Secrets and variables → Actions). The deploy job doesn't use a GitHub Environment,
+so values scoped to an Environment are not visible to it and the switches stay off:
 
 | Name | Kind | Value |
 |---|---|---|
