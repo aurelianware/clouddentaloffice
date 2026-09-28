@@ -34,6 +34,7 @@ param jwtAudience string
 param serviceBusSendConnection string
 @secure()
 param serviceBusListenConnection string
+param coverageVerificationEnabled bool = false
 param coverageIntakeEnabled bool = false
 @secure()
 param coverageIntakeSigningKey string = ''
@@ -136,6 +137,11 @@ var choEligibilityEnv = choEligibilityEnabled ? concat([
   { name: 'CloudHealthOffice__Eligibility__BaseUrl', value: cloudHealthOfficeEligibilityBaseUrl }
   { name: 'CloudHealthOffice__Eligibility__ApiKey', secretRef: 'cho-eligibility-api-key' }
 ], choEligibilityRoutes) : []
+
+// Background coverage verification worker in the Portal (off unless switched on).
+var coverageVerificationEnv = coverageVerificationEnabled ? [
+  { name: 'CoverageVerification__Enabled', value: 'true' }
+] : []
 
 // Coverage intake links: on only when switched on with a key. The Portal consumes
 // answers with a listen-only key for its own topic, never the namespace connection.
@@ -250,7 +256,7 @@ resource portal 'Microsoft.App/containerApps@2024-03-01' = {
             { name: 'CloudHealthOffice__ApiKey', secretRef: 'cloudhealthoffice-api-key' }
             { name: 'CloudHealthOffice__BenefitPlanMappings__${cloudHealthOfficePayerId}', value: cloudHealthOfficeBenefitPlanId }
             { name: 'PayerConnectivity__Payers__${cloudHealthOfficePayerId}__PaymentEstimate__0', value: 'CloudHealthOffice' }
-          ], choEligibilityEnv, stediEnv, coverageIntakePortalEnv)
+          ], choEligibilityEnv, stediEnv, coverageVerificationEnv, coverageIntakePortalEnv)
           probes: [
             // Liveness has no database dependency, so a transient database outage
             // does not cause the platform to restart an otherwise-healthy process.

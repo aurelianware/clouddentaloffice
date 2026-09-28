@@ -304,6 +304,7 @@ jobs:
               jwtKey=${{ secrets.JWT_KEY }} \
               serviceBusSendConnection='${{ steps.servicebus.outputs.send_connection }}' \
               serviceBusListenConnection='${{ steps.servicebus.outputs.listen_connection }}' \
+              coverageVerificationEnabled=${{ vars.COVERAGE_VERIFICATION_ENABLED == 'true' }} \
               coverageIntakeEnabled=${{ vars.COVERAGE_INTAKE_ENABLED == 'true' }} \
               coverageIntakeSigningKey='${{ secrets.COVERAGE_INTAKE_SIGNING_KEY }}' \
               coverageIntakeLinkBaseUrl='${{ vars.COVERAGE_INTAKE_LINK_BASE_URL }}' \
