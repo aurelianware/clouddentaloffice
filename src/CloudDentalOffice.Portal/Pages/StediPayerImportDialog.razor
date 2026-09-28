@@ -1,0 +1,177 @@
+@using CloudDentalOffice.Portal.Services.Stedi
+@using CloudDentalOffice.Portal.Services.Tenancy
+@inject IPayerImportService PayerImport
+@inject ILogger<StediPayerImportDialog> Logger
+
+@* Search the clearinghouse payer directory with the practice's own connection and add payers as insurance plans. *@
+<MudDialog>
+    <DialogContent>
+        <MudText Typo="Typo.body2" Class="mb-3" Style="color: #b0b0b0;">
+            Search the clearinghouse payer directory by insurer name or payer ID, then add the payers your practice works with.
+            Added payers use the directory's payer ID, so eligibility checks route correctly.
+        </MudText>
+
+        <MudGrid>
+            <MudItem xs="12" md="6">
+                <MudTextField @bind-Value="_query" Label="Insurer name or payer ID" Placeholder="e.g. delta dental"
+                              Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search"
+                              OnKeyUp="OnKeyUpAsync" Immediate="true" MaxLength="80" />
+            </MudItem>
+            <MudItem xs="12" md="3">
+                <MudSelect T="string" Label="State" @bind-Value="_state">
+                    <MudSelectItem T="string" Value="@AnyState">Any state</MudSelectItem>
+                    @foreach (var s in States)
+                    {
+                        <MudSelectItem T="string" Value="@s">@s</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12" md="3" Class="d-flex align-center">
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="@_searching" OnClick="SearchAsync" FullWidth="true">
+                    @(_searching ? "Searching…" : "Search")
+                </MudButton>
+            </MudItem>
+            <MudItem xs="12">
+                <MudCheckBox T="bool" @bind-Value="_dentalOnly" Label="Dental coverage" Color="Color.Primary" Dense="true" />
+                <MudCheckBox T="bool" @bind-Value="_eligibilityOnly" Label="Supports eligibility checks" Color="Color.Primary" Dense="true" />
+            </MudItem>
+        </MudGrid>
+
+        @if (!string.IsNullOrWhiteSpace(_message))
+        {
+            <MudAlert Class="mt-3" Severity="Severity.Warning" Variant="Variant.Outlined">@_message</MudAlert>
+        }
+
+        @if (_results is not null)
+        {
+            @if (_results.Count == 0)
+            {
+                <MudText Class="mt-4" Style="color: #b0b0b0;">No matching payers. Try a shorter name, another state, or fewer filters.</MudText>
+            }
+            else
+            {
+                <MudSimpleTable Dense="true" Class="mt-3" Style="background:transparent;">
+                    <thead>
+                        <tr><th scope="col">Payer</th><th scope="col">Payer ID</th><th scope="col">States</th><th scope="col">Supports</th><th scope="col"></th></tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var payer in _results)
+                        {
+                            <tr>
+                                <td>@payer.DisplayName</td>
+                                <td>@payer.PrimaryPayerId</td>
+                                <td>@StatesLabel(payer)</td>
+                                <td>@SupportLabel(payer)</td>
+                                <td style="white-space:nowrap;">
+                                    @if (_existing.Contains(payer.PrimaryPayerId))
+                                    {
+                                        <MudChip T="string" Size="Size.Small" Color="Color.Success" Variant="Variant.Outlined">Added</MudChip>
+                                    }
+                                    else
+                                    {
+                                        <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Primary"
+                                                   Disabled="@(_adding is not null)" OnClick="@(() => AddAsync(payer))">
+                                            @(_adding == payer.PrimaryPayerId ? "Adding…" : "Add")
+                                        </MudButton>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </MudSimpleTable>
+            }
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Close">Close</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    private const string AnyState = "";
+
+    private static readonly string[] States =
+    [
+        "AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "DC", "FL", "GA", "HI", "ID", "IL", "IN", "IA", "KS", "KY", "LA",
+        "ME", "MD", "MA", "MI", "MN", "MS", "MO", "MT", "NE", "NV", "NH", "NJ", "NM", "NY", "NC", "ND", "OH", "OK", "OR",
+        "PA", "PR", "RI", "SC", "SD", "TN", "TX", "UT", "VT", "VA", "WA", "WV", "WI", "WY"
+    ];
+
+    [CascadingParameter] MudDialogInstance MudDialog { get; set; } = null!;
+
+    private string _query = string.Empty;
+    private string _state = AnyState;
+    private bool _dentalOnly = true;
+    private bool _eligibilityOnly = true;
+    private bool _searching;
+    private bool _changed;
+    private string? _adding;
+    private string? _message;
+    private IReadOnlyList<StediPayerSummary>? _results;
+    private IReadOnlySet<string> _existing = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+    protected override async Task OnInitializedAsync() => _existing = await PayerImport.ExistingPayerIdsAsync();
+
+    private async Task OnKeyUpAsync(KeyboardEventArgs e)
+    {
+        if (e.Key is "Enter" or "NumpadEnter") await SearchAsync();
+    }
+
+    private async Task SearchAsync()
+    {
+        if (_searching) return;
+        _message = null;
+        _searching = true;
+        try
+        {
+            _results = await PayerImport.SearchAsync(new StediPayerSearchRequest
+            {
+                Query = _query,
+                DentalOnly = _dentalOnly,
+                EligibilityOnly = _eligibilityOnly,
+                State = string.IsNullOrEmpty(_state) ? null : _state
+            });
+        }
+        catch (StediPayerDirectoryException ex) { _message = ex.Message; }
+        catch (UnauthorizedAccessException) { _message = "Only practice staff can search payers."; }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Payer search failed");
+            _message = "The payer search could not be completed. Try again later.";
+        }
+        finally { _searching = false; }
+    }
+
+    private async Task AddAsync(StediPayerSummary payer)
+    {
+        _message = null;
+        _adding = payer.PrimaryPayerId;
+        try
+        {
+            await PayerImport.AddAsync(payer);
+            _existing = new HashSet<string>(_existing, StringComparer.OrdinalIgnoreCase) { payer.PrimaryPayerId };
+            _changed = true;
+        }
+        catch (StediPayerDirectoryException ex) { _message = ex.Message; }
+        catch (UnauthorizedAccessException) { _message = "Only practice staff can add payers."; }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Adding payer from the directory failed");
+            _message = "The payer could not be added. Try again.";
+        }
+        finally { _adding = null; }
+    }
+
+    private void Close() => MudDialog.Close(DialogResult.Ok(_changed));
+
+    private static string StatesLabel(StediPayerSummary p)
+    {
+        if (p.OperatingStates.Count == 0) return "—";
+        if (p.OperatingStates.Contains("NATIONAL", StringComparer.OrdinalIgnoreCase)) return "National";
+        return p.OperatingStates.Count <= 4 ? string.Join(", ", p.OperatingStates) : $"{p.OperatingStates.Count} states";
+    }
+
+    private static string SupportLabel(StediPayerSummary p) =>
+        string.Join(" · ", new[] { p.SupportsEligibility ? "Eligibility" : null, p.SupportsDentalClaims ? "Dental claims" : null }
+            .Where(x => x is not null)) is { Length: > 0 } s ? s : "—";
+}

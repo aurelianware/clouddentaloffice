@@ -19,6 +19,10 @@ public sealed class StediOptions
     public string BaseUrl { get; set; } = "https://healthcare.us.stedi.com";
     public string EligibilityPath { get; set; } = "/2024-04-01/change/medicalnetwork/eligibility/v3";
 
+    /// <summary>Stedi payer directory (a separate host from the healthcare API).</summary>
+    public string PayersBaseUrl { get; set; } = "https://payers.us.stedi.com";
+    public string PayerSearchPath { get; set; } = "/2024-04-01/payers/search";
+
     /// <summary>Key Vault holding per-practice keys (stedi-apikey-{tenantId}). No keys live in configuration.</summary>
     public string? KeyVaultUri { get; set; }
 

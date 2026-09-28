@@ -143,3 +143,12 @@ A mutation check confirmed the isolation test fails if the key-name check is rem
 - **Admin tooling:** no admin screen or API to create or rotate connections. SQL and CLI only for now.
 - **Other transactions:** claims (837D), claim status, 835 and enrollment don't call Stedi from CDO yet. When added, they must use the same handler and provider.
 - **CHO path:** still uses CHO's single Stedi key. Moving it to per-practice keys is a CHO change.
+
+## Importing payers from the directory
+
+**Claims → Payers → Import from Clearinghouse** lets any practice connected to Stedi search Stedi's payer directory (`GET https://payers.us.stedi.com/2024-04-01/payers/search`) and add payers as insurance plans.
+
+- **Credential:** the search uses the practice's own clearinghouse connection through `StediCredentialHandler`, so it needs the same Active connection as eligibility. The key goes only to the HTTPS `Stedi:PayersBaseUrl` with a relative `Stedi:PayerSearchPath`.
+- **Filters:** Dental coverage, Supports eligibility checks, and State (the chosen state plus national payers). They apply to the returned page of results, all on by default except State. For example, 3rd Set Smiles picks AZ.
+- **Add:** creates an active plan in the caller's practice with the directory's primary payer ID and name, so eligibility routes correctly. Adding a payer the practice already has returns the existing plan. Payer IDs longer than the plan's 10-character field are refused.
+- **Limits:** the directory is not imported wholesale; staff add only the payers they use. The practice's state isn't stored anywhere yet, so it's chosen in the dialog each time.

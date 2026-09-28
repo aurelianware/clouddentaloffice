@@ -135,22 +135,8 @@ public sealed class StediEligibilityClient(
         }
     }
 
-    internal static Uri? ResolveTarget(StediOptions options)
-    {
-        if (!Uri.TryCreate(options.BaseUrl, UriKind.Absolute, out var baseUri) ||
-            baseUri.Scheme != Uri.UriSchemeHttps || !string.IsNullOrEmpty(baseUri.UserInfo))
-            return null;
-        var path = options.EligibilityPath;
-        if (string.IsNullOrWhiteSpace(path) || path.StartsWith("//", StringComparison.Ordinal) ||
-            path.Contains('\\') || !Uri.TryCreate(path, UriKind.Relative, out _))
-            return null;
-        var target = new Uri(baseUri, path);
-        return target.Scheme == Uri.UriSchemeHttps &&
-               string.Equals(target.Host, baseUri.Host, StringComparison.OrdinalIgnoreCase) &&
-               target.Port == baseUri.Port
-            ? target
-            : null;
-    }
+    internal static Uri? ResolveTarget(StediOptions options) =>
+        StediEndpoints.Resolve(options.BaseUrl, options.EligibilityPath);
 
     internal static string StaffMessage(StediCredentialFailure failure) => failure switch
     {

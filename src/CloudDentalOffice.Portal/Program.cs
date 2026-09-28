@@ -456,6 +456,12 @@ builder.Services.AddHttpClient<IStediEligibilityClient, StediEligibilityClient>(
     client.Timeout = TimeSpan.FromSeconds(45);
     client.DefaultRequestHeaders.Add("Accept", "application/json");
 }).AddHttpMessageHandler<StediCredentialHandler>();
+builder.Services.AddHttpClient<IStediPayerSearchClient, StediPayerSearchClient>(client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(20);
+    client.DefaultRequestHeaders.Add("Accept", "application/json");
+}).AddHttpMessageHandler<StediCredentialHandler>();
+builder.Services.AddScoped<IPayerImportService, PayerImportService>();
 builder.Services.AddScoped<IEligibilityGateway, CloudHealthOfficeEligibilityGateway>();
 builder.Services.AddScoped<IEligibilityGateway, StediEligibilityGateway>();
 builder.Services.AddScoped<ITradingPartnerAdapter, ClearinghouseEligibilityAdapter>();
