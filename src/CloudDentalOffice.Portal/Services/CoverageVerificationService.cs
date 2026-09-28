@@ -126,6 +126,7 @@ public sealed class CoverageVerificationSweep(
     IEligibilityVerificationService verification,
     ITenantProvider tenantProvider,
     IOptions<CoverageVerificationOptions> options,
+    IOptions<CoverageIntakeOptions> intakeOptions,
     TimeProvider time,
     ILogger<CoverageVerificationSweep> logger) : ICoverageVerificationSweep
 {
@@ -284,6 +285,8 @@ public sealed class CoverageVerificationSweep(
         var providers = await db.Providers.AsNoTracking()
             .Where(p => providerIds.Contains(p.ProviderId))
             .ToDictionaryAsync(p => p.ProviderId, cancellationToken);
+        // What each patient was asked and answered, for appointments with no coverage.
+        var intake = await CoverageIntakeRules.LatestByPatientAsync(db.CoverageIntakeRequests, patientIds, cancellationToken);
 
         var checkedCount = 0;
         foreach (var row in rows)
@@ -295,7 +298,10 @@ public sealed class CoverageVerificationSweep(
             }
 
             var coverage = patient.PrimaryInsurance;
-            await ReconcileAsync(row, coverage, zone, now, cancellationToken);
+            var uncovered = coverage is null
+                ? CoverageIntakeRules.NoCoverage(intake.GetValueOrDefault(row.PatientId), patient.Email, intakeOptions.Value, zone, now)
+                : default;
+            await ReconcileAsync(row, coverage, uncovered, zone, now, cancellationToken);
             if (coverage is null || !(force || IsDue(row, patient, now, zone))) continue;
 
             // Save what reconciling found; the payer's answer is written separately below.
@@ -307,7 +313,7 @@ public sealed class CoverageVerificationSweep(
                 // Another instance may have checked this coverage since it was loaded.
                 if (await RefreshCoverageAsync(coverage, cancellationToken))
                 {
-                    await ReconcileAsync(row, coverage, zone, now, cancellationToken);
+                    await ReconcileAsync(row, coverage, default, zone, now, cancellationToken);
                     if (!force && !IsDue(row, patient, now, zone))
                     {
                         await db.SaveChangesAsync(cancellationToken);
@@ -332,15 +338,20 @@ public sealed class CoverageVerificationSweep(
         return checkedCount;
     }
 
-    /// <summary>Brings the row in line with the patient's current primary coverage and its latest answer.</summary>
-    private async Task ReconcileAsync(CoverageVerification row, PatientInsurance? coverage, TimeZoneInfo zone, DateTime now,
+    /// <summary>
+    /// Brings the row in line with the patient's current primary coverage and its latest
+    /// answer. With no coverage, <paramref name="uncovered"/> says how that reads to the
+    /// front desk (needs info, or self-pay if the patient said they have no insurance).
+    /// </summary>
+    private async Task ReconcileAsync(CoverageVerification row, PatientInsurance? coverage,
+        (EligibilityVerificationState State, string Reason) uncovered, TimeZoneInfo zone, DateTime now,
         CancellationToken cancellationToken)
     {
         if (coverage is null)
         {
             if (row.PatientInsuranceId is not null) Reset(row);
             row.PatientInsuranceId = null;
-            SetState(row, EligibilityVerificationState.NeedsInfo, NoCoverageReason, now);
+            SetState(row, uncovered.State, uncovered.Reason, now);
             return;
         }
 
@@ -565,6 +576,11 @@ public sealed class CoverageVerificationRunner(IServiceProvider services, ILogge
                 await using var scope = services.CreateAsyncScope();
                 scope.ServiceProvider.GetRequiredService<PinnedTenantScope>().Pin(tenantId);
                 var result = await scope.ServiceProvider.GetRequiredService<ICoverageVerificationSweep>().RunAsync(cancellationToken);
+                // Then ask patients with no coverage on file for it (a no-op unless intake is configured).
+                var asked = await scope.ServiceProvider.GetRequiredService<ICoverageIntakeService>().SendDueAsync(cancellationToken);
+                if (asked > 0)
+                    logger.LogInformation("Coverage intake emailed {Asked} patients for tenant {TenantId}.",
+                        asked, ClaimLifecycleMapper.SanitizeForLog(tenantId));
                 if (result.Checked > 0)
                     logger.LogInformation("Coverage verification ran {Checked} checks for tenant {TenantId}.",
                         result.Checked, ClaimLifecycleMapper.SanitizeForLog(tenantId));
@@ -604,9 +620,10 @@ public sealed class CoverageVerificationWorker(
 
 // ── Staff queue ────────────────────────────────────────────────────────────
 
+/// <param name="SentPlanId">The patient's answered intake request with a typed plan, when there's no coverage yet.</param>
 public sealed record CoverageQueueItem(
     long Id, DateTime AppointmentStart, int PatientId, int ProviderId, string PatientName, string? PlanName,
-    EligibilityVerificationState? State, string? Reason, DateTime? LastCheckedAt, int Attempts);
+    EligibilityVerificationState? State, string? Reason, DateTime? LastCheckedAt, int Attempts, Guid? SentPlanId = null);
 
 public interface ICoverageVerificationQueue
 {
@@ -618,6 +635,9 @@ public interface ICoverageVerificationQueue
 
     /// <summary>Picks up coverage changes for one appointment; checks only if that makes a check due.</summary>
     Task RefreshAsync(long id, CancellationToken cancellationToken = default);
+
+    /// <summary>The dental plan a patient typed in, for staff to review and add. Null if none.</summary>
+    Task<CoverageIntakeRequest?> GetSentPlanAsync(Guid requestId, CancellationToken cancellationToken = default);
 }
 
 public sealed class CoverageVerificationQueue(
@@ -636,7 +656,9 @@ public sealed class CoverageVerificationQueue(
         var to = CoverageVerificationSweep.LocalDayStart(from, zone).AddDays(Math.Clamp(days, 1, 30));
         var rows = await db.CoverageVerifications.AsNoTracking()
             .Where(x => x.ClosedAt == null && x.AppointmentStart >= from && x.AppointmentStart < to)
-            .Where(x => includeVerified || x.State == null || x.State != EligibilityVerificationState.Verified)
+            // Verified and self-pay need nothing from the front desk.
+            .Where(x => includeVerified || x.State == null ||
+                        (x.State != EligibilityVerificationState.Verified && x.State != EligibilityVerificationState.SelfPay))
             .OrderBy(x => x.AppointmentStart)
             .ToListAsync(cancellationToken);
 
@@ -650,12 +672,23 @@ public sealed class CoverageVerificationQueue(
             .Where(c => coverageIds.Contains(c.PatientInsuranceId))
             .Select(c => new { c.PatientInsuranceId, c.InsurancePlan.PayerName })
             .ToDictionaryAsync(c => c.PatientInsuranceId, c => c.PayerName, cancellationToken);
+        var uncovered = rows.Where(x => x.PatientInsuranceId == null).Select(x => x.PatientId).Distinct().ToList();
+        var intake = await CoverageIntakeRules.LatestByPatientAsync(db.CoverageIntakeRequests, uncovered, cancellationToken);
 
         return rows.Select(x => new CoverageQueueItem(
             x.Id, x.AppointmentStart, x.PatientId, x.ProviderId,
             patients.TryGetValue(x.PatientId, out var p) ? $"{p.FirstName} {p.LastName}" : $"Patient #{x.PatientId}",
             x.PatientInsuranceId is { } c && plans.TryGetValue(c, out var plan) ? plan : null,
-            x.State, x.Reason, x.LastCheckedAt, x.Attempts)).ToList();
+            x.State, x.Reason, x.LastCheckedAt, x.Attempts,
+            x.PatientInsuranceId is null && intake.TryGetValue(x.PatientId, out var asked) && asked.Answer == CoverageIntakeAnswer.Plan
+                ? asked.Id : null)).ToList();
+    }
+
+    public async Task<CoverageIntakeRequest?> GetSentPlanAsync(Guid requestId, CancellationToken cancellationToken = default)
+    {
+        RequireStaff();
+        return await db.CoverageIntakeRequests.AsNoTracking()
+            .SingleOrDefaultAsync(x => x.Id == requestId && x.Answer == CoverageIntakeAnswer.Plan, cancellationToken);
     }
 
     public Task CheckNowAsync(long id, CancellationToken cancellationToken = default) =>

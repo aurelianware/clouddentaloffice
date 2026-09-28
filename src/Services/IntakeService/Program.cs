@@ -107,6 +107,15 @@ builder.Services.AddRateLimiter(options =>
             PermitLimit = 240, Window = TimeSpan.FromMinutes(1), QueueLimit = 0
         });
     });
+    // Patients opening and answering their coverage intake link.
+    options.AddPolicy("coverage-intake", httpContext =>
+    {
+        var clientKey = httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+        return RateLimitPartition.GetFixedWindowLimiter(clientKey, _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = 30, Window = TimeSpan.FromMinutes(1), QueueLimit = 0
+        });
+    });
     options.AddPolicy("integration-inbox-admin", httpContext =>
     {
         var clientKey = httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
@@ -324,6 +333,8 @@ app.MapPost("/api/public/v1/acquisition-events", async (
     catch (HttpRequestException) { return Results.Problem(title: "Acquisition measurement is temporarily unavailable.", statusCode: 503); }
 }).WithMetadata(new Microsoft.AspNetCore.Mvc.RequestSizeLimitAttribute(4096))
   .RequireRateLimiting("public-acquisition").WithTags("PatientAcquisition");
+
+app.MapCoverageIntake();
 
 app.MapPost("/api/public/booking-requests", async (
     PublicBookingRequest request,

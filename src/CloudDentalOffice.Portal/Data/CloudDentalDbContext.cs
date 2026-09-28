@@ -60,6 +60,7 @@ public class CloudDentalDbContext : DbContext
     public DbSet<TenantClearinghouseConnection> TenantClearinghouseConnections => Set<TenantClearinghouseConnection>();
     public DbSet<EligibilityVerification> EligibilityVerifications => Set<EligibilityVerification>();
     public DbSet<CoverageVerification> CoverageVerifications => Set<CoverageVerification>();
+    public DbSet<CoverageIntakeRequest> CoverageIntakeRequests => Set<CoverageIntakeRequest>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -365,6 +366,24 @@ public class CloudDentalDbContext : DbContext
             entity.Property(x => x.Reason).HasMaxLength(500);
             entity.HasIndex(x => new { x.TenantId, x.AppointmentId }).IsUnique();
             entity.HasIndex(x => new { x.TenantId, x.ClosedAt, x.AppointmentStart });
+            entity.HasQueryFilter(x => x.TenantId == CurrentTenantId);
+        });
+
+        // Patient coverage intake by emailed link. Written with an explicit tenant.
+        modelBuilder.Entity<CoverageIntakeRequest>(entity =>
+        {
+            entity.Property(x => x.TenantId).HasMaxLength(64).IsRequired();
+            entity.Property(x => x.RecipientEmail).HasMaxLength(320).IsRequired();
+            entity.Property(x => x.Status).HasConversion<string>().HasMaxLength(16);
+            entity.Property(x => x.Answer).HasConversion<string>().HasMaxLength(16);
+            entity.Property(x => x.LastError).HasMaxLength(128);
+            entity.Property(x => x.CarrierName).HasMaxLength(120);
+            entity.Property(x => x.MemberId).HasMaxLength(50);
+            entity.Property(x => x.GroupNumber).HasMaxLength(50);
+            entity.Property(x => x.RelationshipToSubscriber).HasMaxLength(20);
+            entity.Property(x => x.SubscriberFirstName).HasMaxLength(100);
+            entity.Property(x => x.SubscriberLastName).HasMaxLength(100);
+            entity.HasIndex(x => new { x.TenantId, x.PatientId, x.CreatedAt });
             entity.HasQueryFilter(x => x.TenantId == CurrentTenantId);
         });
 
@@ -798,7 +817,7 @@ public class CloudDentalDbContext : DbContext
                         throw new InvalidOperationException(
                             "A clearinghouse connection must be saved with an explicit tenant.");
                     }
-                    if (entry.Entity is EligibilityVerification or CoverageVerification)
+                    if (entry.Entity is EligibilityVerification or CoverageVerification or CoverageIntakeRequest)
                     {
                         throw new InvalidOperationException(
                             "An eligibility verification must be saved with an explicit tenant.");

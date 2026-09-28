@@ -55,5 +55,11 @@ public enum EligibilityVerificationState
     NeedsInfo,
 
     /// <summary>The check could not be completed (timeout, clearinghouse unavailable, setup). Retry later.</summary>
-    Unavailable
+    Unavailable,
+
+    /// <summary>
+    /// Appointments only, never a check result: the patient says they have no dental
+    /// insurance. Lasts until coverage is added.
+    /// </summary>
+    SelfPay
 }

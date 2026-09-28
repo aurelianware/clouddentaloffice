@@ -490,6 +490,9 @@ public sealed class CoverageVerificationTests : IDisposable
         services.AddSingleton(Options.Create(_settings));
         services.AddScoped<IEligibilityVerificationService, EligibilityVerificationService>();
         services.AddScoped<ICoverageVerificationSweep, CoverageVerificationSweep>();
+        services.AddSingleton(Options.Create(new CoverageIntakeOptions()));
+        services.AddScoped<IPatientBillingNotificationSender>(_ => throw new InvalidOperationException("Intake is off."));
+        services.AddScoped<ICoverageIntakeService, CoverageIntakeService>();
         services.AddSingleton<ICoverageVerificationRunner, CoverageVerificationRunner>();
         await using var provider = services.BuildServiceProvider();
 
@@ -577,8 +580,8 @@ public sealed class CoverageVerificationTests : IDisposable
         var tenant = new FixedTenantProvider(tenantId);
         var verification = new EligibilityVerificationService(db, _options, _router, tenant, _clock,
             NullLogger<EligibilityVerificationService>.Instance);
-        return new CoverageVerificationSweep(db, _feed, verification, tenant, Options.Create(_settings), _clock,
-            NullLogger<CoverageVerificationSweep>.Instance);
+        return new CoverageVerificationSweep(db, _feed, verification, tenant, Options.Create(_settings),
+            Options.Create(new CoverageIntakeOptions()), _clock, NullLogger<CoverageVerificationSweep>.Instance);
     }
 
     /// <summary>A staff check from the insurance dialog.</summary>

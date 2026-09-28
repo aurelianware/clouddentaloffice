@@ -181,6 +181,32 @@ resource zocdocLifecycleSubscription 'Microsoft.ServiceBus/namespaces/topics/sub
   properties: { maxDeliveryCount: 10, deadLetteringOnMessageExpiration: true }
 }
 
+// Patient answers from coverage intake links: IntakeService publishes, the Portal
+// consumes. One answer per link; duplicate detection drops resubmissions.
+resource coverageIntakeTopic 'Microsoft.ServiceBus/namespaces/topics@2024-01-01' = {
+  parent: serviceBus
+  name: 'coverage-intake'
+  properties: {
+    requiresDuplicateDetection: true
+    duplicateDetectionHistoryTimeWindow: 'P1D'
+    defaultMessageTimeToLive: 'P14D'
+  }
+}
+
+resource coverageIntakePortalSubscription 'Microsoft.ServiceBus/namespaces/topics/subscriptions@2024-01-01' = {
+  parent: coverageIntakeTopic
+  name: 'portal'
+  properties: { maxDeliveryCount: 10, deadLetteringOnMessageExpiration: true }
+}
+
+// Listen on this topic only, so enabling the Portal's intake consumer doesn't hand
+// it the namespace-wide connection (which would also start its other consumers).
+resource coverageIntakePortalListen 'Microsoft.ServiceBus/namespaces/topics/authorizationRules@2024-01-01' = {
+  parent: coverageIntakeTopic
+  name: 'portal-listen'
+  properties: { rights: [ 'Listen' ] }
+}
+
 resource bookingSendPolicy 'Microsoft.ServiceBus/namespaces/authorizationRules@2024-01-01' = {
   parent: serviceBus
   name: 'booking-intake-send'

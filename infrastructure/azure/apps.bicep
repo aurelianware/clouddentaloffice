@@ -118,6 +118,20 @@ param clearinghouseEligibilityPayerIds array = []
 @description('Route every payer without its own eligibility route to Clearinghouse')
 param clearinghouseEligibilityDefault bool = false
 
+@description('Turn on patient coverage intake links (Portal and IntakeService). Needs the key, link URL and listen connection.')
+param coverageIntakeEnabled bool = false
+
+@secure()
+@description('Shared signing key for coverage intake links, at least 32 bytes.')
+param coverageIntakeSigningKey string = ''
+
+@description('Public HTTPS address of IntakeService used in coverage intake links.')
+param coverageIntakeLinkBaseUrl string = ''
+
+@secure()
+@description('Listen-only connection for the coverage-intake topic (rule portal-listen).')
+param coverageIntakeListenConnection string = ''
+
 param jwtIssuer string = 'CloudDentalOffice'
 param jwtAudience string = 'CloudDentalOfficeUsers'
 
@@ -143,6 +157,10 @@ module apps 'container-apps.bicep' = {
     jwtAudience: jwtAudience
     serviceBusSendConnection: serviceBusSendConnection
     serviceBusListenConnection: serviceBusListenConnection
+    coverageIntakeEnabled: coverageIntakeEnabled
+    coverageIntakeSigningKey: coverageIntakeSigningKey
+    coverageIntakeLinkBaseUrl: coverageIntakeLinkBaseUrl
+    coverageIntakeListenConnection: coverageIntakeListenConnection
     publicBookingApiKey: publicBookingApiKey
     patientServiceApiKey: patientServiceApiKey
     publicSchedulingServiceApiKey: publicSchedulingServiceApiKey
