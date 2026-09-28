@@ -138,11 +138,13 @@ var choEligibilityEnv = choEligibilityEnabled ? concat([
   { name: 'CloudHealthOffice__Eligibility__ApiKey', secretRef: 'cho-eligibility-api-key' }
 ], choEligibilityRoutes) : []
 
-// Coverage intake links: on only when switched on with a key. The Portal consumes
-// answers with a listen-only key for its own topic, never the namespace connection.
+// Background coverage verification worker in the Portal (off unless switched on).
 var coverageVerificationEnv = coverageVerificationEnabled ? [
   { name: 'CoverageVerification__Enabled', value: 'true' }
 ] : []
+
+// Coverage intake links: on only when switched on with a key. The Portal consumes
+// answers with a listen-only key for its own topic, never the namespace connection.
 var coverageIntakeOn = coverageIntakeEnabled && !empty(coverageIntakeSigningKey)
 var coverageIntakeKeySecret = coverageIntakeOn ? [
   { name: 'coverage-intake-key', value: coverageIntakeSigningKey }
