@@ -201,9 +201,61 @@ PRs 1–3 can run in parallel. The pilot needs 1–6; until 7, payments are post
 - Which payers does 3rd Set Smiles bill most (the Ascend report), and which already have ERA enrollment
   elsewhere that would need moving?
 - Attachments (X-rays, perio charts) for crowns and SRP: Stedi 275 exists in CHO's library; in scope for v1 or later?
-- **v1 default, to confirm:** primary claims only; secondary billed manually (§4b). Later: automatic secondary
-  claims with COB data from the primary ERA.
-- **Whose Stedi account submits?** CHO's gateway has one `StediGatewayOptions.ApiKey` (CHO's account), while
-  CDO eligibility uses the practice's own key from Key Vault (#78). ERA enrollment and Stedi billing belong to
-  the account that submits. Options: CHO's account (no CHO change; CHO acts as the practice's clearinghouse),
-  or a per-tenant Stedi key in CHO's gateway (one account per practice for eligibility, claims and ERAs).
+- **v1 default (recommended, to confirm):** primary claims only; secondary billed manually (§4b). Until
+  automatic secondary claims exist, CDO adds a "Bill secondary" staff task when a patient with secondary
+  coverage has their primary ERA posted. Later: automatic secondary claims with COB data from the primary ERA.
+- **Stedi account (decided 2026-09-28):** claims go out on **Aurelianware's CHO Stedi account** for now.
+  `provider-claims-api` resolves the Stedi key per tenant, defaulting to Aurelianware's key, so a practice can
+  bring its own account later without redesign. Consequences: ERA enrollment is done under Aurelianware's account
+  for the practice's NPI/Tax ID; Stedi bills Aurelianware; the practice BAA must cover claim transmission.
+  Check which key CDO's eligibility uses today (#78): if it isn't the same account, decide whether to align them.
+- **Moving Stedi configuration from CDO to CHO:** after the pilot. CDO's direct Stedi eligibility path carries
+  the #86/#88 fixes and multi-code handling that CHO's provider eligibility API doesn't yet; bring CHO to parity,
+  then switch CDO's eligibility and payer search to CHO and retire CDO's Stedi client and Key Vault key.
+  `TenantClearinghouseConnections` stays in CDO as the "practice is connected" switch.
+
+---
+
+## 7. Clearinghouse roadmap (exploratory)
+
+Under HIPAA a clearinghouse converts health data between nonstandard formats and standard transactions.
+In this design **Stedi does that conversion**, so Aurelianware acts as the practice's business associate.
+Aurelianware becomes a clearinghouse once CHO converts CDO's data to X12 itself and parses X12 responses
+(model B below). This section lists the work that would take. It is not a commitment, and the step that
+triggers clearinghouse status waits for counsel. Background, sources and questions for counsel are in the
+exploration brief shared separately.
+
+| Model | Who converts to/from X12 | Status |
+|---|---|---|
+| A. Relay on Stedi (§1–§5) | Stedi | Business associate |
+| B. Dental front-end clearinghouse | CHO; Stedi or another clearinghouse carries raw X12 | Clearinghouse (covered entity) acting for the practice |
+| C. Direct payer connections | CHO, straight to each payer | Clearinghouse with per-payer trading-partner agreements |
+
+**Layer 1: needed in every model** — the PR sequence in §5.
+
+**Layer 2: model B** (CHO unless noted):
+
+| # | Scope | Why |
+|---|---|---|
+| C1 | 837D X12 generator (5010 X224A2) from the provider-claims contract, with a control-number service (unique, persisted ISA/GS/ST numbers per trading partner) | CHO produces the standard transaction |
+| C2 | Payer companion-guide profiles (per-payer segment rules, receiver IDs), applied by C1 | Each payer's guide tweaks the standard |
+| C3 | Pre-submission edit engine: X12 structure and code-set validation plus dental rules (tooth/surface/quadrant by CDT code, frequency limits, attachments needed, NPI and taxonomy), returning fixable errors to CDO. Reuse CHO's payer-side scrubbing where it fits | The value a clearinghouse sells |
+| C4 | Inbound X12 parsing for 999, TA1, 277CA and 835 (today CHO receives Stedi's JSON) | The reverse conversion |
+| C5 | Raw-X12 transport adapter behind the gateway layer, per payer: SFTP/AS2, or a raw-X12 intake at Stedi or another clearinghouse; the Stedi JSON path stays available | CHO sends its own files |
+| C6 | Trading-partner and payer registry: connection settings, capability matrix (837D, 277CA, 835), ERA/EFT enrollment workflow with states and tasks; extends the §3 payers endpoint | Payer relationships and enrollment |
+| C7 | Transaction audit and retention: encrypted, immutable copies of every file in and out, PHI access logs, retention and purge jobs, tenant-isolation tests | Security Rule, EHNAC and SOC 2 evidence |
+| C8 | Monitoring and service levels: alerts for missing 999/277CA within the expected window and stuck transmissions; rejection dashboards per payer | Clearinghouse operations |
+| C9 | Practice-facing acknowledgment and rejection reports, in CHO and shown in CDO (one PR each) | What practices expect to see |
+| C10 | Infrastructure hardening: network isolation for PHI services, key management and secret rotation, tested backups and disaster recovery, SOC 2 control evidence | Accreditation and attestation |
+
+Optional: CAQH CORE conformance (real-time connectivity and response times for eligibility and claim status;
+CARC/RARC handling for ERAs) if Aurelianware pursues CORE certification.
+
+**Layer 3: model C** — one PR per payer connection (for example AHCCCS over SFTP with its companion guide and
+test transactions, or Delta Dental of Arizona), each plugged into C5 and backed by a trading-partner agreement.
+Only where volume justifies it.
+
+**Order and gates.** C7, C8 and C10 help even as a business associate and can start early. C1–C5 make
+Aurelianware a clearinghouse and wait for counsel's sign-off, a HIPAA compliance program (risk analysis,
+policies, officers, training, BAAs) and a SOC 2 then EHNAC HNAP-EHN plan. Decide after the pilot, using its
+rejection and denial data.
