@@ -26,6 +26,8 @@ public sealed class ServiceBusOptions
     public string AppointmentLifecycleSubscription { get; set; } = "zocdoc";
     public string StripeWebhookTopic { get; set; } = "stripe-webhooks";
     public string StripeWebhookSubscription { get; set; } = "portal";
+    public string CoverageIntakeTopic { get; set; } = "coverage-intake";
+    public string CoverageIntakeSubscription { get; set; } = "portal";
 
     public bool IsConfigured => !string.IsNullOrWhiteSpace(ConnectionString);
 }

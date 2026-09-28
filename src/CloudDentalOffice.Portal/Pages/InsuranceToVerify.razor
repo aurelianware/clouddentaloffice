@@ -43,7 +43,7 @@
                 <RowTemplate>
                     <MudTd DataLabel="Appointment">@Local(context.AppointmentStart).ToString("ddd M/d h:mm tt")</MudTd>
                     <MudTd DataLabel="Patient">@context.PatientName</MudTd>
-                    <MudTd DataLabel="Plan">@(context.PlanName ?? "—")</MudTd>
+                    <MudTd DataLabel="Plan">@(context.PlanName ?? (context.SentPlanId is null ? "—" : "Patient sent a plan"))</MudTd>
                     <MudTd DataLabel="Status"><MudChip T="string" Size="Size.Small" Color="@StateColor(context.State)">@StateLabel(context.State)</MudChip></MudTd>
                     <MudTd DataLabel="What to do">@WhatToDo(context)</MudTd>
                     <MudTd DataLabel="Last checked">@(context.LastCheckedAt is { } at ? Local(at).ToString("M/d h:mm tt") : "—")</MudTd>
@@ -120,13 +120,16 @@
             Snackbar.Add("This patient could not be found.", Severity.Warning);
             return;
         }
+        // A dental plan the patient typed in through their intake link, for staff to review and add.
+        var sentPlan = item.SentPlanId is { } planId ? await Queue.GetSentPlanAsync(planId) : null;
         var dialog = DialogService.Show<PatientInsuranceDialog>($"Insurance & Eligibility — {patient.FullName}",
             // Check against this appointment's date and provider, not today's defaults.
             new DialogParameters
             {
                 ["Patient"] = patient,
                 ["ServiceDate"] = DateOnly.FromDateTime(Local(item.AppointmentStart)),
-                ["ProviderId"] = item.ProviderId
+                ["ProviderId"] = item.ProviderId,
+                ["SentPlan"] = sentPlan
             },
             new DialogOptions { MaxWidth = MaxWidth.Large, FullWidth = true, CloseOnEscapeKey = true });
         await dialog.Result;
@@ -153,6 +156,7 @@
     {
         null => "Waiting for the first check.",
         EligibilityVerificationState.Verified => "Nothing: coverage is active and includes dental.",
+        EligibilityVerificationState.SelfPay => item.Reason ?? "The patient said they have no dental insurance.",
         EligibilityVerificationState.Unavailable when item.Attempts >= VerificationOptions.Value.MaxAttempts =>
             $"Couldn't reach the payer after {item.Attempts} tries. Verify by phone or the payer's portal.",
         EligibilityVerificationState.Unavailable => item.Reason is { } r ? $"{r} Retrying automatically." : "Retrying automatically.",
@@ -162,6 +166,7 @@
     private static Color StateColor(EligibilityVerificationState? state) => state switch
     {
         EligibilityVerificationState.Verified => Color.Success,
+        EligibilityVerificationState.SelfPay => Color.Default,
         EligibilityVerificationState.NotDental or EligibilityVerificationState.Inactive => Color.Error,
         EligibilityVerificationState.NeedsInfo or EligibilityVerificationState.Unconfirmed => Color.Warning,
         _ => Color.Info

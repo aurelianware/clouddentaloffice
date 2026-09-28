@@ -93,6 +93,16 @@
             <MudText Typo="Typo.h6" Class="mt-6" Style="color: #00ffff;">@(_editingId is null ? "Add coverage" : "Edit coverage")</MudText>
             <MudDivider Class="my-2" />
 
+            @if (SentPlan is { } sent && _editingId is null && _plans.Count > 0)
+            {
+                <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Class="mb-3">
+                    <div>The patient sent this dental plan@(sent.AnsweredAt is { } at ? $" on {DateTime.SpecifyKind(at, DateTimeKind.Utc).ToLocalTime():d}" : ""):
+                        <strong>@sent.CarrierName</strong>, member ID @sent.MemberId@(string.IsNullOrWhiteSpace(sent.GroupNumber) ? "" : $", group {sent.GroupNumber}")@(sent.RelationshipToSubscriber is null or CoverageRelationships.Self ? "" : $", plan holder {sent.SubscriberFirstName} {sent.SubscriberLastName} ({sent.RelationshipToSubscriber}, born {sent.SubscriberDateOfBirth:d})").</div>
+                    <div>Check it against the patient's card if you can, pick the matching payer, then add it.</div>
+                    <MudButton Class="mt-2" Size="Size.Small" Variant="Variant.Outlined" Color="Color.Info" OnClick="UseSentPlan">Fill in these details</MudButton>
+                </MudAlert>
+            }
+
             @if (_plans.Count == 0)
             {
                 @* Outlined: the theme's filled info colour (#00ffff) makes filled alert text unreadable. *@
@@ -186,6 +196,9 @@
     [Parameter] public DateOnly? ServiceDate { get; set; }
     [Parameter] public int? ProviderId { get; set; }
 
+    /// <summary>A dental plan the patient typed in through their intake link, offered as a starting point.</summary>
+    [Parameter] public CoverageIntakeRequest? SentPlan { get; set; }
+
     private bool _loading = true;
     private bool _saving;
     private bool _changed;
@@ -230,6 +243,28 @@
             // Default to the first free slot so a second coverage starts as secondary.
             SequenceNumber = _coverages.Any(c => c.IsActive && c.SequenceNumber == 1) ? 2 : 1
         };
+    }
+
+    private void UseSentPlan()
+    {
+        if (SentPlan is not { } sent) return;
+        ResetForm();
+        _form.MemberId = sent.MemberId ?? string.Empty;
+        _form.GroupNumber = sent.GroupNumber;
+        _form.RelationshipToSubscriber = CoverageRelationships.All.FirstOrDefault(r =>
+            string.Equals(r, sent.RelationshipToSubscriber, StringComparison.OrdinalIgnoreCase)) ?? CoverageRelationships.Self;
+        _form.SubscriberFirstName = sent.SubscriberFirstName;
+        _form.SubscriberLastName = sent.SubscriberLastName;
+        _form.SubscriberDateOfBirth = sent.SubscriberDateOfBirth?.ToDateTime(TimeOnly.MinValue);
+        // Suggest a payer only when the carrier name points at exactly one; staff confirm it.
+        var carrier = sent.CarrierName?.Trim() ?? string.Empty;
+        List<InsurancePlan> matches = carrier.Length < 3 ? [] : _plans.Where(p =>
+            p.PayerName.Contains(carrier, StringComparison.OrdinalIgnoreCase) ||
+            carrier.Contains(p.PayerName, StringComparison.OrdinalIgnoreCase)).ToList();
+        if (matches.Count == 1) _form.InsurancePlanId = matches[0].InsurancePlanId;
+        _formMessage = matches.Count == 1
+            ? $"Payer suggested from \"{carrier}\". Make sure it's the right one before adding."
+            : $"Pick the payer that matches \"{carrier}\".";
     }
 
     private void Edit(PatientInsurance c)
@@ -324,6 +359,7 @@
         EligibilityVerificationState.Unconfirmed => "Unconfirmed",
         EligibilityVerificationState.NeedsInfo => "Needs correction",
         EligibilityVerificationState.Unavailable => "Check failed",
+        EligibilityVerificationState.SelfPay => "Self-pay",
         _ => "Unknown"
     };
 

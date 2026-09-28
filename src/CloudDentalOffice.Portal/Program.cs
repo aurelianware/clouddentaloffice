@@ -375,6 +375,14 @@ builder.Services.AddScoped<ICoverageVerificationSweep, CoverageVerificationSweep
 builder.Services.AddScoped<ICoverageVerificationQueue, CoverageVerificationQueue>();
 builder.Services.AddSingleton<ICoverageVerificationRunner, CoverageVerificationRunner>();
 builder.Services.AddHostedService<CoverageVerificationWorker>();
+// Coverage intake: emails patients with no coverage on file a signed link to the
+// public IntakeService form; answers come back over Service Bus.
+builder.Services.AddOptions<CoverageIntakeOptions>()
+    .Bind(builder.Configuration.GetSection(CoverageIntakeOptions.SectionName))
+    .ValidateDataAnnotations();
+builder.Services.AddScoped<ICoverageIntakeService, CoverageIntakeService>();
+builder.Services.AddScoped<ICoverageIntakeProcessor, CoverageIntakeProcessor>();
+builder.Services.AddHostedService<CoverageIntakeConsumer>();
 builder.Services.AddEventPublishing(builder.Configuration);
 builder.Services.Configure<ReviewEmailOptions>(builder.Configuration.GetSection(ReviewEmailOptions.SectionName));
 builder.Services.Configure<ReviewOutreachWorkerOptions>(builder.Configuration.GetSection(ReviewOutreachWorkerOptions.SectionName));
@@ -548,6 +556,7 @@ using (var scope = app.Services.CreateScope())
         await PatientCoverageSchemaReconciliation.ApplyAsync(dbContext, databaseProvider, logger);
         await EligibilityVerificationSchemaReconciliation.ApplyAsync(dbContext, databaseProvider, logger);
         await CoverageVerificationSchemaReconciliation.ApplyAsync(dbContext, databaseProvider, logger);
+        await CoverageIntakeSchemaReconciliation.ApplyAsync(dbContext, databaseProvider, logger);
 
         await InitialTenantBootstrap.ApplyAsync(dbContext, builder.Configuration);
 
