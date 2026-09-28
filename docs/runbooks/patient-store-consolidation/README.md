@@ -112,8 +112,8 @@ login is broken (see step 5). Do not fix that login before the window, or first 
    `cdo_portal` empty and clear the scheduling references. Each command runs only if the one
    before it succeeded:
    ```bash
-   az postgres flexible-server db delete -g "$RG" -s "$SERVER" -d cdo_portal --yes \
-     && az postgres flexible-server db create -g "$RG" -s "$SERVER" -d cdo_portal \
+   az postgres flexible-server db delete --resource-group "$RG" --server-name "$SERVER" --name cdo_portal --yes \
+     && az postgres flexible-server db create --resource-group "$RG" --server-name "$SERVER" --name cdo_portal \
      && psql -d cdo_scheduling -v ON_ERROR_STOP=1 -f 21-clear-scheduling-patient-refs.sql \
      && echo "RESET DONE" || echo "STOP: the reset did not finish; see the error above"
    ```
@@ -170,8 +170,8 @@ login is broken (see step 5). Do not fix that login before the window, or first 
 * **After the reset, before reopening:** restore the step 3 backups, then reactivate the previous
   revisions:
   ```bash
-  az postgres flexible-server db delete -g "$RG" -s "$SERVER" -d cdo_portal --yes
-  az postgres flexible-server db create -g "$RG" -s "$SERVER" -d cdo_portal
+  az postgres flexible-server db delete --resource-group "$RG" --server-name "$SERVER" --name cdo_portal --yes
+  az postgres flexible-server db create --resource-group "$RG" --server-name "$SERVER" --name cdo_portal
   pg_restore -d cdo_portal --no-owner cdo_portal-<stamp>.dump
   pg_restore -d cdo_scheduling --clean --if-exists --no-owner cdo_scheduling-<stamp>.dump
   ```
