@@ -122,7 +122,8 @@ public sealed class CoverageIntakeService(
     IOptions<CoverageIntakeOptions> options,
     IOptions<CoverageVerificationOptions> verificationOptions,
     TimeProvider time,
-    ILogger<CoverageIntakeService> logger) : ICoverageIntakeService
+    ILogger<CoverageIntakeService> logger,
+    IOptions<PracticeEmailOptions>? practiceEmail = null) : ICoverageIntakeService
 {
     private CoverageIntakeOptions Options => options.Value;
 
@@ -274,7 +275,8 @@ public sealed class CoverageIntakeService(
         BillingNotificationSendResult result;
         try
         {
-            result = await sender.SendAsync(new(request.RecipientEmail, subject, body), cancellationToken);
+            result = await sender.SendAsync(new(request.RecipientEmail, subject, body, practice,
+                practiceEmail?.Value.ReplyToFor(request.TenantId)), cancellationToken);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
