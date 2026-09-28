@@ -78,6 +78,13 @@ public sealed record EligibilityResult
     public IReadOnlyList<string> Messages { get; init; } = [];
     public required string Source { get; init; }
     public DateTimeOffset VerifiedAt { get; init; }
+
+    /// <summary>
+    /// True when the payer reports dental care (service type 35) as not covered.
+    /// A medical plan can be active while covering no dental services; staff
+    /// must see that rather than a plain "Active coverage".
+    /// </summary>
+    public bool DentalCareNotCovered { get; init; }
     public string? ExternalTransactionId { get; init; }
 }
 

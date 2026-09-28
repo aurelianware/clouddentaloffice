@@ -230,7 +230,10 @@ internal static class StediEligibilityWire
         {
             BenefitCode = b.Code,
             ServiceTypeCode = b.ServiceTypeCodes?.FirstOrDefault(),
-            ServiceTypeName = b.Name,
+            // Stedi's "name" is the benefit line's name ("Active Coverage", "Non-Covered");
+            // the service type's own name is in serviceTypes.
+            BenefitName = b.Name,
+            ServiceTypeName = b.ServiceTypes?.FirstOrDefault(),
             CoverageLevel = b.CoverageLevelCode,
             // In network only when the payer says so (Y) or omits the indicator.
             InNetwork = string.IsNullOrWhiteSpace(b.InPlanNetworkIndicatorCode) ||
@@ -323,6 +326,7 @@ internal sealed class StediBenefit
     public string? Code { get; set; }
     public string? Name { get; set; }
     public List<string>? ServiceTypeCodes { get; set; }
+    public List<string>? ServiceTypes { get; set; }
     public string? CoverageLevelCode { get; set; }
     public string? TimeQualifierCode { get; set; }
     public string? TimeQualifier { get; set; }

@@ -1,8 +1,12 @@
 @using CloudDentalOffice.Portal.Models
 
 @* Normalized eligibility answer. Shared by the treatment-plan estimate and the patient insurance dialog. *@
-<MudAlert Class="mt-3" Variant="Variant.Outlined" Severity="@(Result.CoverageStatus == CoverageStatus.Active ? Severity.Success : Severity.Warning)">
-    <strong>@Result.CoverageStatus coverage</strong> via @Result.Source · verified @Result.VerifiedAt.LocalDateTime.ToString("g")
+<MudAlert Class="mt-3" Variant="Variant.Outlined" Severity="@Severity">
+    <strong>@Headline</strong> via @Result.Source · verified @Result.VerifiedAt.LocalDateTime.ToString("g")
+    @if (DentalGap)
+    {
+        <div><strong>Dental care isn't covered by this plan.</strong> It may be medical-only coverage; check whether the patient has a separate dental plan.</div>
+    }
     @if (!string.IsNullOrWhiteSpace(Result.PlanName))
     {
         <div>Plan: @Result.PlanName</div>
@@ -30,7 +34,7 @@
                 {
                     <tr>
                         <td>@benefit.Description</td>
-                        <td>@benefit.Status</td>
+                        <td>@StatusLabel(benefit.Status)</td>
                         <td>@BenefitValue(benefit.Copay, "C2")</td>
                         <td>@BenefitValue(benefit.Coinsurance, "P0")</td>
                         <td>@BenefitValue(benefit.Limit, "C2")</td>
@@ -48,6 +52,21 @@
 
 @code {
     [Parameter, EditorRequired] public EligibilityResult Result { get; set; } = default!;
+
+    private bool DentalGap => Result.CoverageStatus == CoverageStatus.Active && Result.DentalCareNotCovered;
+
+    private Severity Severity => Result.CoverageStatus == CoverageStatus.Active && !DentalGap ? Severity.Success : Severity.Warning;
+
+    private string Headline => DentalGap
+        ? "Plan active, dental not covered"
+        : $"{Result.CoverageStatus} coverage";
+
+    private static string StatusLabel(CoverageStatus status) => status switch
+    {
+        CoverageStatus.Active => "Covered",
+        CoverageStatus.Inactive => "Not covered",
+        _ => "Info"
+    };
 
     private static string Money(decimal? value) => value.HasValue ? value.Value.ToString("C2") : "not reported";
 

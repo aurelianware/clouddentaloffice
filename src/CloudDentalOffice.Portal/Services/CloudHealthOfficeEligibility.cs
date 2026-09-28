@@ -346,6 +346,7 @@ public static class CloudHealthOfficeEligibilityMapper
         {
             CorrelationId = string.IsNullOrWhiteSpace(response.CorrelationId) ? fallbackCorrelationId : response.CorrelationId,
             CoverageStatus = status,
+            DentalCareNotCovered = DentalNotCovered(benefits),
             PlanName = response.PlanName,
             EffectiveDate = response.CoverageStart,
             TerminationDate = response.CoverageEnd,
@@ -409,7 +410,9 @@ public static class CloudHealthOfficeEligibilityMapper
         var status = code switch
         {
             "1" => CoverageStatus.Active,
-            "6" => CoverageStatus.Inactive,
+            "6" or NonCovered => CoverageStatus.Inactive,
+            // Informational lines describe other payers or contacts, not coverage.
+            _ when code is not null && InformationalCodes.Contains(code) => CoverageStatus.Unknown,
             _ => overall
         };
 
@@ -434,7 +437,9 @@ public static class CloudHealthOfficeEligibilityMapper
             CoInsurance => "Coinsurance",
             CoPayment => "Copay",
             "G" => "Out-of-pocket",
-            _ => null
+            NonCovered => "Not covered",
+            // Otherwise use the payer's own name for the line (e.g. "Other Source of Data").
+            _ => string.IsNullOrWhiteSpace(b.BenefitName) ? null : b.BenefitName.Trim()
         };
         var parts = new[]
         {
@@ -445,6 +450,32 @@ public static class CloudHealthOfficeEligibilityMapper
         };
         var text = string.Join(" · ", parts.Where(p => !string.IsNullOrWhiteSpace(p)));
         return string.IsNullOrWhiteSpace(text) ? "Benefit" : text;
+    }
+
+    // EB01 "I" = Non-Covered. Informational EB01 codes: L primary care provider,
+    // N services restricted to provider, P benefit disclaimer, R other or
+    // additional payer, U contact following entity, W other source of data,
+    // X health care facility, Y spend down.
+    private const string NonCovered = "I";
+    private const string DentalCare = "35";
+    private static readonly HashSet<string> InformationalCodes = new(StringComparer.OrdinalIgnoreCase)
+        { "L", "N", "P", "R", "U", "W", "X", "Y" };
+
+    /// <summary>
+    /// Dental care is not covered when the payer says so for service type 35, or
+    /// sends a non-covered line without a service type while reporting nothing
+    /// dental as covered (the inquiry itself asked about dental care).
+    /// </summary>
+    internal static bool DentalNotCovered(IReadOnlyList<ChoBenefit> benefits)
+    {
+        static string? Code(ChoBenefit b) => b.BenefitCode?.Trim().ToUpperInvariant();
+        static bool IsDental(ChoBenefit b) => string.Equals(b.ServiceTypeCode?.Trim(), DentalCare, StringComparison.Ordinal);
+
+        if (benefits.Any(b => Code(b) == NonCovered && IsDental(b))) return true;
+        var unscopedNonCovered = benefits.Any(b => Code(b) == NonCovered && string.IsNullOrWhiteSpace(b.ServiceTypeCode));
+        var dentalCovered = benefits.Any(b => IsDental(b) && Code(b) is not (NonCovered or "6") &&
+                                              !InformationalCodes.Contains(Code(b) ?? string.Empty));
+        return unscopedNonCovered && !dentalCovered;
     }
 
     private static CoverageStatus ParseStatus(string? value) =>
@@ -533,6 +564,9 @@ public sealed class ChoEligibilityResponse
 public sealed class ChoBenefit
 {
     public string? BenefitCode { get; set; }
+
+    /// <summary>The payer's name for the benefit line (e.g. "Non-Covered"). Set by the direct Stedi path.</summary>
+    public string? BenefitName { get; set; }
     public string? ServiceTypeCode { get; set; }
     public string? ServiceTypeName { get; set; }
     public string? CoverageLevel { get; set; }
