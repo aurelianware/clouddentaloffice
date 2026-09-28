@@ -176,6 +176,13 @@ ledger.** There is no second ERA poster.
   stays open with its CARC reason for staff (appeal, correct and resend, or bill the patient); a **pended** line
   stays `Billed`. The claim is `Paid` only when every line is `Paid`, and `PartiallyPaid` otherwise.
 - ERAs that match no CDO claim go to a staff queue. This replaces `EraService`.
+- **"Bill secondary" task (v1, while secondary claims are manual).** When a primary claim's ERA is posted and
+  the patient has an active secondary coverage (`PatientInsurance` with `SequenceNumber = 2` in effect on the
+  service date), create one `SecondaryBillingTask` row: tenant, primary claim, secondary coverage, created and
+  completed time, completed by. A unique index on (tenant, primary claim) makes creation idempotent, so a replayed
+  or later ERA never adds a second task. Created in the same posting transaction as the ERA amounts. Staff see
+  open tasks on the claims page (with the primary EOB amounts they need to send) and mark them done. There is no
+  existing staff-task model in CDO; this is a small, specific table rather than a general one.
 
 **4g. Retire.** Once live: remove `EdiX12Service`'s hand-built 837D and the `API`→`raw837` route for non-CHO
 payers; keep SFTP only if a payer needs it.
@@ -192,7 +199,7 @@ payers; keep SFTP only if a payer needs it.
 | 4 | CDO | Appointment → claim draft, `SchedulingAppointmentId` on procedures (§4b) | Less re-typing |
 | 5 | CDO | Pre-submission checks + JSON client + status refresh (§4c–e) | End-to-end submission |
 | 6 | both | Live validation: one real 837D, 277CA, then one ERA after enrollment | Pilot |
-| 7 | CDO | Line-level posting in `ClaimLifecycleService` and the unmatched queue (§4f); retire the X12 path (§4g) | Hands-off payments |
+| 7 | CDO | Line-level posting in `ClaimLifecycleService`, the unmatched queue and the "Bill secondary" task (§4f); retire the X12 path (§4g) | Hands-off payments |
 
 PRs 1–3 can run in parallel. The pilot needs 1–6; until 7, payments are posted by hand.
 
@@ -203,12 +210,19 @@ PRs 1–3 can run in parallel. The pilot needs 1–6; until 7, payments are post
 - Attachments (X-rays, perio charts) for crowns and SRP: Stedi 275 exists in CHO's library; in scope for v1 or later?
 - **v1 default (recommended, to confirm):** primary claims only; secondary billed manually (§4b). Until
   automatic secondary claims exist, CDO adds a "Bill secondary" staff task when a patient with secondary
-  coverage has their primary ERA posted. Later: automatic secondary claims with COB data from the primary ERA.
+  coverage has their primary ERA posted (§4f, PR 7). Later: automatic secondary claims with COB data from the primary ERA.
 - **Stedi account (decided 2026-09-28):** claims go out on **Aurelianware's CHO Stedi account** for now.
-  `provider-claims-api` resolves the Stedi key per tenant, defaulting to Aurelianware's key, so a practice can
-  bring its own account later without redesign. Consequences: ERA enrollment is done under Aurelianware's account
-  for the practice's NPI/Tax ID; Stedi bills Aurelianware; the practice BAA must cover claim transmission.
-  Check which key CDO's eligibility uses today (#78): if it isn't the same account, decide whether to align them.
+  Consequences: ERA enrollment is done under Aurelianware's account for the practice's NPI/Tax ID; Stedi bills
+  Aurelianware; the practice BAA must cover claim transmission.
+  **Key resolution fails closed**, with the same invariant CDO's eligibility already enforces
+  (`StediCredentialProvider.GetAsync`, `StediCredentials.cs:249-287`): each practice has an explicit connection
+  mode. `Shared` uses Aurelianware's key, and only while the shared account is switched on; `Integrated` uses
+  that practice's own key, whose reference must match the practice. A practice with no connection, an inactive
+  one, or a `Shared` connection while the shared account is off is refused (`422`/configuration error), never
+  sent on Aurelianware's account by default. `provider-claims-api` mirrors this per tenant, so a practice that
+  brings its own account never has a claim leave on the shared one because of a missing or stale mapping.
+  CDO's eligibility already follows each practice's connection mode, so eligibility and claims stay on the same
+  account when both read the same mode.
 - **Moving Stedi configuration from CDO to CHO:** after the pilot. CDO's direct Stedi eligibility path carries
   the #86/#88 fixes and multi-code handling that CHO's provider eligibility API doesn't yet; bring CHO to parity,
   then switch CDO's eligibility and payer search to CHO and retire CDO's Stedi client and Key Vault key.
