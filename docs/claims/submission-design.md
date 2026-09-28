@@ -60,9 +60,9 @@ CDO appointment ──► completed procedures ──► draft claim (verified c
       │                                             │                                              │
       │                     transmissionId ◄────────┘        277CA / 835 ──► Stedi webhook ──► CHO stores
       ▼                                                                                          │
-CDO claim: Submitted ──► Accepted / Rejected (277CA) ──► Paid / Denied (835) ◄── GET intelligence, GET remittances
+CDO claim: Submitted ──► Accepted / Rejected (277CA) ──► Paid / PartiallyPaid / Denied (835) ◄── GET intelligence, GET remittances
                                                           │
-                                                          └──► post payment + adjustments to the patient ledger
+                                                          └──► ClaimLifecycleService posts payment + adjustments to the ledger (one owner, §4f)
 ```
 
 `raw837` stays what it is: CHO acting **as the payer**, for plans CHO administers. CDO routes a plan there only
@@ -78,11 +78,18 @@ A new service beside `provider-eligibility-api`, built the same way, with **no**
 
 | Method | Path | Purpose |
 |---|---|---|
-| `POST` | `/api/v1/claims/dental` | Validate a JSON dental claim, map it to `GatewayClaimSubmissionRequest` (`ClaimType = Dental`) and submit through `IClaimSubmissionGateway`. `Idempotency-Key` header → `IdempotencyKey`, so a CDO retry never double-bills. Returns `{ claimId, transmissionId, transmissionStatus, correlationId }`. `400` field errors for fixable data (same shape as provider eligibility); `422` for payer-level problems (`PayerNotFound`, `EnrollmentRequired`); `503` transient. |
+| `POST` | `/api/v1/claims/dental` | Validate a JSON dental claim, map it to `GatewayClaimSubmissionRequest` (`ClaimType = Dental`, `ClaimVersion` and `FrequencyCode` from the request, §4d) and submit through `IClaimSubmissionGateway`. `Idempotency-Key` header → `IdempotencyKey`, so a CDO retry of the same generation never submits twice. Returns `{ claimId, transmissionId, transmissionStatus, correlationId }`. `400` field errors for fixable data (same shape as provider eligibility); `422` for payer-level problems (`PayerNotFound`, `EnrollmentRequired`); `503` transient. |
 | `GET` | `/api/v1/claims/{claimId}/intelligence` | The existing `ClaimIntelligenceComposer` view, tenant-scoped. |
 | `GET` | `/api/v1/remittances?since=` and `/api/v1/remittances/{id}` | ERAs received for the tenant: payment, check/EFT trace, per-claim and per-line paid/adjustment codes (CARC/RARC), patient responsibility. Read model over the existing 835 receipts. |
-| `POST` | `/api/integrations/stedi/claim-responses` | The existing Stedi webhook (277CA and 835), moved or also mounted here, with its API-key check. |
-| `GET` | `/api/v1/payers` | Reuse the provider eligibility payer search so CDO can confirm a payer supports dental claims. |
+| `GET` | `/api/v1/payers` | Payer search that reports, per payer, **dental claim (837D) support, 277CA, and ERA (835) support plus the tenant's enrollment status** for each. The provider eligibility search can't be reused as is: it exposes only `Eligibility` (`ProviderEligibilityController.cs:147`). `POST /claims/dental` also enforces it: a payer without 837D support, or requiring enrollment the tenant lacks, gets `422` before anything is sent. |
+
+**The Stedi webhook is a separate, public boundary.** Stedi calls in from outside, with its own webhook
+credential and no tenant header, so it can't live behind this service's internal ingress or its CDO
+API-key + `X-Tenant-ID` middleware. It stays the existing `POST /api/integrations/stedi/claim-responses`
+(`StediClaimResponseWebhookController.cs`), deployed in its own small Container App with **external** ingress
+and only that route, authenticated by `StediGatewayOptions.WebhookCredentialValue`
+(`WebhookCredentialHeaderName`), fail-closed. The tenant is taken from the matched transmission, never from
+the request. It writes the **same durable stores** that `provider-claims-api` reads.
 
 **Contract (JSON, versioned `v1`).** Mirrors `GatewayClaimSubmissionRequest` with dental fields required
 where the CDT code needs them: billing provider (practice name, Type 2 NPI, Tax ID, address, taxonomy),
@@ -99,7 +106,8 @@ and CDO's own claim key for correlation. **No diagnosis codes required** for rou
 - **Durable stores** (Mongo) for transmissions, 277CA and 835. The in-memory default must be impossible in
   production.
 - Logs carry tenant, payer, claim key and transmission ID only; never member IDs, names or DOB.
-- Internal ingress; CDO reaches it over the Container Apps environment like provider eligibility.
+- Internal ingress; CDO reaches it over the Container Apps environment like provider eligibility. (The Stedi
+  webhook is the separate public app above.)
 
 **Before real claims**
 
@@ -122,7 +130,9 @@ hard-coded value in `EdiX12Service`.
 - "Create claim" on a completed appointment: pulls its completed, unbilled procedures, the rendering provider,
   service date, and the coverage last verified for that appointment (`CoverageVerification`, #89). Staff review
   and edit before submitting; nothing is sent automatically.
-- One claim per coverage slot; secondary claims wait for the primary's ERA (COB is a later step).
+- **v1 submits primary claims only** (proposed default; confirm, §6). Secondary insurance is billed manually outside CDO in v1 (staff
+  send it with the primary EOB, as today). Automatic secondary claims with COB data from the primary ERA
+  are a later step (§6).
 
 **4c. Pre-submission checks.** A checklist the claim must pass, each with a staff-readable fix:
 coverage `Verified` within 7 days for the service date (not `NotDental`/`Inactive`); dental payer ID present;
@@ -132,14 +142,40 @@ charges > 0; no duplicate open claim for the same procedures.
 **4d. Submission client.** Replace the X12 path for CHO-routed plans with a JSON client to
 `provider-claims-api` (same pattern as `CloudHealthOfficeEligibilityClient`: HTTPS-only base URL, API key from
 configuration/Key Vault, sanitized logs, typed failure → "fix the claim" vs "try again"). Store `transmissionId`
-and CHO's claim ID. Idempotency key = tenant + CDO claim ID + version, so resubmits after a timeout are safe.
+and CHO's claim ID.
+
+*Generations and idempotency.* `Claim` has no submission version or frequency code today, so add two
+persisted columns: `SubmissionGeneration` (int, starts at 1) and `FrequencyCode` (`1` original, `7`
+replacement, `8` void). They go on the wire as `claimVersion` and `frequencyCode`, and the idempotency key is
+`tenant : claimId : generation`.
+- **A retry** after a timeout or `503` reuses the same generation, so CHO returns the existing transmission.
+- **A correction** of an accepted claim increments the generation and sends `7` with the payer's claim control
+  number; **a void** increments it and sends `8`. Each is a new, intentional submission.
+- A claim the payer **rejected** at the front end (277CA reject, never adjudicated) is fixed and resent as a new
+  generation with frequency `1`.
 
 **4e. Status.** Reuse claim intelligence (#68) against the new endpoint; add a worker (the coverage
-verification worker's lease pattern) that refreshes open claims until they reach a terminal state.
+verification worker's lease pattern) that refreshes open claims until they reach a terminal state. Claim
+states follow the existing lifecycle mapping (`ClaimIntelligenceService.cs:383-406`): Submitted, Accepted,
+Rejected, Paid, **PartiallyPaid**, Denied. PartiallyPaid is *not* terminal for the claim while any line is
+still open (pended, or awaiting a corrected claim); it is terminal once every line is resolved (§4f).
 
-**4f. ERA posting.** Pull remittances; match to CDO claims by CHO claim ID/patient control number; post
-insurance payment and adjustments per line to the ledger (`PatientLedgerEntries`), move the balance to patient
-responsibility, and mark procedures `Paid`. Unmatched ERAs go to a staff queue. Replaces `EraService`.
+**4f. ERA posting: one owner.** `ClaimLifecycleService.RefreshAsync` already posts the charge, insurance
+payment and contractual adjustment for a claim once, guarded by `Claim.FinancialsPostedAt`
+(`ClaimIntelligenceService.cs:233-270`). **It stays the only thing that writes remittance money to the
+ledger.** There is no second ERA poster.
+- Extend it to post **per line** from the remittance detail (`/api/v1/remittances`, CARC/RARC codes) instead of
+  claim totals: insurance payment, contractual adjustment (CO), and patient responsibility (PR: deductible,
+  coinsurance, copay) per procedure.
+- Idempotency moves from the claim-level `FinancialsPostedAt` flag to a posted-remittance record keyed on
+  (tenant, claim, remittance trace number, line). Replaying the same ERA posts nothing; a later ERA for the same
+  claim (a reprocessing or a payment on a pended line) posts only its own amounts. Claims already posted under
+  the old flag are left as they are.
+- **Line status**, not a blanket `Paid`: a procedure becomes `Paid` only when its insurance portion is settled
+  (paid, or adjusted to zero) and any remaining balance has moved to patient responsibility; a **denied** line
+  stays open with its CARC reason for staff (appeal, correct and resend, or bill the patient); a **pended** line
+  stays `Billed`. The claim is `Paid` only when every line is `Paid`, and `PartiallyPaid` otherwise.
+- ERAs that match no CDO claim go to a staff queue. This replaces `EraService`.
 
 **4g. Retire.** Once live: remove `EdiX12Service`'s hand-built 837D and the `API`→`raw837` route for non-CHO
 payers; keep SFTP only if a payer needs it.
@@ -152,11 +188,11 @@ payers; keep SFTP only if a payer needs it.
 |---|---|---|---|
 | 1 | CDO | Practice billing profile (§4a) | Any real claim |
 | 2 | CHO | `provider-claims-api`: submit, durable stores, auth, guard, Bicep with `cdoTenantIds` (§3) | Transmission |
-| 3 | CHO | Intelligence + remittance read endpoints and the webhook in the new service | Status and payments back to CDO |
+| 3 | CHO | Intelligence + remittance read endpoints in the new service; the Stedi webhook as its own public app writing the same durable stores | Status and payments back to CDO |
 | 4 | CDO | Appointment → claim draft, `SchedulingAppointmentId` on procedures (§4b) | Less re-typing |
 | 5 | CDO | Pre-submission checks + JSON client + status refresh (§4c–e) | End-to-end submission |
 | 6 | both | Live validation: one real 837D, 277CA, then one ERA after enrollment | Pilot |
-| 7 | CDO | ERA posting and unmatched queue (§4f); retire the X12 path (§4g) | Hands-off payments |
+| 7 | CDO | Line-level posting in `ClaimLifecycleService` and the unmatched queue (§4f); retire the X12 path (§4g) | Hands-off payments |
 
 PRs 1–3 can run in parallel. The pilot needs 1–6; until 7, payments are posted by hand.
 
@@ -165,4 +201,9 @@ PRs 1–3 can run in parallel. The pilot needs 1–6; until 7, payments are post
 - Which payers does 3rd Set Smiles bill most (the Ascend report), and which already have ERA enrollment
   elsewhere that would need moving?
 - Attachments (X-rays, perio charts) for crowns and SRP: Stedi 275 exists in CHO's library; in scope for v1 or later?
-- Secondary insurance and COB: after the primary ERA, or manual at first?
+- **v1 default, to confirm:** primary claims only; secondary billed manually (§4b). Later: automatic secondary
+  claims with COB data from the primary ERA.
+- **Whose Stedi account submits?** CHO's gateway has one `StediGatewayOptions.ApiKey` (CHO's account), while
+  CDO eligibility uses the practice's own key from Key Vault (#78). ERA enrollment and Stedi billing belong to
+  the account that submits. Options: CHO's account (no CHO change; CHO acts as the practice's clearinghouse),
+  or a per-tenant Stedi key in CHO's gateway (one account per practice for eligibility, claims and ERAs).
