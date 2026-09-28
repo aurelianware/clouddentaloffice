@@ -364,6 +364,30 @@ public sealed class PatientCoverageServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task Deactivation_and_later_edits_use_the_same_date_when_utc_is_already_tomorrow()
+    {
+        // 03:00 UTC on 28 Sep is still 27 Sep in Arizona (UTC-7, no DST).
+        var clock = new FixedClock(new DateTimeOffset(2026, 9, 28, 3, 0, 0, TimeSpan.Zero),
+            TimeZoneInfo.CreateCustomTimeZone("AZ", TimeSpan.FromHours(-7), "AZ", "AZ"));
+        var service = new PatientCoverageService(_db, new FixedTenantProvider(Tenant), clock, NullLogger<PatientCoverageService>.Instance);
+        var saved = await service.AddCoverageAsync(PatientId, SelfInput());
+
+        await service.DeactivateCoverageAsync(saved.PatientInsuranceId);
+        var deactivated = Assert.Single(await service.GetCoveragesAsync(PatientId));
+        await service.UpdateCoverageAsync(saved.PatientInsuranceId, SelfInput() with { TerminationDate = deactivated.TerminationDate });
+
+        var coverage = Assert.Single(await service.GetCoveragesAsync(PatientId));
+        Assert.Equal(new DateTime(2026, 9, 27), coverage.TerminationDate!.Value.Date);
+        Assert.False(coverage.IsActive);
+    }
+
+    private sealed class FixedClock(DateTimeOffset utcNow, TimeZoneInfo local) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => utcNow;
+        public override TimeZoneInfo LocalTimeZone => local;
+    }
+
+    [Fact]
     public async Task Unknown_relationship_is_rejected()
     {
         var error = await Assert.ThrowsAsync<CoverageValidationException>(() =>

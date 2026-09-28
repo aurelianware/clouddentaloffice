@@ -69,7 +69,7 @@ public sealed class PatientCoverageService(
         // Query filters scope both lookups to the caller's practice.
         if (!await db.Patients.AnyAsync(p => p.PatientId == patientId, cancellationToken))
             throw new CoverageValidationException("This patient was not found.");
-        var active = WillBeActive(input.TerminationDate, currentlyActive: true);
+        var active = WillBeActive(input.TerminationDate, currentlyActive: true, Today);
         var normalized = await ValidateAsync(patientId, input, existingId: null, active, cancellationToken);
 
         var now = time.GetUtcNow().UtcDateTime;
@@ -92,7 +92,7 @@ public sealed class PatientCoverageService(
     {
         var coverage = await db.PatientInsurances.SingleOrDefaultAsync(x => x.PatientInsuranceId == patientInsuranceId, cancellationToken)
             ?? throw new CoverageValidationException("This coverage was not found.");
-        var active = WillBeActive(input.TerminationDate, coverage.IsActive);
+        var active = WillBeActive(input.TerminationDate, coverage.IsActive, Today);
         var normalized = await ValidateAsync(coverage.PatientId, input, patientInsuranceId, active, cancellationToken);
 
         Apply(coverage, normalized, active);
@@ -107,15 +107,22 @@ public sealed class PatientCoverageService(
     {
         var coverage = await db.PatientInsurances.SingleOrDefaultAsync(x => x.PatientInsuranceId == patientInsuranceId, cancellationToken)
             ?? throw new CoverageValidationException("This coverage was not found.");
-        var now = time.GetUtcNow().UtcDateTime;
+        var today = Today;
         coverage.IsActive = false;
-        if (coverage.TerminationDate is null || coverage.TerminationDate.Value.Date > now.Date)
-            coverage.TerminationDate = now.Date;
-        coverage.ModifiedDate = now;
+        if (coverage.TerminationDate is null || coverage.TerminationDate.Value.Date > today)
+            coverage.TerminationDate = today;
+        coverage.ModifiedDate = time.GetUtcNow().UtcDateTime;
         await db.SaveChangesAsync(cancellationToken);
 
         logger.LogInformation("Deactivated coverage {PatientInsuranceId} for patient {PatientId}", patientInsuranceId, coverage.PatientId);
     }
+
+    /// <summary>
+    /// The calendar date coverage dates are compared against. One clock for
+    /// deactivation and the active-state rule, so they agree even when the
+    /// server's local date differs from the UTC date.
+    /// </summary>
+    private DateTime Today => time.GetLocalNow().Date;
 
     private async Task<CoverageInput> ValidateAsync(
         int patientId, CoverageInput input, int? existingId, bool active, CancellationToken cancellationToken)
@@ -145,7 +152,7 @@ public sealed class PatientCoverageService(
             subscriberLast = Text(input.SubscriberLastName, 60, "Policyholder last name", required: false) ?? throw new CoverageValidationException(missing);
             if (input.SubscriberDateOfBirth is not { } dob)
                 throw new CoverageValidationException(missing);
-            if (dob.Date > DateTime.Today || dob.Year < 1900)
+            if (dob.Date > Today || dob.Year < 1900)
                 throw new CoverageValidationException("The policyholder's date of birth is out of range.");
             subscriberDob = dob.Date;
         }
@@ -194,10 +201,9 @@ public sealed class PatientCoverageService(
     /// termination date of today keeps coverage active only if it already was,
     /// so editing a coverage deactivated today never reactivates it.
     /// </summary>
-    internal static bool WillBeActive(DateTime? terminationDate, bool currentlyActive)
+    internal static bool WillBeActive(DateTime? terminationDate, bool currentlyActive, DateTime today)
     {
         if (terminationDate is not { } end) return true;
-        var today = DateTime.Today;
         return end.Date > today || (end.Date == today && currentlyActive);
     }
 
