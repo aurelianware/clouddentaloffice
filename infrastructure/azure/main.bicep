@@ -199,6 +199,14 @@ resource coverageIntakePortalSubscription 'Microsoft.ServiceBus/namespaces/topic
   properties: { maxDeliveryCount: 10, deadLetteringOnMessageExpiration: true }
 }
 
+// Listen on this topic only, so enabling the Portal's intake consumer doesn't hand
+// it the namespace-wide connection (which would also start its other consumers).
+resource coverageIntakePortalListen 'Microsoft.ServiceBus/namespaces/topics/authorizationRules@2024-01-01' = {
+  parent: coverageIntakeTopic
+  name: 'portal-listen'
+  properties: { rights: [ 'Listen' ] }
+}
+
 resource bookingSendPolicy 'Microsoft.ServiceBus/namespaces/authorizationRules@2024-01-01' = {
   parent: serviceBus
   name: 'booking-intake-send'

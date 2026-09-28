@@ -26,6 +26,9 @@ public class CoverageIntakeRequest : ITenantEntity
     public DateTime? SentAt { get; set; }
     public DateTime? ReminderSentAt { get; set; }
     public int SendAttempts { get; set; }
+
+    /// <summary>When the last delivery attempt was claimed; no instance retries within a few minutes of it.</summary>
+    public DateTime? LastAttemptAt { get; set; }
     public string? LastError { get; set; }
 
     public DateTime? AnsweredAt { get; set; }

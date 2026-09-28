@@ -46,19 +46,26 @@ safely to clearinghouse payer IDs without a person.
 Requires the coverage verification worker (`CoverageVerification__Enabled=true`) and
 an email transport (`ReviewOutreach:Email`, shared with billing notifications).
 
-1. Deploy `main.bicep` to create the `coverage-intake` topic and its `portal`
-   subscription.
-2. Generate one random key of at least 32 bytes and store it as a secret for both apps.
-3. IntakeService:
-   - `CoverageIntake__Enabled=true`
-   - `CoverageIntake__SigningKey` = the shared key (secret reference)
-4. Portal:
-   - `CoverageIntake__Enabled=true`
-   - `CoverageIntake__SigningKey` = the same key (secret reference)
-   - `CoverageIntake__LinkBaseUrl` = IntakeService's public HTTPS address, e.g.
-     `https://book-api.3rdsetsmiles.com`
-   - `ServiceBus__ConnectionString` with **Listen** rights on `coverage-intake`, so the
-     consumer receives answers.
+The deploy workflow wires everything; set these on the GitHub environment:
+
+| Name | Kind | Value |
+|---|---|---|
+| `COVERAGE_INTAKE_SIGNING_KEY` | secret | Random, at least 32 bytes. Shared by both apps. |
+| `COVERAGE_INTAKE_LINK_BASE_URL` | variable | IntakeService's public HTTPS origin, e.g. `https://book-api.3rdsetsmiles.com`. No path, query or credentials. |
+| `COVERAGE_INTAKE_ENABLED` | variable | `true` |
+
+`main.bicep` creates the `coverage-intake` topic, its `portal` subscription, and a
+listen-only rule `portal-listen` on that topic. The workflow passes that rule's
+connection to the Portal as `CoverageIntake__ServiceBusConnectionString`, so the
+Portal's other Service Bus consumers stay off. IntakeService publishes with its
+existing send connection.
+
+Use a branded domain for the link; a generated Container Apps hostname looks like
+phishing in an email asking for a member ID.
+
+**Switching it off** stops the emails and the Portal's consumer. Answers already
+submitted wait on the subscription and are applied if intake is switched back on
+within 14 days; after that they move to the dead-letter queue.
 
 Rotating the key invalidates links already sent; patients who haven't answered get a
 fresh link after their current one expires.

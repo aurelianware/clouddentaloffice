@@ -33,6 +33,7 @@ public static class CoverageIntakeSchemaReconciliation
                 "SentAt" timestamp with time zone,
                 "ReminderSentAt" timestamp with time zone,
                 "SendAttempts" integer NOT NULL,
+                "LastAttemptAt" timestamp with time zone,
                 "LastError" character varying(128),
                 "AnsweredAt" timestamp with time zone,
                 "Answer" character varying(16),

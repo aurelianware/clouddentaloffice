@@ -34,6 +34,12 @@ param jwtAudience string
 param serviceBusSendConnection string
 @secure()
 param serviceBusListenConnection string
+param coverageIntakeEnabled bool = false
+@secure()
+param coverageIntakeSigningKey string = ''
+param coverageIntakeLinkBaseUrl string = ''
+@secure()
+param coverageIntakeListenConnection string = ''
 @secure()
 param publicBookingApiKey string
 @secure()
@@ -131,6 +137,25 @@ var choEligibilityEnv = choEligibilityEnabled ? concat([
   { name: 'CloudHealthOffice__Eligibility__ApiKey', secretRef: 'cho-eligibility-api-key' }
 ], choEligibilityRoutes) : []
 
+// Coverage intake links: on only when switched on with a key. The Portal consumes
+// answers with a listen-only key for its own topic, never the namespace connection.
+var coverageIntakeOn = coverageIntakeEnabled && !empty(coverageIntakeSigningKey)
+var coverageIntakeKeySecret = coverageIntakeOn ? [
+  { name: 'coverage-intake-key', value: coverageIntakeSigningKey }
+] : []
+var coverageIntakeCommonEnv = coverageIntakeOn ? [
+  { name: 'CoverageIntake__Enabled', value: 'true' }
+  { name: 'CoverageIntake__SigningKey', secretRef: 'coverage-intake-key' }
+] : []
+var coverageIntakePortalSecrets = concat(coverageIntakeKeySecret, coverageIntakeOn && !empty(coverageIntakeListenConnection) ? [
+  { name: 'coverage-intake-listen', value: coverageIntakeListenConnection }
+] : [])
+var coverageIntakePortalEnv = concat(coverageIntakeCommonEnv, coverageIntakeOn ? [
+  { name: 'CoverageIntake__LinkBaseUrl', value: coverageIntakeLinkBaseUrl }
+] : [], coverageIntakeOn && !empty(coverageIntakeListenConnection) ? [
+  { name: 'CoverageIntake__ServiceBusConnectionString', secretRef: 'coverage-intake-listen' }
+] : [])
+
 // Shared registry config — Managed Identity pulls from ACR (no admin credentials)
 var registry = [
   {
@@ -184,7 +209,7 @@ resource portal 'Microsoft.App/containerApps@2024-03-01' = {
         { name: 'jwt-key', value: jwtKey }
         { name: 'google-oauth-client-secret', value: googleOAuthClientSecret }
         { name: 'cloudhealthoffice-api-key', value: cloudHealthOfficeApiKey }
-      ], choEligibilitySecrets)
+      ], choEligibilitySecrets, coverageIntakePortalSecrets)
     }
     template: {
       containers: [
@@ -225,7 +250,7 @@ resource portal 'Microsoft.App/containerApps@2024-03-01' = {
             { name: 'CloudHealthOffice__ApiKey', secretRef: 'cloudhealthoffice-api-key' }
             { name: 'CloudHealthOffice__BenefitPlanMappings__${cloudHealthOfficePayerId}', value: cloudHealthOfficeBenefitPlanId }
             { name: 'PayerConnectivity__Payers__${cloudHealthOfficePayerId}__PaymentEstimate__0', value: 'CloudHealthOffice' }
-          ], choEligibilityEnv, stediEnv)
+          ], choEligibilityEnv, stediEnv, coverageIntakePortalEnv)
           probes: [
             // Liveness has no database dependency, so a transient database outage
             // does not cause the platform to restart an otherwise-healthy process.
@@ -491,7 +516,7 @@ resource intakeService 'Microsoft.App/containerApps@2023-05-01' = {
         { name: 'zocdoc-webhook-secret', value: zocdocWebhookSecret }
       ], empty(integrationInboxAdminApiKey) ? [] : [
         { name: 'inbox-admin-key', value: integrationInboxAdminApiKey }
-      ])
+      ], coverageIntakeKeySecret)
     }
     template: {
       containers: [
@@ -520,7 +545,7 @@ resource intakeService 'Microsoft.App/containerApps@2023-05-01' = {
           ], empty(integrationInboxAdminApiKey) ? [] : [
             { name: 'IntegrationInbox__AdminClients__0__TenantId', value: initialTenantId }
             { name: 'IntegrationInbox__AdminClients__0__ApiKey', secretRef: 'inbox-admin-key' }
-          ])
+          ], coverageIntakeCommonEnv)
           probes: [
             // Liveness has no database dependency, so a transient database outage
             // does not cause the platform to restart an otherwise-healthy process.

@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.47.16.16243",
-      "templateHash": "6126867878635312058"
+      "templateHash": "13116405421162164290"
     }
   },
   "parameters": {
@@ -252,6 +252,34 @@
         "description": "Route every payer without its own eligibility route to Clearinghouse"
       }
     },
+    "coverageIntakeEnabled": {
+      "type": "bool",
+      "defaultValue": false,
+      "metadata": {
+        "description": "Turn on patient coverage intake links (Portal and IntakeService). Needs the key, link URL and listen connection."
+      }
+    },
+    "coverageIntakeSigningKey": {
+      "type": "securestring",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Shared signing key for coverage intake links, at least 32 bytes."
+      }
+    },
+    "coverageIntakeLinkBaseUrl": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Public HTTPS address of IntakeService used in coverage intake links."
+      }
+    },
+    "coverageIntakeListenConnection": {
+      "type": "securestring",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Listen-only connection for the coverage-intake topic (rule portal-listen)."
+      }
+    },
     "jwtIssuer": {
       "type": "string",
       "defaultValue": "CloudDentalOffice"
@@ -325,6 +353,18 @@
           },
           "serviceBusListenConnection": {
             "value": "[parameters('serviceBusListenConnection')]"
+          },
+          "coverageIntakeEnabled": {
+            "value": "[parameters('coverageIntakeEnabled')]"
+          },
+          "coverageIntakeSigningKey": {
+            "value": "[parameters('coverageIntakeSigningKey')]"
+          },
+          "coverageIntakeLinkBaseUrl": {
+            "value": "[parameters('coverageIntakeLinkBaseUrl')]"
+          },
+          "coverageIntakeListenConnection": {
+            "value": "[parameters('coverageIntakeListenConnection')]"
           },
           "publicBookingApiKey": {
             "value": "[parameters('publicBookingApiKey')]"
@@ -421,7 +461,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.47.16.16243",
-              "templateHash": "12047634124373975804"
+              "templateHash": "16412332202322011825"
             }
           },
           "parameters": {
@@ -479,6 +519,22 @@
             },
             "serviceBusListenConnection": {
               "type": "securestring"
+            },
+            "coverageIntakeEnabled": {
+              "type": "bool",
+              "defaultValue": false
+            },
+            "coverageIntakeSigningKey": {
+              "type": "securestring",
+              "defaultValue": ""
+            },
+            "coverageIntakeLinkBaseUrl": {
+              "type": "string",
+              "defaultValue": ""
+            },
+            "coverageIntakeListenConnection": {
+              "type": "securestring",
+              "defaultValue": ""
             },
             "publicBookingApiKey": {
               "type": "securestring"
@@ -627,6 +683,11 @@
             "choEligibilitySecrets": "[if(variables('choEligibilityEnabled'), createArray(createObject('name', 'cho-eligibility-api-key', 'value', parameters('cloudHealthOfficeEligibilityApiKey'))), createArray())]",
             "choEligibilityRoutes": "[map(filter(parameters('cloudHealthOfficeEligibilityPayerIds'), lambda('payerId', or(empty(parameters('keyVaultUri')), not(contains(parameters('clearinghouseEligibilityPayerIds'), lambdaVariables('payerId')))))), lambda('payerId', createObject('name', format('PayerConnectivity__Payers__{0}__Eligibility', lambdaVariables('payerId')), 'value', 'CloudHealthOffice')))]",
             "choEligibilityEnv": "[if(variables('choEligibilityEnabled'), concat(createArray(createObject('name', 'CloudHealthOffice__Eligibility__BaseUrl', 'value', parameters('cloudHealthOfficeEligibilityBaseUrl')), createObject('name', 'CloudHealthOffice__Eligibility__ApiKey', 'secretRef', 'cho-eligibility-api-key')), variables('choEligibilityRoutes')), createArray())]",
+            "coverageIntakeOn": "[and(parameters('coverageIntakeEnabled'), not(empty(parameters('coverageIntakeSigningKey'))))]",
+            "coverageIntakeKeySecret": "[if(variables('coverageIntakeOn'), createArray(createObject('name', 'coverage-intake-key', 'value', parameters('coverageIntakeSigningKey'))), createArray())]",
+            "coverageIntakeCommonEnv": "[if(variables('coverageIntakeOn'), createArray(createObject('name', 'CoverageIntake__Enabled', 'value', 'true'), createObject('name', 'CoverageIntake__SigningKey', 'secretRef', 'coverage-intake-key')), createArray())]",
+            "coverageIntakePortalSecrets": "[concat(variables('coverageIntakeKeySecret'), if(and(variables('coverageIntakeOn'), not(empty(parameters('coverageIntakeListenConnection')))), createArray(createObject('name', 'coverage-intake-listen', 'value', parameters('coverageIntakeListenConnection'))), createArray()))]",
+            "coverageIntakePortalEnv": "[concat(variables('coverageIntakeCommonEnv'), if(variables('coverageIntakeOn'), createArray(createObject('name', 'CoverageIntake__LinkBaseUrl', 'value', parameters('coverageIntakeLinkBaseUrl'))), createArray()), if(and(variables('coverageIntakeOn'), not(empty(parameters('coverageIntakeListenConnection')))), createArray(createObject('name', 'CoverageIntake__ServiceBusConnectionString', 'secretRef', 'coverage-intake-listen')), createArray()))]",
             "registry": [
               {
                 "server": "[parameters('acrLoginServer')]",
@@ -665,7 +726,7 @@
                       }
                     ]
                   },
-                  "secrets": "[concat(createArray(createObject('name', 'conn-default', 'value', parameters('connPortal')), createObject('name', 'internal-api-key', 'value', parameters('patientServiceApiKey')), createObject('name', 'jwt-key', 'value', parameters('jwtKey')), createObject('name', 'google-oauth-client-secret', 'value', parameters('googleOAuthClientSecret')), createObject('name', 'cloudhealthoffice-api-key', 'value', parameters('cloudHealthOfficeApiKey'))), variables('choEligibilitySecrets'))]"
+                  "secrets": "[concat(createArray(createObject('name', 'conn-default', 'value', parameters('connPortal')), createObject('name', 'internal-api-key', 'value', parameters('patientServiceApiKey')), createObject('name', 'jwt-key', 'value', parameters('jwtKey')), createObject('name', 'google-oauth-client-secret', 'value', parameters('googleOAuthClientSecret')), createObject('name', 'cloudhealthoffice-api-key', 'value', parameters('cloudHealthOfficeApiKey'))), variables('choEligibilitySecrets'), variables('coverageIntakePortalSecrets'))]"
                 },
                 "template": {
                   "containers": [
@@ -676,7 +737,7 @@
                         "cpu": "[json('0.5')]",
                         "memory": "1Gi"
                       },
-                      "env": "[concat(createArray(createObject('name', 'ASPNETCORE_ENVIRONMENT', 'value', 'Production'), createObject('name', 'Database__Provider', 'value', 'PostgreSQL'), createObject('name', 'Database__UseMigrations', 'value', 'false'), createObject('name', 'ApiGateway__BaseUrl', 'value', 'http://api-gateway'), createObject('name', 'ConnectionStrings__DefaultConnection', 'secretRef', 'conn-default'), createObject('name', 'InternalApi__Port', 'value', '5091'), createObject('name', 'InternalApi__Clients__0__TenantId', 'value', parameters('initialTenantId')), createObject('name', 'InternalApi__Clients__0__ApiKey', 'secretRef', 'internal-api-key'), createObject('name', 'Jwt__Key', 'secretRef', 'jwt-key'), createObject('name', 'Jwt__Issuer', 'value', parameters('jwtIssuer')), createObject('name', 'Jwt__Audience', 'value', parameters('jwtAudience')), createObject('name', 'InitialTenant__Enabled', 'value', 'true'), createObject('name', 'InitialTenant__TenantId', 'value', parameters('initialTenantId')), createObject('name', 'InitialTenant__Name', 'value', '3rd Set Smiles'), createObject('name', 'InitialTenant__Domain', 'value', '3rdsetsmiles.com'), createObject('name', 'AzureAd__Enabled', 'value', 'false'), createObject('name', 'StaffAuth__Enabled', 'value', if(not(empty(parameters('googleOAuthClientId'))), 'true', 'false')), createObject('name', 'StaffAuth__TenantId', 'value', parameters('initialTenantId')), createObject('name', 'StaffAuth__Users__0__Email', 'value', 'matt@3rdsetsmiles.com'), createObject('name', 'StaffAuth__Users__0__Role', 'value', 'Admin'), createObject('name', 'StaffAuth__Users__1__Email', 'value', 'markus.phillips@aurelianware.com'), createObject('name', 'StaffAuth__Users__1__Role', 'value', 'Admin'), createObject('name', 'StaffAuth__Users__2__Email', 'value', 'cindy@3rdsetsmiles.com'), createObject('name', 'StaffAuth__Users__2__Role', 'value', 'Admin'), createObject('name', 'CloudHealthOffice__Enabled', 'value', 'true'), createObject('name', 'CloudHealthOffice__BaseUrl', 'value', parameters('cloudHealthOfficeBaseUrl')), createObject('name', 'CloudHealthOffice__EstimatePath', 'value', '/api/v1/adjudication/estimate'), createObject('name', 'CloudHealthOffice__IntelligencePath', 'value', '/api/claims/{claimId}/intelligence'), createObject('name', 'CloudHealthOffice__ApiKey', 'secretRef', 'cloudhealthoffice-api-key'), createObject('name', format('CloudHealthOffice__BenefitPlanMappings__{0}', parameters('cloudHealthOfficePayerId')), 'value', parameters('cloudHealthOfficeBenefitPlanId')), createObject('name', format('PayerConnectivity__Payers__{0}__PaymentEstimate__0', parameters('cloudHealthOfficePayerId')), 'value', 'CloudHealthOffice')), variables('choEligibilityEnv'), variables('stediEnv'))]",
+                      "env": "[concat(createArray(createObject('name', 'ASPNETCORE_ENVIRONMENT', 'value', 'Production'), createObject('name', 'Database__Provider', 'value', 'PostgreSQL'), createObject('name', 'Database__UseMigrations', 'value', 'false'), createObject('name', 'ApiGateway__BaseUrl', 'value', 'http://api-gateway'), createObject('name', 'ConnectionStrings__DefaultConnection', 'secretRef', 'conn-default'), createObject('name', 'InternalApi__Port', 'value', '5091'), createObject('name', 'InternalApi__Clients__0__TenantId', 'value', parameters('initialTenantId')), createObject('name', 'InternalApi__Clients__0__ApiKey', 'secretRef', 'internal-api-key'), createObject('name', 'Jwt__Key', 'secretRef', 'jwt-key'), createObject('name', 'Jwt__Issuer', 'value', parameters('jwtIssuer')), createObject('name', 'Jwt__Audience', 'value', parameters('jwtAudience')), createObject('name', 'InitialTenant__Enabled', 'value', 'true'), createObject('name', 'InitialTenant__TenantId', 'value', parameters('initialTenantId')), createObject('name', 'InitialTenant__Name', 'value', '3rd Set Smiles'), createObject('name', 'InitialTenant__Domain', 'value', '3rdsetsmiles.com'), createObject('name', 'AzureAd__Enabled', 'value', 'false'), createObject('name', 'StaffAuth__Enabled', 'value', if(not(empty(parameters('googleOAuthClientId'))), 'true', 'false')), createObject('name', 'StaffAuth__TenantId', 'value', parameters('initialTenantId')), createObject('name', 'StaffAuth__Users__0__Email', 'value', 'matt@3rdsetsmiles.com'), createObject('name', 'StaffAuth__Users__0__Role', 'value', 'Admin'), createObject('name', 'StaffAuth__Users__1__Email', 'value', 'markus.phillips@aurelianware.com'), createObject('name', 'StaffAuth__Users__1__Role', 'value', 'Admin'), createObject('name', 'StaffAuth__Users__2__Email', 'value', 'cindy@3rdsetsmiles.com'), createObject('name', 'StaffAuth__Users__2__Role', 'value', 'Admin'), createObject('name', 'CloudHealthOffice__Enabled', 'value', 'true'), createObject('name', 'CloudHealthOffice__BaseUrl', 'value', parameters('cloudHealthOfficeBaseUrl')), createObject('name', 'CloudHealthOffice__EstimatePath', 'value', '/api/v1/adjudication/estimate'), createObject('name', 'CloudHealthOffice__IntelligencePath', 'value', '/api/claims/{claimId}/intelligence'), createObject('name', 'CloudHealthOffice__ApiKey', 'secretRef', 'cloudhealthoffice-api-key'), createObject('name', format('CloudHealthOffice__BenefitPlanMappings__{0}', parameters('cloudHealthOfficePayerId')), 'value', parameters('cloudHealthOfficeBenefitPlanId')), createObject('name', format('PayerConnectivity__Payers__{0}__PaymentEstimate__0', parameters('cloudHealthOfficePayerId')), 'value', 'CloudHealthOffice')), variables('choEligibilityEnv'), variables('stediEnv'), variables('coverageIntakePortalEnv'))]",
                       "probes": [
                         {
                           "type": "Liveness",
@@ -952,7 +1013,7 @@
                     "transport": "http",
                     "allowInsecure": false
                   },
-                  "secrets": "[concat(createArray(createObject('name', 'conn-intake', 'value', parameters('connIntake')), createObject('name', 'servicebus-send', 'value', parameters('serviceBusSendConnection')), createObject('name', 'booking-key', 'value', parameters('publicBookingApiKey')), createObject('name', 'scheduling-service-api-key', 'value', parameters('publicSchedulingServiceApiKey'))), if(or(empty(parameters('zocdocWebhookIntegrationId')), empty(parameters('zocdocWebhookSecret'))), createArray(), createArray(createObject('name', 'zocdoc-webhook-secret', 'value', parameters('zocdocWebhookSecret')))), if(empty(parameters('integrationInboxAdminApiKey')), createArray(), createArray(createObject('name', 'inbox-admin-key', 'value', parameters('integrationInboxAdminApiKey')))))]"
+                  "secrets": "[concat(createArray(createObject('name', 'conn-intake', 'value', parameters('connIntake')), createObject('name', 'servicebus-send', 'value', parameters('serviceBusSendConnection')), createObject('name', 'booking-key', 'value', parameters('publicBookingApiKey')), createObject('name', 'scheduling-service-api-key', 'value', parameters('publicSchedulingServiceApiKey'))), if(or(empty(parameters('zocdocWebhookIntegrationId')), empty(parameters('zocdocWebhookSecret'))), createArray(), createArray(createObject('name', 'zocdoc-webhook-secret', 'value', parameters('zocdocWebhookSecret')))), if(empty(parameters('integrationInboxAdminApiKey')), createArray(), createArray(createObject('name', 'inbox-admin-key', 'value', parameters('integrationInboxAdminApiKey')))), variables('coverageIntakeKeySecret'))]"
                 },
                 "template": {
                   "containers": [
@@ -963,7 +1024,7 @@
                         "cpu": "[json('0.25')]",
                         "memory": "0.5Gi"
                       },
-                      "env": "[concat(createArray(createObject('name', 'ASPNETCORE_ENVIRONMENT', 'value', 'Production'), createObject('name', 'DatabaseProvider', 'value', 'PostgreSQL'), createObject('name', 'ConnectionStrings__IntakeDb', 'secretRef', 'conn-intake'), createObject('name', 'ServiceBus__ConnectionString', 'secretRef', 'servicebus-send'), createObject('name', 'PublicBooking__Enabled', 'value', 'true'), createObject('name', 'PublicBooking__RequireAvailabilitySelection', 'value', 'true'), createObject('name', 'PublicBooking__Clients__0__TenantId', 'value', parameters('initialTenantId')), createObject('name', 'PublicBooking__Clients__0__ApiKey', 'secretRef', 'booking-key'), createObject('name', 'PublicBooking__Source', 'value', '3rdsetsmiles.com'), createObject('name', 'Services__SchedulingService', 'value', 'http://scheduling-service'), createObject('name', 'Services__SchedulingServiceClients__0__TenantId', 'value', parameters('initialTenantId')), createObject('name', 'Services__SchedulingServiceClients__0__ApiKey', 'secretRef', 'scheduling-service-api-key')), if(or(empty(parameters('zocdocWebhookIntegrationId')), empty(parameters('zocdocWebhookSecret'))), createArray(), createArray(createObject('name', 'ZocdocWebhooks__Integrations__0__IntegrationId', 'value', parameters('zocdocWebhookIntegrationId')), createObject('name', 'ZocdocWebhooks__Integrations__0__TenantId', 'value', parameters('initialTenantId')), createObject('name', 'ZocdocWebhooks__Integrations__0__WebhookSecret', 'secretRef', 'zocdoc-webhook-secret'), createObject('name', 'ZocdocWebhooks__Integrations__0__Enabled', 'value', 'true'))), if(empty(parameters('integrationInboxAdminApiKey')), createArray(), createArray(createObject('name', 'IntegrationInbox__AdminClients__0__TenantId', 'value', parameters('initialTenantId')), createObject('name', 'IntegrationInbox__AdminClients__0__ApiKey', 'secretRef', 'inbox-admin-key'))))]",
+                      "env": "[concat(createArray(createObject('name', 'ASPNETCORE_ENVIRONMENT', 'value', 'Production'), createObject('name', 'DatabaseProvider', 'value', 'PostgreSQL'), createObject('name', 'ConnectionStrings__IntakeDb', 'secretRef', 'conn-intake'), createObject('name', 'ServiceBus__ConnectionString', 'secretRef', 'servicebus-send'), createObject('name', 'PublicBooking__Enabled', 'value', 'true'), createObject('name', 'PublicBooking__RequireAvailabilitySelection', 'value', 'true'), createObject('name', 'PublicBooking__Clients__0__TenantId', 'value', parameters('initialTenantId')), createObject('name', 'PublicBooking__Clients__0__ApiKey', 'secretRef', 'booking-key'), createObject('name', 'PublicBooking__Source', 'value', '3rdsetsmiles.com'), createObject('name', 'Services__SchedulingService', 'value', 'http://scheduling-service'), createObject('name', 'Services__SchedulingServiceClients__0__TenantId', 'value', parameters('initialTenantId')), createObject('name', 'Services__SchedulingServiceClients__0__ApiKey', 'secretRef', 'scheduling-service-api-key')), if(or(empty(parameters('zocdocWebhookIntegrationId')), empty(parameters('zocdocWebhookSecret'))), createArray(), createArray(createObject('name', 'ZocdocWebhooks__Integrations__0__IntegrationId', 'value', parameters('zocdocWebhookIntegrationId')), createObject('name', 'ZocdocWebhooks__Integrations__0__TenantId', 'value', parameters('initialTenantId')), createObject('name', 'ZocdocWebhooks__Integrations__0__WebhookSecret', 'secretRef', 'zocdoc-webhook-secret'), createObject('name', 'ZocdocWebhooks__Integrations__0__Enabled', 'value', 'true'))), if(empty(parameters('integrationInboxAdminApiKey')), createArray(), createArray(createObject('name', 'IntegrationInbox__AdminClients__0__TenantId', 'value', parameters('initialTenantId')), createObject('name', 'IntegrationInbox__AdminClients__0__ApiKey', 'secretRef', 'inbox-admin-key'))), variables('coverageIntakeCommonEnv'))]",
                       "probes": [
                         {
                           "type": "Liveness",

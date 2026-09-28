@@ -363,6 +363,9 @@ namespace CloudDentalOffice.Portal.Migrations
                         .HasMaxLength(50)
                         .HasColumnType("TEXT");
 
+                    b.Property<DateTime?>("LastAttemptAt")
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("LastError")
                         .HasMaxLength(128)
                         .HasColumnType("TEXT");

@@ -159,6 +159,20 @@ public sealed class CoverageIntakePageTests
     }
 
     [Fact]
+    public async Task An_oversized_form_is_refused_unread()
+    {
+        var publisher = new RecordingPublisher();
+        var http = Http(Fields(answer: "none"));
+        http.Request.ContentLength = CoverageIntakePage.MaxFormBytes + 1;
+
+        await Run(await CoverageIntakePage.Submit(Token(), Config(), new Clock(Now), publisher,
+            Bus(), NullLoggerFactory.Instance, http), http);
+
+        Assert.Equal(413, http.Response.StatusCode);
+        Assert.Empty(publisher.Published);
+    }
+
+    [Fact]
     public async Task No_broker_or_a_failed_publish_asks_the_patient_to_try_again()
     {
         var http = Http(Fields(answer: "none"));

@@ -1,10 +1,10 @@
 using System.Globalization;
 using System.Net;
 using System.Text;
-using System.Text.RegularExpressions;
 using CloudDentalOffice.Contracts.Eligibility;
 using CloudDentalOffice.Contracts.Events;
 using CloudDentalOffice.Messaging;
+using Microsoft.AspNetCore.Http.Features;
 
 /// <summary>What the patient typed. Every field is a raw form value until validated.</summary>
 public sealed record CoverageIntakeForm(
@@ -16,40 +16,19 @@ public sealed record CoverageIntakeForm(
         form["holderFirstName"], form["holderLastName"], form["holderDob"]);
 }
 
-public static partial class CoverageIntakeValidator
+public static class CoverageIntakeValidator
 {
-    public static readonly string[] Relationships = ["Self", "Spouse", "Child", "Other"];
-
     /// <summary>Field errors keyed by form field; empty when the answer can be sent.</summary>
     public static Dictionary<string, string> Validate(CoverageIntakeForm form, DateOnly today)
     {
-        var errors = new Dictionary<string, string>();
         if (form.Answer is not ("plan" or "none"))
-        {
-            errors["answer"] = "Choose whether you have dental insurance.";
-            return errors;
-        }
-        if (form.Answer == "none") return errors;
+            return new() { ["answer"] = "Choose whether you have dental insurance." };
+        if (form.Answer == "none") return [];
 
-        Require(errors, "carrier", form.Carrier, 120, "Enter your dental insurance company.");
-        Require(errors, "memberId", form.MemberId, 50, "Enter the member ID from your dental card.");
-        if (!errors.ContainsKey("memberId") && !MemberIdPattern().IsMatch(form.MemberId!.Trim()))
-            errors["memberId"] = "Use only the letters, numbers and dashes shown on your card.";
-        if (form.GroupNumber?.Trim().Length > 50) errors["groupNumber"] = "The group number is too long.";
-
-        if (!Relationships.Contains(form.Relationship))
-        {
-            errors["relationship"] = "Choose whose name the plan is in.";
-            return errors;
-        }
-        if (form.Relationship == "Self") return errors;
-
-        Require(errors, "holderFirstName", form.HolderFirstName, 100, "Enter the plan holder's first name.");
-        Require(errors, "holderLastName", form.HolderLastName, 100, "Enter the plan holder's last name.");
-        if (!DateOnly.TryParseExact(form.HolderDateOfBirth, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var dob) ||
-            dob.Year < 1900 || dob > today)
-            errors["holderDob"] = "Enter the plan holder's date of birth.";
-        return errors;
+        DateOnly? dob = DateOnly.TryParseExact(form.HolderDateOfBirth, "yyyy-MM-dd", CultureInfo.InvariantCulture,
+            DateTimeStyles.None, out var parsed) ? parsed : null;
+        return CoverageIntakeAnswerRules.ValidatePlan(form.Carrier, form.MemberId, form.GroupNumber, form.Relationship,
+            form.HolderFirstName, form.HolderLastName, dob, today);
     }
 
     public static CoverageIntakeSubmittedEvent ToEvent(CoverageIntakeForm form, CoverageIntakeTicket ticket, string token, DateTime now)
@@ -74,13 +53,6 @@ public static partial class CoverageIntakeValidator
         };
     }
 
-    private static void Require(Dictionary<string, string> errors, string field, string? value, int max, string message)
-    {
-        if (string.IsNullOrWhiteSpace(value) || value.Trim().Length > max) errors[field] = message;
-    }
-
-    [GeneratedRegex(@"^[A-Za-z0-9][A-Za-z0-9\- ]*$")]
-    private static partial Regex MemberIdPattern();
 }
 
 /// <summary>
@@ -91,6 +63,15 @@ public static partial class CoverageIntakeValidator
 /// </summary>
 public static class CoverageIntakePage
 {
+    /// <summary>The whole form is a few short fields; anything bigger is refused before it's buffered.</summary>
+    public const int MaxFormBytes = 16 * 1024;
+
+    private static readonly FormOptions FormLimits = new()
+    {
+        BufferBody = false, MultipartBodyLengthLimit = MaxFormBytes, ValueCountLimit = 20,
+        ValueLengthLimit = 1024, KeyLengthLimit = 64
+    };
+
     private const string UnavailableMessage =
         "This link has expired or isn't valid. Please call the office and they'll help you over the phone.";
 
@@ -99,6 +80,7 @@ public static class CoverageIntakePage
         app.MapGet("/coverage/{token}", Show).RequireRateLimiting("coverage-intake").WithTags("CoverageIntake");
         // The token in the URL is the credential; there is no cookie to forge a request with.
         app.MapPost("/coverage/{token}", Submit).RequireRateLimiting("coverage-intake").WithTags("CoverageIntake")
+            .WithMetadata(new Microsoft.AspNetCore.Mvc.RequestSizeLimitAttribute(MaxFormBytes))
             .DisableAntiforgery();
     }
 
@@ -113,8 +95,15 @@ public static class CoverageIntakePage
     {
         if (!TryTicket(token, configuration, time, out var ticket)) return Page(http, Unavailable(), StatusCodes.Status404NotFound);
         if (!http.Request.HasFormContentType) return Page(http, Unavailable(), StatusCodes.Status400BadRequest);
+        if (http.Request.ContentLength > MaxFormBytes) return Page(http, Unavailable(), StatusCodes.Status413PayloadTooLarge);
 
-        var form = CoverageIntakeForm.From(await http.Request.ReadFormAsync(http.RequestAborted));
+        IFormCollection fields;
+        try { fields = await http.Request.ReadFormAsync(FormLimits, http.RequestAborted); }
+        catch (Exception ex) when (ex is InvalidDataException or BadHttpRequestException)
+        {
+            return Page(http, Unavailable(), StatusCodes.Status400BadRequest);
+        }
+        var form = CoverageIntakeForm.From(fields);
         var now = time.GetUtcNow();
         var errors = CoverageIntakeValidator.Validate(form, DateOnly.FromDateTime(now.UtcDateTime));
         if (errors.Count > 0) return Page(http, Form(ticket, form, errors), StatusCodes.Status400BadRequest);

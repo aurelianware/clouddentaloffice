@@ -143,6 +143,51 @@ public sealed partial class CoverageIntakeTests : IDisposable
         Assert.Equal(CoverageVerificationSweep.NoCoverageReason, (await Row(appointment)).Reason);
     }
 
+    [Fact]
+    public async Task Another_instance_running_during_a_send_sends_nothing()
+    {
+        _feed.Add(Start.AddDays(5));
+        var reentered = false;
+        _sender.During = async () =>
+        {
+            if (reentered) return;
+            reentered = true;
+            await Run(); // a second worker instance, mid-send
+        };
+
+        await Run();
+
+        Assert.True(reentered);
+        Assert.Single(_sender.Messages);
+        Assert.Single(await AllRequests());
+    }
+
+    [Fact]
+    public void Request_ids_follow_the_request_they_replace()
+    {
+        var first = CoverageIntakeService.NextRequestId(Tenant, PatientId, null);
+
+        Assert.Equal(first, CoverageIntakeService.NextRequestId(Tenant, PatientId, null));
+        Assert.NotEqual(first, CoverageIntakeService.NextRequestId(Tenant, PatientId, first));
+        Assert.NotEqual(first, CoverageIntakeService.NextRequestId("tenant-b", PatientId, null));
+    }
+
+    [Theory]
+    [InlineData("https://intake.example.test", true)]
+    [InlineData("https://intake.example.test/", true)]
+    [InlineData("http://intake.example.test", false)]
+    [InlineData("https://user:pass@intake.example.test", false)]
+    [InlineData("https://intake.example.test/?a=1", false)]
+    [InlineData("https://intake.example.test/#x", false)]
+    [InlineData("https://intake.example.test/base", false)]
+    public void Only_a_clean_https_origin_is_accepted_for_links(string url, bool accepted)
+    {
+        var options = new CoverageIntakeOptions { Enabled = true, SigningKey = Key, LinkBaseUrl = url };
+
+        Assert.Equal(accepted, options.IsConfigured);
+        if (accepted) Assert.Equal("https://intake.example.test/", options.LinkOrigin!.AbsoluteUri);
+    }
+
     // ── Answers ────────────────────────────────────────────────────────────
 
     [Fact]
@@ -232,6 +277,53 @@ public sealed partial class CoverageIntakeTests : IDisposable
     }
 
     [Fact]
+    public async Task A_redelivered_answer_repairs_the_appointments()
+    {
+        var appointment = _feed.Add(Start.AddDays(5));
+        await Run();
+        var answer = Answer(CoverageIntakeSubmittedEvent.NoInsurance);
+        await Answer(answer);
+        // As if the appointment update had failed after the answer was stored.
+        await using (var db = Db())
+            await db.CoverageVerifications.ExecuteUpdateAsync(x => x
+                .SetProperty(r => r.State, EligibilityVerificationState.NeedsInfo).SetProperty(r => r.Reason, "stale"));
+
+        await Answer(answer);
+
+        Assert.Equal(EligibilityVerificationState.SelfPay, (await Row(appointment)).State);
+    }
+
+    [Fact]
+    public async Task Answers_are_not_applied_while_intake_is_switched_off()
+    {
+        _feed.Add(Start.AddDays(5));
+        await Run();
+        var answer = Answer(CoverageIntakeSubmittedEvent.NoInsurance);
+        _intake.Enabled = false;
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => Answer(answer));
+
+        Assert.Null((await Request()).Answer);
+    }
+
+    [Fact]
+    public async Task Plan_details_the_page_would_refuse_are_rejected()
+    {
+        _feed.Add(Start.AddDays(5));
+        await Run();
+        var plan = Answer(CoverageIntakeSubmittedEvent.Plan) with { CarrierName = "Delta Dental", RelationshipToSubscriber = "Child",
+            SubscriberFirstName = "Ana", SubscriberLastName = "Vale" };
+
+        await Assert.ThrowsAsync<CoverageIntakeRejectedException>(() =>
+            Answer(plan with { MemberId = "MBR<1>", SubscriberDateOfBirth = new DateOnly(1970, 1, 1) }));
+        await Assert.ThrowsAsync<CoverageIntakeRejectedException>(() =>
+            Answer(plan with { MemberId = "MBR1", SubscriberDateOfBirth = new DateOnly(2030, 1, 1) }));
+        await Assert.ThrowsAsync<CoverageIntakeRejectedException>(() =>
+            Answer(plan with { MemberId = "MBR1", SubscriberDateOfBirth = new DateOnly(1850, 1, 1) }));
+        Assert.Null((await Request()).Answer);
+    }
+
+    [Fact]
     public async Task An_answer_sent_before_the_link_expired_is_accepted_after_it()
     {
         _feed.Add(Start.AddDays(10));
@@ -295,6 +387,12 @@ public sealed partial class CoverageIntakeTests : IDisposable
         new FixedTenantProvider(Tenant, new ClaimsPrincipal(new ClaimsIdentity([new System.Security.Claims.Claim(ClaimTypes.Role, "Staff")], "test"))),
         Options.Create(_verification), _clock);
 
+    private async Task<List<CoverageIntakeRequest>> AllRequests()
+    {
+        await using var db = Db();
+        return await db.CoverageIntakeRequests.AsNoTracking().ToListAsync();
+    }
+
     private async Task<CoverageIntakeRequest> Request()
     {
         await using var db = Db();
@@ -333,12 +431,14 @@ public sealed partial class CoverageIntakeTests : IDisposable
     private sealed class RecordingSender : IPatientBillingNotificationSender
     {
         public BillingNotificationSendResult Result { get; set; } = new(BillingNotificationSendDisposition.Sent);
+        public Func<Task>? During { get; set; }
         public List<BillingNotificationMessage> Messages { get; } = [];
 
-        public Task<BillingNotificationSendResult> SendAsync(BillingNotificationMessage message, CancellationToken cancellationToken = default)
+        public async Task<BillingNotificationSendResult> SendAsync(BillingNotificationMessage message, CancellationToken cancellationToken = default)
         {
             Messages.Add(message);
-            return Task.FromResult(Result);
+            if (During is not null) await During();
+            return Result;
         }
     }
 

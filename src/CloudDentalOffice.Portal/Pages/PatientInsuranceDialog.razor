@@ -93,13 +93,20 @@
             <MudText Typo="Typo.h6" Class="mt-6" Style="color: #00ffff;">@(_editingId is null ? "Add coverage" : "Edit coverage")</MudText>
             <MudDivider Class="my-2" />
 
-            @if (SentPlan is { } sent && _editingId is null && _plans.Count > 0)
+            @if (SentPlan is { } sent && _editingId is null)
             {
                 <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Class="mb-3">
                     <div>The patient sent this dental plan@(sent.AnsweredAt is { } at ? $" on {DateTime.SpecifyKind(at, DateTimeKind.Utc).ToLocalTime():d}" : ""):
                         <strong>@sent.CarrierName</strong>, member ID @sent.MemberId@(string.IsNullOrWhiteSpace(sent.GroupNumber) ? "" : $", group {sent.GroupNumber}")@(sent.RelationshipToSubscriber is null or CoverageRelationships.Self ? "" : $", plan holder {sent.SubscriberFirstName} {sent.SubscriberLastName} ({sent.RelationshipToSubscriber}, born {sent.SubscriberDateOfBirth:d})").</div>
-                    <div>Check it against the patient's card if you can, pick the matching payer, then add it.</div>
-                    <MudButton Class="mt-2" Size="Size.Small" Variant="Variant.Outlined" Color="Color.Info" OnClick="UseSentPlan">Fill in these details</MudButton>
+                    @if (_plans.Count > 0)
+                    {
+                        <div>Check it against the patient's card if you can, pick the matching payer, then add it.</div>
+                        <MudButton Class="mt-2" Size="Size.Small" Variant="Variant.Outlined" Color="Color.Info" OnClick="UseSentPlan">Fill in these details</MudButton>
+                    }
+                    else
+                    {
+                        <div>Add this payer under Payers first, then come back to add the coverage.</div>
+                    }
                 </MudAlert>
             }
 

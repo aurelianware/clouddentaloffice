@@ -26,6 +26,7 @@ namespace CloudDentalOffice.Portal.Migrations
                     SentAt = table.Column<DateTime>(type: "TEXT", nullable: true),
                     ReminderSentAt = table.Column<DateTime>(type: "TEXT", nullable: true),
                     SendAttempts = table.Column<int>(type: "INTEGER", nullable: false),
+                    LastAttemptAt = table.Column<DateTime>(type: "TEXT", nullable: true),
                     LastError = table.Column<string>(type: "TEXT", maxLength: 128, nullable: true),
                     AnsweredAt = table.Column<DateTime>(type: "TEXT", nullable: true),
                     Answer = table.Column<string>(type: "TEXT", maxLength: 16, nullable: true),

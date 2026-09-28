@@ -11,7 +11,7 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace CloudDentalOffice.Portal.Migrations
 {
     [DbContext(typeof(CloudDentalDbContext))]
-    [Migration("20260928191556_AddCoverageIntakeRequests")]
+    [Migration("20260928193310_AddCoverageIntakeRequests")]
     partial class AddCoverageIntakeRequests
     {
         /// <inheritdoc />
@@ -364,6 +364,9 @@ namespace CloudDentalOffice.Portal.Migrations
 
                     b.Property<string>("GroupNumber")
                         .HasMaxLength(50)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("LastAttemptAt")
                         .HasColumnType("TEXT");
 
                     b.Property<string>("LastError")

@@ -1,4 +1,6 @@
 using System.ComponentModel.DataAnnotations;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using Azure.Messaging.ServiceBus;
 using CloudDentalOffice.Contracts.Eligibility;
@@ -35,9 +37,24 @@ public sealed class CoverageIntakeOptions
 
     [Range(1, 10)] public int MaxSendAttempts { get; set; } = 3;
 
-    public bool IsConfigured =>
-        Enabled && CoverageIntakeToken.IsUsableKey(SigningKey) &&
-        Uri.TryCreate(LinkBaseUrl, UriKind.Absolute, out var uri) && uri.Scheme == Uri.UriSchemeHttps;
+    /// <summary>
+    /// Listen-only connection for the coverage-intake topic. Preferred over the shared
+    /// ServiceBus connection, which would also start the Portal's other consumers.
+    /// </summary>
+    public string? ServiceBusConnectionString { get; set; }
+
+    public bool IsConfigured => Enabled && CoverageIntakeToken.IsUsableKey(SigningKey) && LinkOrigin is not null;
+
+    /// <summary>
+    /// The link's HTTPS origin, or null unless <see cref="LinkBaseUrl"/> is exactly that:
+    /// credentials, a path, a query or a fragment would end up in every patient's link.
+    /// </summary>
+    public Uri? LinkOrigin =>
+        Uri.TryCreate(LinkBaseUrl, UriKind.Absolute, out var uri) && uri.Scheme == Uri.UriSchemeHttps &&
+        string.IsNullOrEmpty(uri.UserInfo) && string.IsNullOrEmpty(uri.Query) && string.IsNullOrEmpty(uri.Fragment) &&
+        uri.AbsolutePath == "/"
+            ? new Uri(uri.GetLeftPart(UriPartial.Authority))
+            : null;
 }
 
 /// <summary>
@@ -109,6 +126,9 @@ public sealed class CoverageIntakeService(
 {
     private CoverageIntakeOptions Options => options.Value;
 
+    // Longer than any send takes, shorter than the worker's interval.
+    private static readonly TimeSpan RetryAfter = TimeSpan.FromMinutes(10);
+
     public static bool IsDeliverable(string? email) =>
         !string.IsNullOrWhiteSpace(email) && email.Trim().Length <= 320 && new EmailAddressAttribute().IsValid(email.Trim());
 
@@ -153,21 +173,30 @@ public sealed class CoverageIntakeService(
 
             if (last is { Status: CoverageIntakeStatus.Pending } && last.ExpiresAt > now)
             {
-                if (last.SendAttempts >= Options.MaxSendAttempts) continue;
-                request = await db.CoverageIntakeRequests.SingleAsync(x => x.Id == last.Id, cancellationToken);
+                // A retry, unless another instance is still sending (or just tried) it.
+                if (last.SendAttempts >= Options.MaxSendAttempts || last.LastAttemptAt > now - RetryAfter) continue;
+                request = last;
             }
             else if (last is { Status: CoverageIntakeStatus.Sent } && last.ExpiresAt > now)
             {
                 var remindAt = row.AppointmentStart.AddHours(-Options.ReminderHoursBefore);
                 if (last.ReminderSentAt is not null || now < remindAt || last.SentAt >= remindAt) continue;
-                request = await db.CoverageIntakeRequests.SingleAsync(x => x.Id == last.Id, cancellationToken);
+                // Claimed before sending: only one instance reminds.
+                var claimed = await db.CoverageIntakeRequests
+                    .Where(x => x.Id == last.Id && x.ReminderSentAt == null)
+                    .ExecuteUpdateAsync(s => s.SetProperty(x => x.ReminderSentAt, now), cancellationToken);
+                if (claimed != 1) continue;
+                request = last;
+                request.ReminderSentAt = now;
                 reminder = true;
             }
             else
             {
                 request = new CoverageIntakeRequest
                 {
-                    Id = Guid.NewGuid(),
+                    // Derived from the request it follows, so two instances that both decide a new
+                    // one is needed try to insert the same row and only one succeeds.
+                    Id = NextRequestId(tenantId, row.PatientId, last?.Id),
                     TenantId = tenantId,
                     PatientId = row.PatientId,
                     CoverageVerificationId = row.Id,
@@ -178,15 +207,40 @@ public sealed class CoverageIntakeService(
                 };
                 db.CoverageIntakeRequests.Add(request);
                 // Saved before sending, so a crash never sends a link the portal doesn't know about.
-                await db.SaveChangesAsync(cancellationToken);
+                try { await db.SaveChangesAsync(cancellationToken); }
+                catch (DbUpdateException)
+                {
+                    db.ChangeTracker.Clear();
+                    continue;
+                }
+                db.Entry(request).State = EntityState.Detached;
+            }
+
+            if (!reminder)
+            {
+                // Claim this delivery attempt, so two instances never send the same link twice.
+                var attempt = request.SendAttempts;
+                var retryBefore = now - RetryAfter;
+                var claimed = await db.CoverageIntakeRequests
+                    .Where(x => x.Id == request.Id && x.Status == CoverageIntakeStatus.Pending && x.SendAttempts == attempt &&
+                                (x.LastAttemptAt == null || x.LastAttemptAt <= retryBefore))
+                    .ExecuteUpdateAsync(s => s
+                        .SetProperty(x => x.SendAttempts, attempt + 1)
+                        .SetProperty(x => x.LastAttemptAt, now), cancellationToken);
+                if (claimed != 1) continue;
+                request.SendAttempts = attempt + 1;
+                request.LastAttemptAt = now;
             }
 
             if (await SendAsync(request, practice, row.AppointmentStart, zone, reminder, now, cancellationToken)) sent++;
-            await db.SaveChangesAsync(cancellationToken);
             await ShowOnAppointmentsAsync(request, email, zone, now, cancellationToken);
         }
         return sent;
     }
+
+    public static Guid NextRequestId(string tenantId, int patientId, Guid? previousId) =>
+        new(SHA256.HashData(Encoding.UTF8.GetBytes(
+            $"coverage-intake\n{tenantId}\n{patientId}\n{previousId?.ToString("N") ?? "first"}")).AsSpan(0, 16));
 
     /// <summary>So the front desk sees "asked by email" (or "couldn't deliver") now, not at the next sweep.</summary>
     private async Task ShowOnAppointmentsAsync(CoverageIntakeRequest request, string? email, TimeZoneInfo zone, DateTime now,
@@ -208,7 +262,7 @@ public sealed class CoverageIntakeService(
         var token = CoverageIntakeToken.Create(
             new(request.TenantId, request.Id, practice, new DateTimeOffset(DateTime.SpecifyKind(request.ExpiresAt, DateTimeKind.Utc))),
             Options.SigningKey!);
-        var link = new Uri(new Uri(Options.LinkBaseUrl!.TrimEnd('/') + "/"), $"coverage/{token}");
+        var link = new Uri(Options.LinkOrigin!, $"/coverage/{token}");
         var visit = TimeZoneInfo.ConvertTimeFromUtc(DateTime.SpecifyKind(appointmentStart, DateTimeKind.Utc), zone);
         var expires = TimeZoneInfo.ConvertTimeFromUtc(DateTime.SpecifyKind(request.ExpiresAt, DateTimeKind.Utc), zone);
         var body =
@@ -227,33 +281,28 @@ public sealed class CoverageIntakeService(
             result = new(BillingNotificationSendDisposition.TransientFailure, ex.GetType().Name);
         }
 
-        if (result.Disposition == BillingNotificationSendDisposition.Sent)
+        var delivered = result.Disposition == BillingNotificationSendDisposition.Sent;
+        request.LastError = delivered ? null : Truncate(result.FailureReason ?? "delivery_failed");
+        if (!reminder)
         {
-            if (reminder) request.ReminderSentAt = now;
-            else
+            if (delivered)
             {
                 request.Status = CoverageIntakeStatus.Sent;
                 request.SentAt = now;
             }
-            request.LastError = null;
-            return true;
-        }
-
-        request.LastError = Truncate(result.FailureReason ?? "delivery_failed");
-        if (reminder)
-        {
-            // The first email went out; a failed reminder is only logged.
-            request.ReminderSentAt = now;
-        }
-        else
-        {
-            request.SendAttempts++;
-            if (result.Disposition == BillingNotificationSendDisposition.PermanentFailure ||
-                request.SendAttempts >= Options.MaxSendAttempts)
+            else if (result.Disposition == BillingNotificationSendDisposition.PermanentFailure ||
+                     request.SendAttempts >= Options.MaxSendAttempts)
                 request.Status = CoverageIntakeStatus.Failed;
         }
-        logger.LogWarning("Coverage intake email {RequestId} not delivered ({Reason}).", request.Id, request.LastError);
-        return false;
+        // A failed reminder is only recorded: the first email went out.
+        await db.CoverageIntakeRequests.Where(x => x.Id == request.Id)
+            .ExecuteUpdateAsync(s => s
+                .SetProperty(x => x.Status, request.Status)
+                .SetProperty(x => x.SentAt, request.SentAt)
+                .SetProperty(x => x.LastError, request.LastError), cancellationToken);
+        if (!delivered)
+            logger.LogWarning("Coverage intake email {RequestId} not delivered ({Reason}).", request.Id, request.LastError);
+        return delivered;
     }
 
     private async Task<string> PracticeNameAsync(string tenantId, CancellationToken cancellationToken)
@@ -296,8 +345,10 @@ public sealed class CoverageIntakeProcessor(
     public async Task ProcessAsync(CoverageIntakeSubmittedEvent answer, CancellationToken cancellationToken = default)
     {
         var settings = options.Value;
-        if (!CoverageIntakeToken.IsUsableKey(settings.SigningKey))
-            throw new InvalidOperationException("Coverage intake signing key is not configured.");
+        // Switched off: leave the answer on the subscription (retried, then held until it
+        // expires to the dead-letter queue) rather than apply it.
+        if (!settings.Enabled || !CoverageIntakeToken.IsUsableKey(settings.SigningKey))
+            throw new InvalidOperationException("Coverage intake is switched off or has no signing key.");
         var now = time.GetUtcNow().UtcDateTime;
         var submitted = DateTime.SpecifyKind(answer.SubmittedAtUtc, DateTimeKind.Utc);
         if (submitted > now.AddMinutes(5) || submitted < now - MaxAge)
@@ -306,15 +357,14 @@ public sealed class CoverageIntakeProcessor(
         if (!CoverageIntakeToken.TryRead(answer.Token, settings.SigningKey!, submitted, out var ticket) ||
             ticket.TenantId != answer.TenantId || ticket.RequestId != answer.RequestId)
             throw new CoverageIntakeRejectedException("invalid_token");
-        Validate(answer);
+        Validate(answer, DateOnly.FromDateTime(submitted));
 
         var request = await db.CoverageIntakeRequests.IgnoreQueryFilters().AsNoTracking()
             .SingleOrDefaultAsync(x => x.Id == ticket.RequestId && x.TenantId == ticket.TenantId, cancellationToken)
             ?? throw new CoverageIntakeRejectedException("unknown_request");
-        if (request.AnsweredAt is not null) return;
-
         var plan = answer.Answer == CoverageIntakeSubmittedEvent.Plan;
-        var applied = await db.CoverageIntakeRequests.IgnoreQueryFilters()
+        // The first answer wins; a redelivery or a later answer only re-applies it below.
+        await db.CoverageIntakeRequests.IgnoreQueryFilters()
             .Where(x => x.Id == request.Id && x.TenantId == request.TenantId && x.AnsweredAt == null)
             .ExecuteUpdateAsync(s => s
                 .SetProperty(x => x.Status, CoverageIntakeStatus.Answered)
@@ -327,8 +377,9 @@ public sealed class CoverageIntakeProcessor(
                 .SetProperty(x => x.SubscriberFirstName, plan ? answer.SubscriberFirstName : null)
                 .SetProperty(x => x.SubscriberLastName, plan ? answer.SubscriberLastName : null)
                 .SetProperty(x => x.SubscriberDateOfBirth, plan ? answer.SubscriberDateOfBirth : null), cancellationToken);
-        if (applied == 0) return;
 
+        // Always (re)applied from the stored answer, so a failure here is repaired when the
+        // message is retried instead of leaving the appointments stale.
         var stored = await db.CoverageIntakeRequests.IgnoreQueryFilters().AsNoTracking()
             .SingleAsync(x => x.Id == request.Id && x.TenantId == request.TenantId, cancellationToken);
         var (state, reason) = CoverageIntakeRules.NoCoverage(stored, request.RecipientEmail, settings,
@@ -344,32 +395,38 @@ public sealed class CoverageIntakeProcessor(
             request.Id, stored.Answer, updated);
     }
 
-    private static void Validate(CoverageIntakeSubmittedEvent answer)
+    /// <summary>The same rules the public page applies, since the broker isn't a trust boundary.</summary>
+    private static void Validate(CoverageIntakeSubmittedEvent answer, DateOnly submittedOn)
     {
-        static bool Fits(string? value, int max, bool required) =>
-            string.IsNullOrWhiteSpace(value) ? !required : value.Trim().Length <= max;
-
         if (answer.Answer == CoverageIntakeSubmittedEvent.NoInsurance) return;
         if (answer.Answer != CoverageIntakeSubmittedEvent.Plan) throw new CoverageIntakeRejectedException("invalid_answer");
-        var self = answer.RelationshipToSubscriber == CoverageRelationships.Self;
-        var valid = Fits(answer.CarrierName, 120, true) && Fits(answer.MemberId, 50, true) && Fits(answer.GroupNumber, 50, false) &&
-                    CoverageRelationships.All.Contains(answer.RelationshipToSubscriber) &&
-                    Fits(answer.SubscriberFirstName, 100, !self) && Fits(answer.SubscriberLastName, 100, !self) &&
-                    (self || answer.SubscriberDateOfBirth is not null);
-        if (!valid) throw new CoverageIntakeRejectedException("invalid_plan");
+        var errors = CoverageIntakeAnswerRules.ValidatePlan(answer.CarrierName, answer.MemberId, answer.GroupNumber,
+            answer.RelationshipToSubscriber, answer.SubscriberFirstName, answer.SubscriberLastName,
+            answer.SubscriberDateOfBirth, submittedOn);
+        if (errors.Count > 0) throw new CoverageIntakeRejectedException("invalid_plan");
     }
 }
 
 public sealed class CoverageIntakeConsumer(IServiceProvider services, ServiceBusOptions options,
-    ILogger<CoverageIntakeConsumer> logger) : BackgroundService
+    IOptions<CoverageIntakeOptions> intakeOptions, ILogger<CoverageIntakeConsumer> logger) : BackgroundService
 {
     private ServiceBusClient? _client;
     private ServiceBusProcessor? _processor;
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        if (!options.IsConfigured) return;
-        _client = new ServiceBusClient(options.ConnectionString!);
+        // Off: answers wait on the subscription (up to its 14-day TTL, then dead-letter)
+        // and are applied if intake is switched back on in time.
+        if (!intakeOptions.Value.Enabled) return;
+        var connection = !string.IsNullOrWhiteSpace(intakeOptions.Value.ServiceBusConnectionString)
+            ? intakeOptions.Value.ServiceBusConnectionString
+            : options.ConnectionString;
+        if (string.IsNullOrWhiteSpace(connection))
+        {
+            logger.LogWarning("Coverage intake is on but has no Service Bus connection; patient answers won't be applied.");
+            return;
+        }
+        _client = new ServiceBusClient(connection);
         _processor = _client.CreateProcessor(options.CoverageIntakeTopic, options.CoverageIntakeSubscription,
             new ServiceBusProcessorOptions { AutoCompleteMessages = false, MaxConcurrentCalls = 1 });
         _processor.ProcessMessageAsync += ProcessAsync;
