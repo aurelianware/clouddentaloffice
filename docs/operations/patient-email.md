@@ -5,28 +5,31 @@ All three go out over SMTP from one platform address, shown under the practice's
 name, with replies going to the practice:
 
 ```
-From:     3rd Set Smiles <no-reply@mail.clouddental.io>
+From:     3rd Set Smiles <no-reply@clouddental.io>
 Reply-To: info@3rdsetsmiles.com
 ```
 
 Each practice's mail therefore needs no mailbox credentials or DNS changes of its own.
 
-## Why a clouddental.io subdomain
+## Why clouddental.io
 
 - Patients see the practice's name first, and replies reach the practice.
-- A dedicated sending subdomain (`mail.clouddental.io`) keeps its reputation apart from
-  any other mail on `clouddental.io`. Company mail on `aurelianware.com` isn't put at
-  risk either.
+- `clouddental.io` carries no other mail, so its reputation is this mail's alone, and
+  company mail on `aurelianware.com` isn't put at risk.
+- A domain may have only one SPF record. If mailboxes are ever added on `clouddental.io`
+  (e.g. Google Workspace), combine them into it:
+  `v=spf1 include:spf.protection.outlook.com include:_spf.google.com -all`.
 - These emails reveal that someone is a patient with an appointment, so the provider
   must be covered by a BAA. Azure Communication Services is covered by Microsoft's.
 
 ## Setup (Azure Communication Services Email)
 
-1. In Azure, create an **Email Communication Service**, then add a custom domain,
-   `mail.clouddental.io`.
-2. In Cloudflare DNS for `clouddental.io`, add the records Azure shows: a verification
-   TXT, SPF, and two DKIM CNAMEs. Wait for Azure to show them all as verified.
-3. Add a DMARC record for the subdomain at `_dmarc.mail.clouddental.io`, starting with
+1. In Azure, create an **Email Communication Service** (`clouddental` in `cdo-prod-rg`,
+   United States data), then add the custom domain `clouddental.io`.
+2. In Cloudflare DNS for `clouddental.io`, add the records Azure shows: the verification
+   TXT, the SPF TXT, and the two DKIM CNAMEs (**DNS only**, not proxied). Then verify
+   each record in Azure.
+3. Add DMARC at `_dmarc.clouddental.io`, starting with
    `v=DMARC1; p=none; rua=mailto:<reports address>`. Tighten it to `p=quarantine` once
    the reports show SPF and DKIM passing.
 4. Create a **Communication Services** resource and connect the verified domain to it.
@@ -42,7 +45,7 @@ Each practice's mail therefore needs no mailbox credentials or DNS changes of it
 | `EMAIL_SMTP_PORT` | variable | `587` (default) |
 | `EMAIL_SMTP_USERNAME` | variable | The SMTP username from step 5 |
 | `EMAIL_SMTP_PASSWORD` | secret | The Entra app's client secret |
-| `EMAIL_FROM_ADDRESS` | variable | `no-reply@mail.clouddental.io` |
+| `EMAIL_FROM_ADDRESS` | variable | `no-reply@clouddental.io` |
 | `PRACTICE_REPLY_TO` | variable | `info@3rdsetsmiles.com` (the initial practice) |
 
 With `EMAIL_SMTP_HOST` or `EMAIL_FROM_ADDRESS` empty, email stays off (mode `Disabled`).
@@ -54,7 +57,7 @@ coverage intake (`COVERAGE_INTAKE_ENABLED`).
 
 Send a coverage intake or billing email to an outside mailbox. In the raw message
 ("Show original" in Gmail), SPF, DKIM and DMARC should all say PASS for
-`mail.clouddental.io`. The From line should show the practice's name, and Reply-To the
+`clouddental.io`. The From line should show the practice's name, and Reply-To the
 practice's address.
 
 ## Adding practices

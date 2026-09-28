@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.47.16.16243",
-      "templateHash": "10103763439761609625"
+      "templateHash": "13414347302236518232"
     }
   },
   "parameters": {
@@ -309,7 +309,7 @@
       "type": "string",
       "defaultValue": "",
       "metadata": {
-        "description": "Platform sending address, e.g. no-reply@mail.clouddental.io. Shown under the practice name."
+        "description": "Platform sending address, e.g. no-reply@clouddental.io. Shown under the practice name."
       }
     },
     "practiceReplyTo": {

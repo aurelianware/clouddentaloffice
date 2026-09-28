@@ -144,7 +144,7 @@ param emailSmtpUsername string = ''
 @description('SMTP password (for Azure Communication Services, the Entra app client secret).')
 param emailSmtpPassword string = ''
 
-@description('Platform sending address, e.g. no-reply@mail.clouddental.io. Shown under the practice name.')
+@description('Platform sending address, e.g. no-reply@clouddental.io. Shown under the practice name.')
 param emailFromAddress string = ''
 
 @description('The initial practice\'s own address for patient replies, e.g. info@3rdsetsmiles.com.')
