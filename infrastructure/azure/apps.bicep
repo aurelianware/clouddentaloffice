@@ -118,6 +118,9 @@ param clearinghouseEligibilityPayerIds array = []
 @description('Route every payer without its own eligibility route to Clearinghouse')
 param clearinghouseEligibilityDefault bool = false
 
+@description('Turn on the background coverage verification worker in the Portal. It checks only practices with an active clearinghouse connection, and also sends due coverage intake links.')
+param coverageVerificationEnabled bool = false
+
 @description('Turn on patient coverage intake links (Portal and IntakeService). Needs the key, link URL and listen connection.')
 param coverageIntakeEnabled bool = false
 
@@ -157,6 +160,7 @@ module apps 'container-apps.bicep' = {
     jwtAudience: jwtAudience
     serviceBusSendConnection: serviceBusSendConnection
     serviceBusListenConnection: serviceBusListenConnection
+    coverageVerificationEnabled: coverageVerificationEnabled
     coverageIntakeEnabled: coverageIntakeEnabled
     coverageIntakeSigningKey: coverageIntakeSigningKey
     coverageIntakeLinkBaseUrl: coverageIntakeLinkBaseUrl

@@ -43,8 +43,10 @@ safely to clearinghouse payer IDs without a person.
 
 ## Turning it on
 
-Requires the coverage verification worker (`CoverageVerification__Enabled=true`) and
-an email transport (`ReviewOutreach:Email`, shared with billing notifications).
+Requires the coverage verification worker (repository variable `COVERAGE_VERIFICATION_ENABLED=true`,
+which the deploy passes to the Portal as `CoverageVerification__Enabled`) and an email transport
+(`ReviewOutreach:Email`, shared with billing notifications). The worker checks only practices
+with an active clearinghouse connection.
 
 The deploy workflow wires everything; set these on the GitHub environment:
 
@@ -53,6 +55,7 @@ The deploy workflow wires everything; set these on the GitHub environment:
 | `COVERAGE_INTAKE_SIGNING_KEY` | secret | Random, at least 32 bytes. Shared by both apps. |
 | `COVERAGE_INTAKE_LINK_BASE_URL` | variable | IntakeService's public HTTPS origin, e.g. `https://book-api.3rdsetsmiles.com`. No path, query or credentials. |
 | `COVERAGE_INTAKE_ENABLED` | variable | `true` |
+| `COVERAGE_VERIFICATION_ENABLED` | variable | `true` (the worker that also sends the links) |
 
 `main.bicep` creates the `coverage-intake` topic, its `portal` subscription, and a
 listen-only rule `portal-listen` on that topic. The workflow passes that rule's
