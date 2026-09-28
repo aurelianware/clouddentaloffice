@@ -271,14 +271,13 @@ public static class VisionEndpoints
             TenantId = tenantId
         };
 
-        // TODO: Trigger eligibility check via CDO EligibilityService :5104
-        // if (scan.PayerId != null && scan.MemberId != null)
-        //     scan.EligibilityCheckTriggered = true;
-
+        // No eligibility check here: the printed payer ID isn't a clearinghouse ID. Staff
+        // confirm the fields and payer in the Portal; saving that coverage is what gets it checked.
         db.InsuranceCardScans.Add(scan);
         await db.SaveChangesAsync();
 
         var dto = MapInsuranceScanDto(scan);
+        dto.Simulated = ocrResult.Simulated;
         await hub.BroadcastInsuranceScan(dto);
 
         return Results.Ok(dto);

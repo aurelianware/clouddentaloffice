@@ -13,7 +13,7 @@
             Insurance Card Scanner
         </MudText>
         <MudText Typo="Typo.body2" Style="color: #78909c;">
-            Capture insurance card → OCR extraction → Auto-populate eligibility verification
+            Capture an insurance card and read its fields
         </MudText>
     </MudPaper>
 
@@ -118,29 +118,16 @@
                         </tbody>
                     </MudSimpleTable>
 
-                    <div class="d-flex gap-2 mt-3">
-                        <MudButton Variant="Variant.Filled" Size="Size.Small"
-                                   StartIcon="@Icons.Material.Filled.VerifiedUser"
-                                   Style="background-color: #26a69a;"
-                                   OnClick="TriggerEligibilityCheck"
-                                   Disabled="@(string.IsNullOrEmpty(_scanResult.PayerId) || string.IsNullOrEmpty(_scanResult.MemberId))">
-                            Verify Eligibility (270)
-                        </MudButton>
-                        <MudButton Variant="Variant.Outlined" Size="Size.Small"
-                                   StartIcon="@Icons.Material.Filled.PersonAdd"
-                                   Style="border-color: #455a64; color: #b0bec5;"
-                                   OnClick="PopulatePatientRecord">
-                            Apply to Patient
-                        </MudButton>
-                    </div>
-
-                    @if (_scanResult.EligibilityCheckTriggered)
+                    @if (_scanResult.Simulated)
                     {
-                        <MudAlert Severity="Severity.Success" Dense="true" Class="mt-3"
-                                  Style="background-color: #0d2137; color: #90caf9;">
-                            Eligibility check submitted via X12 270 transaction
+                        <MudAlert Severity="Severity.Warning" Dense="true" Class="mt-3">
+                            The scanner is simulated: these details are made up, not read from the card.
                         </MudAlert>
                     }
+                    <MudText Typo="Typo.caption" Class="mt-3" Style="color: #90caf9; display:block;">
+                        To use a card for a patient, open the patient's Insurance and choose Scan card: it finds the
+                        clearinghouse payer, and the coverage is checked once you add it.
+                    </MudText>
                 </MudPaper>
             }
             else
@@ -248,18 +235,6 @@
         {
             _scanning = false;
         }
-    }
-
-    private void TriggerEligibilityCheck()
-    {
-        // TODO: Call EligibilityService via API Gateway with extracted fields
-        Snackbar.Add("Eligibility verification submitted (X12 270)", Severity.Info);
-    }
-
-    private void PopulatePatientRecord()
-    {
-        // TODO: Navigate to patient record with pre-populated insurance fields
-        Snackbar.Add("Patient record updated with scanned insurance data", Severity.Success);
     }
 
     private async Task<byte[]> ReadFileBytes(IBrowserFile file)

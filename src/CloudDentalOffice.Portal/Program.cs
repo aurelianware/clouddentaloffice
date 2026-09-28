@@ -486,6 +486,7 @@ builder.Services.AddHttpClient<IStediPayerSearchClient, StediPayerSearchClient>(
     client.DefaultRequestHeaders.Add("Accept", "application/json");
 }).AddHttpMessageHandler<StediCredentialHandler>();
 builder.Services.AddScoped<IPayerImportService, PayerImportService>();
+builder.Services.AddScoped<ICardPayerResolver, CardPayerResolver>();
 builder.Services.AddScoped<IEligibilityGateway, CloudHealthOfficeEligibilityGateway>();
 builder.Services.AddScoped<IEligibilityGateway, StediEligibilityGateway>();
 builder.Services.AddScoped<ITradingPartnerAdapter, ClearinghouseEligibilityAdapter>();
