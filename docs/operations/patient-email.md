@@ -36,7 +36,7 @@ Each practice's mail therefore needs no mailbox credentials or DNS changes of it
    Add a sender username `no-reply`. (Production: `cdo-comms`, SMTP username
    `cdo-portal-smtp`, Entra app `cdo-acs-smtp`, secret expiring 2028-09-28.)
 5. For SMTP: create an Entra app registration with a client secret, give it the
-   Communication Services role for sending email on that resource, and create an
+   **Communication and Email Service Owner** role on the Communication Services resource, and create an
    **SMTP Username** for it under the resource's Email → SMTP settings.
 6. Set these as GitHub **repository** variables and secret (the deploy workflow has no
    environment), then deploy:

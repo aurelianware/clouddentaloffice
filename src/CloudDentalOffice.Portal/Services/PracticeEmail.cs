@@ -1,4 +1,3 @@
-using System.ComponentModel.DataAnnotations;
 using System.Net.Mail;
 
 namespace CloudDentalOffice.Portal.Services;
@@ -20,7 +19,12 @@ public sealed class PracticeEmailOptions
     {
         if (string.IsNullOrWhiteSpace(tenantId)) return null;
         var address = Practices.FirstOrDefault(p => string.Equals(p.TenantId, tenantId, StringComparison.Ordinal))?.ReplyTo?.Trim();
-        return !string.IsNullOrEmpty(address) && new EmailAddressAttribute().IsValid(address) ? address : null;
+        // Parse the way the sender will, so a value MailAddress rejects is dropped here
+        // instead of failing every message; a "Name <address>" form is not accepted.
+        return !string.IsNullOrEmpty(address) && MailAddress.TryCreate(address, out var parsed) &&
+               string.Equals(parsed.Address, address, StringComparison.Ordinal)
+            ? address
+            : null;
     }
 }
 

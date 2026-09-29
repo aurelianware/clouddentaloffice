@@ -45,7 +45,9 @@ public sealed class PracticeEmailTests
             Practices =
             [
                 new() { TenantId = "practice-a", ReplyTo = " info@practice-a.test " },
-                new() { TenantId = "practice-b", ReplyTo = "not an address" }
+                new() { TenantId = "practice-b", ReplyTo = "not an address" },
+                new() { TenantId = "practice-d", ReplyTo = "front desk@practice-d.test" },
+                new() { TenantId = "practice-e", ReplyTo = "Front Desk <info@practice-e.test>" }
             ]
         };
 
@@ -53,5 +55,7 @@ public sealed class PracticeEmailTests
         Assert.Null(options.ReplyToFor("practice-b"));
         Assert.Null(options.ReplyToFor("practice-c"));
         Assert.Null(options.ReplyToFor(null));
+        Assert.Null(options.ReplyToFor("practice-d"));
+        Assert.Null(options.ReplyToFor("practice-e"));
     }
 }
