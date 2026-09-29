@@ -86,6 +86,18 @@ public sealed record EligibilityResult
     /// </summary>
     public bool DentalCareNotCovered { get; init; }
     public string? ExternalTransactionId { get; init; }
+
+    /// <summary>AAA reject reason codes the payer returned (e.g. "72"); empty when the payer answered normally.</summary>
+    public IReadOnlyList<string> PayerErrorCodes { get; init; } = [];
+
+    /// <summary>
+    /// Stedi doesn't bill eligibility checks rejected with AAA 42 (unable to respond now),
+    /// 79 (invalid participant identification) or 80 (no response received).
+    /// </summary>
+    public static readonly IReadOnlySet<string> NotBilledPayerErrorCodes = new HashSet<string> { "42", "79", "80" };
+
+    /// <summary>False when the clearinghouse doesn't charge for this answer.</summary>
+    public bool Billable => !PayerErrorCodes.Any(NotBilledPayerErrorCodes.Contains);
 }
 
 public sealed record EligibilityBenefit(

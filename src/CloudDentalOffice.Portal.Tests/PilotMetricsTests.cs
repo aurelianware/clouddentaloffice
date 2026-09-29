@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using System.Text.Json;
 using CloudDentalOffice.Portal.Data;
 using CloudDentalOffice.Portal.Models;
 using CloudDentalOffice.Portal.Services;
@@ -98,15 +99,19 @@ public sealed class PilotMetricsTests : IDisposable
                 Check(Now.AddDays(-1), source: "Clearinghouse"),
                 Check(Now.AddDays(-2), source: "Clearinghouse"),
                 Check(Now.AddDays(-3), source: null),              // stopped before sending
+                Check(Now.AddDays(-4), source: "Clearinghouse", payerErrorCodes: ["72"]), // payer rejection, still billed
+                Check(Now.AddDays(-5), source: "Clearinghouse", payerErrorCodes: ["42"]), // payer unavailable, not billed
+                Check(Now.AddDays(-6), source: "Clearinghouse", payerErrorCodes: ["80"]), // no payer response, not billed
                 Check(Now.AddDays(-40), source: "Clearinghouse")); // before the period
             await db.SaveChangesAsync();
         }
 
         var checks = (await Service(price: 0.25m).GetAsync(30)).Checks;
 
-        Assert.Equal(3, checks.Checks);
-        Assert.Equal(2, checks.Answered);
-        Assert.Equal(0.50m, checks.EstimatedCost);
+        Assert.Equal(6, checks.Checks);
+        Assert.Equal(5, checks.Answered);
+        Assert.Equal(3, checks.Billed);
+        Assert.Equal(0.75m, checks.EstimatedCost);
     }
 
     [Fact]
@@ -191,11 +196,16 @@ public sealed class PilotMetricsTests : IDisposable
         CreatedAt = start.AddDays(-7), UpdatedAt = start.AddDays(-1)
     };
 
-    private static EligibilityVerification Check(DateTimeOffset checkedAt, string? source) => new()
+    private static EligibilityVerification Check(DateTimeOffset checkedAt, string? source, string[]? payerErrorCodes = null) => new()
     {
         TenantId = Tenant, PatientInsuranceId = CoverageId, PatientId = PatientId,
         ServiceDate = DateOnly.FromDateTime(checkedAt.UtcDateTime), CheckedAt = checkedAt, Source = source,
-        State = source is null ? EligibilityVerificationState.NeedsInfo : EligibilityVerificationState.Verified
+        State = source is null ? EligibilityVerificationState.NeedsInfo : EligibilityVerificationState.Verified,
+        // Serialized the way EligibilityVerificationService records it (web defaults).
+        ResultJson = source is null ? null : JsonSerializer.Serialize(new EligibilityResult
+        {
+            CorrelationId = "c", Source = source, VerifiedAt = checkedAt, PayerErrorCodes = payerErrorCodes ?? []
+        }, new JsonSerializerOptions(JsonSerializerDefaults.Web))
     };
 
     private static CloudDentalOffice.Portal.Models.Claim Claim(string number, string status, DateTime? submitted, DateTime service, DateTime? posted = null) => new()

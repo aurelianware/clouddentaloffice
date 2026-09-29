@@ -12,7 +12,7 @@ public sealed class PilotMetricsOptions
 {
     public const string SectionName = "PilotMetrics";
 
-    /// <summary>Price per answered eligibility check used for the cost estimate (clearinghouse list price).</summary>
+    /// <summary>Price per billable eligibility check used for the cost estimate (clearinghouse list price).</summary>
     [Range(0, 10)] public decimal EligibilityCheckPrice { get; set; } = 0.30m;
 }
 
@@ -44,7 +44,8 @@ public sealed record CoverageMetrics(
     public int ProblemsCaught => NotDental + Inactive + NeedsInfo;
 }
 
-public sealed record EligibilityCheckMetrics(int Checks, int Answered, decimal EstimatedCost);
+/// <param name="Billed">Answered checks the clearinghouse charges for (answers rejected with AAA 42, 79 or 80 are free).</param>
+public sealed record EligibilityCheckMetrics(int Checks, int Answered, int Billed, decimal EstimatedCost);
 
 public sealed record IntakeMetrics(int Sent, int Answered, int AnsweredWithPlan, int AnsweredNoInsurance);
 
@@ -114,21 +115,26 @@ public sealed class PilotMetricsService(
             NotChecked: rows.Count(x => x.State == null && x.PatientInsuranceId != null));
     }
 
+    /// <summary>How <see cref="EligibilityResult.Billable"/> = false appears in <c>EligibilityVerification.ResultJson</c>.</summary>
+    internal const string NotBilledMarker = "\"billable\":false";
+
     private async Task<EligibilityCheckMetrics> ChecksAsync(DateTime from, DateTime to, CancellationToken cancellationToken)
     {
         var fromOffset = new DateTimeOffset(from, TimeSpan.Zero);
         var toOffset = new DateTimeOffset(to, TimeSpan.Zero);
         // SQLite can't compare DateTimeOffset in SQL, so the time window is applied in memory over two
         // projected columns. One row per check keeps this small.
+        // The stored result marks answers the clearinghouse doesn't charge for; matching the text keeps
+        // the projection to two small columns and a flag instead of every result document.
         var checks = (await db.EligibilityVerifications.AsNoTracking()
-                .Select(x => new { x.Source, x.CheckedAt })
+                .Select(x => new { x.Source, x.CheckedAt, NotBilled = x.ResultJson != null && x.ResultJson.Contains(NotBilledMarker) })
                 .ToListAsync(cancellationToken))
             .Where(x => x.CheckedAt >= fromOffset && x.CheckedAt < toOffset)
-            .Select(x => x.Source)
             .ToList();
-        // Only checks the clearinghouse answered are billed; ones stopped before sending are not.
-        var answered = checks.Count(source => source != null);
-        return new EligibilityCheckMetrics(checks.Count, answered, answered * options.Value.EligibilityCheckPrice);
+        // Checks stopped before sending were never answered or billed.
+        var answered = checks.Count(x => x.Source != null);
+        var billed = checks.Count(x => x.Source != null && !x.NotBilled);
+        return new EligibilityCheckMetrics(checks.Count, answered, billed, billed * options.Value.EligibilityCheckPrice);
     }
 
     private async Task<IntakeMetrics> IntakeAsync(DateTime from, DateTime to, CancellationToken cancellationToken)

@@ -416,6 +416,25 @@ public sealed class StediCredentialTests : IDisposable
 
         Assert.Equal(CoverageStatus.Unknown, result.CoverageStatus);
         Assert.Contains("Invalid/Missing Subscriber/Insured ID", result.Messages);
+        Assert.Equal(["72"], result.PayerErrorCodes);
+        Assert.True(result.Billable);
+    }
+
+    [Theory]
+    [InlineData("42")]
+    [InlineData("79")]
+    [InlineData("80")]
+    public async Task Payer_unavailable_rejection_is_not_billable(string code)
+    {
+        await Connect(TenantA);
+        var client = StediClient(new RecordingHandler($$"""
+            { "errors": [ { "code": "{{code}}", "description": "Unable to Respond at Current Time" } ] }
+            """));
+
+        var result = await client.CheckAsync(DependentRequest(TenantA));
+
+        Assert.Equal([code], result.PayerErrorCodes);
+        Assert.False(result.Billable);
     }
 
     [Fact]
