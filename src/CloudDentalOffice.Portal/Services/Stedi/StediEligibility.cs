@@ -77,6 +77,29 @@ public sealed class StediEligibilityClient(
                 "The rendering provider's first and last name are required for eligibility checks.");
 
         var correlationId = request.CorrelationId ?? Guid.NewGuid().ToString("N");
+
+        // Only a plain dental-care inquiry is widened; a caller that chose its codes keeps them.
+        if (options.Value.RequestDetailedDentalBenefits && request.ServiceTypeCodes is [DentalServiceTypes.DentalCare])
+        {
+            try
+            {
+                return await SendAsync(request with { ServiceTypeCodes = DentalServiceTypes.DetailedInquiry }, target, correlationId, cancellationToken);
+            }
+            catch (TreatmentEstimateValidationException)
+            {
+                // Some payers reject multi-code inquiries outright. Ask once more about dental care alone;
+                // if the request itself was bad, that attempt fails the same way and staff see why.
+                logger.LogWarning("Payer {PayerId} rejected a detailed eligibility inquiry for check {CorrelationId}; retrying with dental care only",
+                    ClaimLifecycleMapper.SanitizeForLog(request.PayerId), ClaimLifecycleMapper.SanitizeForLog(correlationId));
+            }
+        }
+
+        return await SendAsync(request, target, correlationId, cancellationToken);
+    }
+
+    private async Task<EligibilityResult> SendAsync(
+        NormalizedEligibilityRequest request, Uri target, string correlationId, CancellationToken cancellationToken)
+    {
         using var message = new HttpRequestMessage(HttpMethod.Post, target);
         message.Options.Set(StediRequest.Tenant, request.TenantId);
         message.Content = JsonContent.Create(StediEligibilityWire.ToRequest(request, correlationId), options: Json);

@@ -23,6 +23,22 @@
     {
         <div>Deductible: @Money(Result.Deductible) · remaining @Money(Result.DeductibleRemaining)</div>
     }
+    @if (Result.BenefitSummary is { } summary)
+    {
+        <div class="mt-1"><strong>Plan pays:</strong> @CategoryText("Preventive", summary.Preventive) · @CategoryText("Basic", summary.Basic) · @CategoryText("Major", summary.Major)</div>
+        @if (summary.Orthodontics.Covered is not null || HasLifetimeMaximum(summary))
+        {
+            <div>Orthodontics: @CategoryText(null, summary.Orthodontics)@(HasLifetimeMaximum(summary) ? $" · lifetime maximum {Money(summary.OrthodonticLifetimeMaximum)}, remaining {Money(summary.OrthodonticLifetimeMaximumRemaining)}" : "")</div>
+        }
+        @if (UsesGeneralLine(summary))
+        {
+            <div style="font-size: 0.85em;">* From the plan's general dental line; the payer didn't report this category separately.</div>
+        }
+        @if (!summary.IsComplete)
+        {
+            <div class="mt-1"><strong>Confirm with the payer:</strong> @string.Join(", ", summary.MissingFields). The payer's answer didn't include @(summary.MissingFields.Count == 1 ? "it" : "them").</div>
+        }
+    }
     @if (Result.Benefits.Count > 0)
     {
         <MudSimpleTable Dense="true" Class="mt-2" Style="background:transparent;">
@@ -67,6 +83,28 @@
         CoverageStatus.Inactive => "Not covered",
         _ => "Info"
     };
+
+    public static string CategoryText(string? name, CategoryCoverage category)
+    {
+        var value = category switch
+        {
+            { Covered: false } => "not covered",
+            { PlanPaysPercent: { } pays, FromGeneralDentalLine: true } => Percent(pays) + "*",
+            { PlanPaysPercent: { } pays } => Percent(pays),
+            _ => "not reported"
+        };
+        return name is null ? value : $"{name} {value}";
+    }
+
+    // "80%" in every culture: front desks read benefits as 100/80/50.
+    private static string Percent(decimal share) =>
+        Math.Round(share * 100m, MidpointRounding.AwayFromZero).ToString("0", System.Globalization.CultureInfo.InvariantCulture) + "%";
+
+    private static bool HasLifetimeMaximum(DentalBenefitSummary s) =>
+        s.OrthodonticLifetimeMaximum.HasValue || s.OrthodonticLifetimeMaximumRemaining.HasValue;
+
+    private static bool UsesGeneralLine(DentalBenefitSummary s) =>
+        new[] { s.Preventive, s.Basic, s.Major }.Any(c => c.FromGeneralDentalLine);
 
     private static string Money(decimal? value) => value.HasValue ? value.Value.ToString("C2") : "not reported";
 
