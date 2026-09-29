@@ -100,6 +100,29 @@ public sealed class DentalBenefitSummaryTests
     }
 
     [Fact]
+    public void In_network_exclusion_outranks_an_out_of_network_or_family_percent()
+    {
+        var summary = Map(
+            new ChoBenefit { BenefitCode = "I", ServiceTypeCode = "25", CoverageLevel = "IND" },
+            new ChoBenefit { BenefitCode = "A", ServiceTypeCode = "25", CoinsurancePercent = 0.5m, InNetwork = false },
+            new ChoBenefit { BenefitCode = "A", ServiceTypeCode = "25", CoinsurancePercent = 0.2m, CoverageLevel = "FAM" }).BenefitSummary!;
+
+        Assert.False(summary.Basic.Covered);
+        Assert.Null(summary.Basic.PlanPaysPercent);
+    }
+
+    [Fact]
+    public void Lifetime_remaining_alone_is_kept_and_shown()
+    {
+        var summary = Map(
+            new ChoBenefit { BenefitCode = "F", ServiceTypeCode = "38", TimePeriod = "Lifetime Remaining", Amount = 600m }).BenefitSummary!;
+
+        Assert.Null(summary.OrthodonticLifetimeMaximum);
+        Assert.Equal(600m, summary.OrthodonticLifetimeMaximumRemaining);
+        Assert.True(summary.Orthodontics.Covered);
+    }
+
+    [Fact]
     public void Answer_without_maximum_deductible_or_percents_lists_what_to_confirm()
     {
         var summary = Map(new ChoBenefit { BenefitCode = "1", ServiceTypeCode = "35" }).BenefitSummary!;

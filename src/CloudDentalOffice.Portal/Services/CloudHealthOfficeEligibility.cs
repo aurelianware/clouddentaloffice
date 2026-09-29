@@ -417,28 +417,30 @@ public static class CloudHealthOfficeEligibilityMapper
         static string? Code(ChoBenefit b) => b.BenefitCode?.Trim().ToUpperInvariant();
         var lines = benefits.Where(b => b.ServiceTypeCode?.Trim() is { } c && codes.Contains(c, StringComparer.OrdinalIgnoreCase)).ToList();
 
-        // The category's first code leads ("Restorative" for basic), so an 80% restorative
-        // line wins over a 50% oral surgery line on the same plan.
-        var patientShare = lines
-            .Where(b => Code(b) == CoInsurance && (b.CoinsurancePercent ?? b.Percent) is not null)
-            .OrderByDescending(b => b.InNetwork)
-            .ThenByDescending(b => IsIndividual(b.CoverageLevel))
-            .ThenBy(b => IndexOf(codes, b.ServiceTypeCode))
-            .Select(b => b.CoinsurancePercent ?? b.Percent)
-            .FirstOrDefault();
-
-        bool? covered = lines.Any(b => Code(b) is "1" or CoInsurance or CoPayment or Deductible or Limitation) ? true
-            : lines.Any(b => Code(b) == NonCovered) ? false
-            : null;
-
         var notes = lines.SelectMany(b => b.Messages ?? []).Where(m => !string.IsNullOrWhiteSpace(m)).Select(m => m.Trim())
             .Distinct(StringComparer.OrdinalIgnoreCase).Take(MaxMessages).ToList();
 
-        if (patientShare is { } share)
-            return new CategoryCoverage(Math.Clamp(1m - share, 0m, 1m), covered ?? true, false, notes);
+        // Exclusions and coinsurance are ranked together, so the best-scoped line decides:
+        // in network, then individual, then the category's lead code ("Restorative" for
+        // basic, so an 80% restorative line wins over 50% oral surgery). At equal scope an
+        // exclusion wins over a percent.
+        var decisive = lines
+            .Where(b => Code(b) == NonCovered || (Code(b) == CoInsurance && (b.CoinsurancePercent ?? b.Percent) is not null))
+            .OrderByDescending(b => b.InNetwork)
+            .ThenByDescending(b => IsIndividual(b.CoverageLevel))
+            .ThenBy(b => IndexOf(codes, b.ServiceTypeCode))
+            .ThenByDescending(b => Code(b) == NonCovered)
+            .FirstOrDefault();
 
-        // Nothing specific to this category: use the general dental line, unless the payer excluded the category.
-        if (general is { PlanPaysPercent: not null } && covered != false)
+        if (decisive is not null && Code(decisive) == NonCovered)
+            return new CategoryCoverage(null, false, false, notes);
+        if (decisive is not null)
+            return new CategoryCoverage(Math.Clamp(1m - (decisive.CoinsurancePercent ?? decisive.Percent)!.Value, 0m, 1m), true, false, notes);
+
+        bool? covered = lines.Any(b => Code(b) is "1" or CoPayment or Deductible or Limitation) ? true : null;
+
+        // Nothing specific to this category: use the general dental line.
+        if (general is { PlanPaysPercent: not null })
             return new CategoryCoverage(general.PlanPaysPercent, covered ?? general.Covered, true, notes);
 
         return new CategoryCoverage(null, covered, false, notes);

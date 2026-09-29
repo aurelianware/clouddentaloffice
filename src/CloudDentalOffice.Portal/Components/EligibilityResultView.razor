@@ -26,9 +26,9 @@
     @if (Result.BenefitSummary is { } summary)
     {
         <div class="mt-1"><strong>Plan pays:</strong> @CategoryText("Preventive", summary.Preventive) · @CategoryText("Basic", summary.Basic) · @CategoryText("Major", summary.Major)</div>
-        @if (summary.Orthodontics.Covered is not null || summary.OrthodonticLifetimeMaximum.HasValue)
+        @if (summary.Orthodontics.Covered is not null || HasLifetimeMaximum(summary))
         {
-            <div>Orthodontics: @CategoryText(null, summary.Orthodontics)@(summary.OrthodonticLifetimeMaximum.HasValue ? $" · lifetime maximum {Money(summary.OrthodonticLifetimeMaximum)}, remaining {Money(summary.OrthodonticLifetimeMaximumRemaining)}" : "")</div>
+            <div>Orthodontics: @CategoryText(null, summary.Orthodontics)@(HasLifetimeMaximum(summary) ? $" · lifetime maximum {Money(summary.OrthodonticLifetimeMaximum)}, remaining {Money(summary.OrthodonticLifetimeMaximumRemaining)}" : "")</div>
         }
         @if (UsesGeneralLine(summary))
         {
@@ -99,6 +99,9 @@
     // "80%" in every culture: front desks read benefits as 100/80/50.
     private static string Percent(decimal share) =>
         Math.Round(share * 100m, MidpointRounding.AwayFromZero).ToString("0", System.Globalization.CultureInfo.InvariantCulture) + "%";
+
+    private static bool HasLifetimeMaximum(DentalBenefitSummary s) =>
+        s.OrthodonticLifetimeMaximum.HasValue || s.OrthodonticLifetimeMaximumRemaining.HasValue;
 
     private static bool UsesGeneralLine(DentalBenefitSummary s) =>
         new[] { s.Preventive, s.Basic, s.Major }.Any(c => c.FromGeneralDentalLine);
