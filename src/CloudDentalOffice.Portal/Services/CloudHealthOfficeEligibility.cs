@@ -358,7 +358,8 @@ public static class CloudHealthOfficeEligibilityMapper
             Messages = messages.Distinct(StringComparer.OrdinalIgnoreCase).Take(MaxMessages).ToList(),
             Source = source ?? CloudHealthOfficeEligibilityClient.SourceName,
             VerifiedAt = response.CheckedAtUtc == default ? DateTimeOffset.UtcNow : response.CheckedAtUtc,
-            ExternalTransactionId = response.CorrelationId
+            ExternalTransactionId = response.CorrelationId,
+            PayerErrorCodes = response.PayerErrorCodes ?? []
         };
     }
 
@@ -549,6 +550,9 @@ public sealed class ChoEligibilityResponse
     public string? Outcome { get; set; }
     public string? ErrorCategory { get; set; }
     public string? Message { get; set; }
+
+    /// <summary>AAA reject reason codes returned with a payer rejection. Set by the direct Stedi path.</summary>
+    public List<string>? PayerErrorCodes { get; set; }
     public bool Eligible { get; set; }
     public string? CoverageStatus { get; set; }
     public string? PlanName { get; set; }

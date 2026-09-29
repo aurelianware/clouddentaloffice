@@ -85,10 +85,11 @@
                         <tbody>
                             <tr><td>Checks run</td><td class="num">@m.Checks.Checks</td></tr>
                             <tr><td>Answered by the payer</td><td class="num">@m.Checks.Answered</td></tr>
+                            <tr><td>Billable</td><td class="num">@m.Checks.Billed</td></tr>
                             <tr><td>Estimated clearinghouse cost</td><td class="num">@m.Checks.EstimatedCost.ToString("C2")</td></tr>
                         </tbody>
                     </MudSimpleTable>
-                    <MudText Typo="Typo.caption">Estimate: answered checks at the configured list price. See the clearinghouse invoice for the actual amount.</MudText>
+                    <MudText Typo="Typo.caption">Estimate: billable checks at the configured list price. Payer answers that the clearinghouse doesn't charge for (payer unavailable or not responding) are left out. See the clearinghouse invoice for the actual amount.</MudText>
                 </MudPaper>
             </MudItem>
 

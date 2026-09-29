@@ -197,6 +197,7 @@ internal static class StediEligibilityWire
                 Outcome = "Rejected",
                 CoverageStatus = nameof(CoverageStatus.Unknown),
                 Message = reasons.Count > 0 ? string.Join("; ", reasons) : "Payer rejected the eligibility inquiry.",
+                PayerErrorCodes = s.Errors.Select(e => e.Code?.Trim()).OfType<string>().Where(c => c.Length > 0).Distinct().ToList(),
                 CorrelationId = correlationId,
                 CheckedAtUtc = DateTimeOffset.UtcNow
             };
