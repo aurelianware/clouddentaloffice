@@ -26,3 +26,15 @@ Configure `CloudHealthOffice:BaseUrl`, `CloudHealthOffice:EstimatePath`, and `Cl
 Estimation is stateless in the first release. It does not create or submit a claim, generate an 837D, complete a procedure, accept a treatment plan, or update eligibility/verification. A future change can add append-only estimate snapshot history after retention and PHI access requirements are defined.
 
 The UI presents normalized totals, line-level explanations, authority, confidence, warnings, and the required non-guarantee disclaimer. Missing member IDs, payer mappings, provider NPIs, procedures/CDT codes, timeouts, and upstream failures are contained within the estimate panel and do not fail the treatment-plan page.
+
+## Estimates from saved eligibility benefits
+
+A payer without a `BenefitPlanMappings` entry (or with the estimate service off) is estimated in CDO from the coverage's most recent verified eligibility check, using its `DentalBenefitSummary`. `BenefitSummaryEstimator` sorts each CDT code into preventive (D0–D1), basic (fillings, endodontics, periodontics, oral surgery) or major (crowns, buildups, prosthodontics, implants), then applies:
+
+- the category's plan-pays percent,
+- the remaining deductible, skipped for preventive and diagnostic care,
+- the remaining annual maximum, or the orthodontic lifetime maximum for D8 codes.
+
+D9 codes, and categories the payer didn't report, are left unestimated and shown as such.
+
+The practice's fee is used as the allowed amount. Fee schedules, frequency limits, waiting periods and downgrades are not applied. Each estimate says so, names the date of the eligibility check it used, and lists any benefits the payer left out. If the coverage has no verified check yet, staff are asked to run one first.

@@ -1,7 +1,15 @@
 namespace CloudDentalOffice.Portal.Models;
 
 public enum EstimateStatus { Completed, Partial }
-public enum EstimateAuthority { CloudHealthOfficeEstimate, PayerEstimate, PayerAdjudication }
+public enum EstimateAuthority
+{
+    CloudHealthOfficeEstimate,
+    PayerEstimate,
+    PayerAdjudication,
+
+    /// <summary>Calculated in CDO from the patient's last eligibility check; no payer or estimate service was asked.</summary>
+    EligibilityBenefits
+}
 public enum EstimateConfidence { High, Medium, Low, InsufficientData }
 
 public sealed record TreatmentEstimateRequest

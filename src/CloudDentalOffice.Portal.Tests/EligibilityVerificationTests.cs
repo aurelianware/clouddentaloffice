@@ -92,6 +92,28 @@ public sealed class EligibilityVerificationTests : IDisposable
     }
 
     [Fact]
+    public async Task Latest_verified_result_comes_back_with_its_benefit_summary()
+    {
+        var summary = new DentalBenefitSummary
+        {
+            Preventive = new CategoryCoverage(1m, true, false, []),
+            Basic = new CategoryCoverage(0.8m, true, false, []),
+            Major = CategoryCoverage.NotReported,
+            Orthodontics = CategoryCoverage.NotReported
+        };
+        _router.Result = Result(CoverageStatus.Active) with { BenefitSummary = summary };
+        await _service.VerifyAsync(await LoadPatient(), await LoadCoverage(), Provider(), ServiceDate);
+        // A later check that didn't verify coverage doesn't replace the benefits staff can use.
+        _router.Result = Result(CoverageStatus.Inactive);
+        await _service.VerifyAsync(await LoadPatient(), await LoadCoverage(), Provider(), ServiceDate);
+
+        var latest = await _service.GetLatestVerifiedResultAsync(CoverageId);
+
+        Assert.Equal(0.8m, latest?.BenefitSummary?.Basic.PlanPaysPercent);
+        Assert.Null(await _service.GetLatestVerifiedResultAsync(OtherTenantCoverageId));
+    }
+
+    [Fact]
     public async Task Recording_does_not_save_other_pending_edits_to_the_coverage()
     {
         _router.Result = Result(CoverageStatus.Active);

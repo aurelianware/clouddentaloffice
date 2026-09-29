@@ -24,6 +24,10 @@ public interface IEligibilityVerificationService
 
     Task<IReadOnlyList<EligibilityVerification>> GetHistoryAsync(
         int patientInsuranceId, int take = 10, CancellationToken cancellationToken = default);
+
+    /// <summary>The payer's answer from the coverage's most recent check that confirmed dental coverage, or null.</summary>
+    Task<EligibilityResult?> GetLatestVerifiedResultAsync(
+        int patientInsuranceId, CancellationToken cancellationToken = default);
 }
 
 /// <summary>
@@ -80,6 +84,27 @@ public sealed class EligibilityVerificationService(
             .OrderByDescending(x => x.Id)
             .Take(Math.Clamp(take, 1, 100))
             .ToListAsync(cancellationToken);
+
+    public async Task<EligibilityResult?> GetLatestVerifiedResultAsync(
+        int patientInsuranceId, CancellationToken cancellationToken = default)
+    {
+        var json = await db.EligibilityVerifications.AsNoTracking()
+            .Where(x => x.PatientInsuranceId == patientInsuranceId &&
+                        x.State == EligibilityVerificationState.Verified && x.ResultJson != null)
+            .OrderByDescending(x => x.Id)
+            .Select(x => x.ResultJson)
+            .FirstOrDefaultAsync(cancellationToken);
+        if (json is null) return null;
+        try
+        {
+            return JsonSerializer.Deserialize<EligibilityResult>(json, Json);
+        }
+        catch (JsonException ex)
+        {
+            logger.LogWarning(ex, "Stored eligibility result for coverage {PatientInsuranceId} could not be read", patientInsuranceId);
+            return null;
+        }
+    }
 
     /// <summary>Maps the normalized payer answer onto a front-desk state. The result's own messages stay on the result.</summary>
     public static EligibilityVerificationOutcome Classify(EligibilityResult result, DateOnly serviceDate) => result.CoverageStatus switch

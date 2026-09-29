@@ -141,6 +141,7 @@
     private bool _estimating;
     private bool _checkingEligibility;
     private EligibilityResult? _eligibility;
+    private int? _eligibilityInsuranceId;
     private string? _estimateSource;
 
     protected override async Task OnParametersSetAsync()
@@ -168,6 +169,11 @@
             };
             var insurance = _coverages.FirstOrDefault(x => x.PatientInsuranceId == _selectedInsuranceId);
             var provider = Providers.FirstOrDefault(x => x.ProviderId == ProviderId);
+            if (!UsesEstimateService(EstimateOptions.Value, insurance))
+            {
+                await EstimateFromSavedBenefitsAsync(planForEstimate, insurance, provider);
+                return;
+            }
             var request = TreatmentEstimateMapper.Map(planForEstimate, _patient, insurance, provider,
                 DateOnly.FromDateTime(_serviceDate ?? DateTime.Today), TenantProvider.TenantId,
                 EstimateOptions.Value.BenefitPlanMappings);
@@ -185,6 +191,32 @@
         finally { _estimating = false; }
     }
 
+    /// <summary>The estimate service is used only for payers mapped to one of its benefit plans.</summary>
+    public static bool UsesEstimateService(CloudHealthOfficeOptions options, PatientInsurance? insurance) =>
+        options.Enabled && !string.IsNullOrWhiteSpace(options.BaseUrl) &&
+        insurance?.InsurancePlan?.PayerId is { Length: > 0 } payerId &&
+        options.BenefitPlanMappings.TryGetValue(payerId, out var planId) && planId != Guid.Empty;
+
+    private async Task EstimateFromSavedBenefitsAsync(TreatmentPlan plan, PatientInsurance? insurance, Provider? provider)
+    {
+        var request = TreatmentEstimateMapper.MapForSavedBenefits(plan, _patient!, insurance, provider,
+            DateOnly.FromDateTime(_serviceDate ?? DateTime.Today), TenantProvider.TenantId);
+
+        // A check just run on this screen is the freshest answer; otherwise use the last saved one.
+        var eligibility = _eligibility is { BenefitSummary: not null } current && _eligibilityInsuranceId == insurance!.PatientInsuranceId
+            ? current
+            : await Verification.GetLatestVerifiedResultAsync(insurance!.PatientInsuranceId);
+        if (eligibility?.BenefitSummary is not { } summary)
+        {
+            _message = "There are no saved benefits for this coverage yet. Select Check Eligibility, then estimate again.";
+            return;
+        }
+
+        _result = BenefitSummaryEstimator.Estimate(request, summary, eligibility.VerifiedAt);
+        // The authority chip already says where this came from.
+        _estimateSource = null;
+    }
+
     private async Task CheckEligibilityAsync()
     {
         _message = null;
@@ -198,6 +230,7 @@
             var outcome = await Verification.VerifyAsync(_patient, insurance, provider,
                 DateOnly.FromDateTime(_serviceDate ?? DateTime.Today));
             _eligibility = outcome.Result;
+            _eligibilityInsuranceId = insurance?.PatientInsuranceId;
             if (outcome.Result is null) _message = outcome.Message;
         }
         catch (UnauthorizedAccessException) { _message = "The eligibility request was denied for this practice."; }
