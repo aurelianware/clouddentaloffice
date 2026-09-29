@@ -70,8 +70,7 @@ from real volumes. Revisit pass-through or a per-transaction markup once there a
 supports all three models without changes.
 
 **Move to integrated accounts later only if needed.** A practice that wants its own Stedi account already has a
-path (`Mode = Integrated`); its transactions are then billed by Stedi to the practice and are recorded in the
-ledger as `Billable = false` for Aurelianware.
+path (`Mode = Integrated`); its transactions are then billed by Stedi to the practice, not to Aurelianware.
 
 ### 3a. One usage ledger, in CHO
 
@@ -94,6 +93,17 @@ Rules:
   retry never counts twice.
 - Only IDs and codes, never member names, member IDs or dates of birth.
 - 835s are counted when received; confirm with Stedi how ERAs are billed.
+
+**CDO's direct Stedi eligibility doesn't pass through CHO.** A practice's connection mode (`Shared` or
+`Integrated`) and its eligibility gateway (`Stedi` or `CloudHealthOffice`) are set independently
+(`Models/TenantClearinghouseConnection.cs`). With `EligibilityGateway = Stedi`, CDO calls Stedi itself
+(`Services/Stedi/EligibilityGateways.cs`) and CHO never sees the check. So:
+- For `Mode = Shared` with `EligibilityGateway = Stedi` (on Aurelianware's account), CDO posts one usage row per
+  check to CHO (a small internal `POST /api/v1/usage` on the provider API, same auth and tenant allow-list) with
+  the same fields and billable rule, keyed by CDO's correlation ID. Until that exists, these checks are only in
+  CDO's own Pilot Metrics count.
+- For `Mode = Integrated`, Stedi bills the practice, so CDO records nothing in the ledger.
+- The ledger stays complete for Aurelianware's bill without CHO having to know about CDO's configuration.
 
 `UsageMetrics` becomes a monthly roll-up of this ledger (fixing the year-blind reset), and
 `GET tenants/{id}/usage` returns it.
@@ -118,7 +128,7 @@ counting CDO's own eligibility rows. Until then, CDO's own estimate stays, now e
 | 1 | CDO | Leave AAA 42/79/80 out of the Pilot Metrics cost estimate (this PR) |
 | 2 | CHO | Usage ledger store and writes from the Stedi gateway for eligibility and claims; billable rules; tests |
 | 3 | CHO | Roll-up into `UsageMetrics` with a correct monthly reset; 835/276/275 counting |
-| 4 | CDO | Pilot Metrics reads usage from CHO |
+| 4 | CDO | Report direct Stedi eligibility checks on the shared account to CHO's ledger; Pilot Metrics reads usage from CHO |
 | 5 | CHO | Optional: Stripe metered price and passthrough fee lines |
 
 ## 5. Open questions

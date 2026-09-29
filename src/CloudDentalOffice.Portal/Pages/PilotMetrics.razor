@@ -89,7 +89,7 @@
                             <tr><td>Estimated clearinghouse cost</td><td class="num">@m.Checks.EstimatedCost.ToString("C2")</td></tr>
                         </tbody>
                     </MudSimpleTable>
-                    <MudText Typo="Typo.caption">Estimate: billable checks at the configured list price. Payer answers that the clearinghouse doesn't charge for (payer unavailable or not responding) are left out. See the clearinghouse invoice for the actual amount.</MudText>
+                    <MudText Typo="Typo.caption">Estimate: billable checks at the configured list price. Answers the clearinghouse doesn't charge for are left out: payer unable to respond (AAA 42), invalid participant identification (AAA 79) and no response (AAA 80). See the clearinghouse invoice for the actual amount.</MudText>
                 </MudPaper>
             </MudItem>
 
