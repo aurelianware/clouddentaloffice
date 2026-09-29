@@ -85,6 +85,12 @@ public sealed record EligibilityResult
     /// must see that rather than a plain "Active coverage".
     /// </summary>
     public bool DentalCareNotCovered { get; init; }
+
+    /// <summary>
+    /// Preventive/basic/major breakdown and what the payer left out. Null unless the
+    /// plan is active and covers dental care. Stored with the check in its result JSON.
+    /// </summary>
+    public DentalBenefitSummary? BenefitSummary { get; init; }
     public string? ExternalTransactionId { get; init; }
 
     /// <summary>AAA reject reason codes the payer returned (e.g. "72"); empty when the payer answered normally.</summary>

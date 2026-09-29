@@ -28,6 +28,14 @@ public sealed class StediOptions
 
     public int CredentialCacheMinutes { get; set; } = 5;
 
+    /// <summary>
+    /// Ask for every dental service type (<see cref="Models.DentalServiceTypes.DetailedInquiry"/>)
+    /// instead of dental care alone, so the answer carries the preventive/basic/major
+    /// breakdown. A payer that rejects the multi-code inquiry is asked again with dental
+    /// care only. Off until the payer study shows the practice's payers accept it.
+    /// </summary>
+    public bool RequestDetailedDentalBenefits { get; set; }
+
     public SharedStediAccountOptions SharedAccount { get; set; } = new();
 }
 

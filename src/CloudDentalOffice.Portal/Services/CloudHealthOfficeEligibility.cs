@@ -342,18 +342,28 @@ public static class CloudHealthOfficeEligibilityMapper
         if (!string.IsNullOrWhiteSpace(response.Message)) messages.Add(response.Message.Trim());
         messages.AddRange(benefits.SelectMany(b => b.Messages ?? []).Where(m => !string.IsNullOrWhiteSpace(m)).Select(m => m.Trim()));
 
+        var dentalNotCovered = DentalNotCovered(benefits);
+        var deductible = Amount(benefits, Deductible, remaining: false);
+        var deductibleRemaining = Amount(benefits, Deductible, remaining: true);
+        var annualMaximum = Amount(benefits, Limitation, remaining: false);
+        var annualMaximumRemaining = Amount(benefits, Limitation, remaining: true);
+
         return new EligibilityResult
         {
             CorrelationId = string.IsNullOrWhiteSpace(response.CorrelationId) ? fallbackCorrelationId : response.CorrelationId,
             CoverageStatus = status,
-            DentalCareNotCovered = DentalNotCovered(benefits),
+            DentalCareNotCovered = dentalNotCovered,
             PlanName = response.PlanName,
             EffectiveDate = response.CoverageStart,
             TerminationDate = response.CoverageEnd,
-            Deductible = Amount(benefits, Deductible, remaining: false),
-            DeductibleRemaining = Amount(benefits, Deductible, remaining: true),
-            AnnualMaximum = Amount(benefits, Limitation, remaining: false),
-            AnnualMaximumRemaining = Amount(benefits, Limitation, remaining: true),
+            Deductible = deductible,
+            DeductibleRemaining = deductibleRemaining,
+            AnnualMaximum = annualMaximum,
+            AnnualMaximumRemaining = annualMaximumRemaining,
+            // Only an active plan that covers dental care has a breakdown worth showing.
+            BenefitSummary = status == CoverageStatus.Active && !dentalNotCovered
+                ? Summarize(benefits, deductible, deductibleRemaining, annualMaximum, annualMaximumRemaining)
+                : null,
             Benefits = benefits.Select(b => ToBenefit(b, status)).ToList(),
             Messages = messages.Distinct(StringComparer.OrdinalIgnoreCase).Take(MaxMessages).ToList(),
             Source = source ?? CloudHealthOfficeEligibilityClient.SourceName,
@@ -362,6 +372,93 @@ public static class CloudHealthOfficeEligibilityMapper
             PayerErrorCodes = response.PayerErrorCodes ?? []
         };
     }
+
+    /// <summary>
+    /// Rolls the benefit lines up into preventive, basic, major and orthodontic
+    /// coverage. A category uses its own lines when the payer sent them and falls
+    /// back to the general dental (35) line otherwise. Coinsurance (EB01 A) is the
+    /// patient's share, so the plan pays the rest.
+    /// </summary>
+    internal static DentalBenefitSummary Summarize(
+        IReadOnlyList<ChoBenefit> benefits, decimal? deductible, decimal? deductibleRemaining,
+        decimal? annualMaximum, decimal? annualMaximumRemaining)
+    {
+        var general = Category(benefits, [DentalServiceTypes.DentalCare], general: null);
+        var preventive = Category(benefits, DentalServiceTypes.Preventive, general);
+        var basic = Category(benefits, DentalServiceTypes.Basic, general);
+        var major = Category(benefits, DentalServiceTypes.Major, general);
+        // Orthodontic coverage is often excluded or age-limited; never borrow the general line for it.
+        var ortho = Category(benefits, DentalServiceTypes.Orthodontics, general: null);
+
+        var missing = new List<string>();
+        if (annualMaximum is null && annualMaximumRemaining is null) missing.Add("Annual maximum");
+        if (deductible is null && deductibleRemaining is null) missing.Add("Deductible");
+        if (preventive.PlanPaysPercent is null && preventive.Covered != false) missing.Add("Preventive %");
+        if (basic.PlanPaysPercent is null && basic.Covered != false) missing.Add("Basic %");
+
+        return new DentalBenefitSummary
+        {
+            Preventive = preventive,
+            Basic = basic,
+            Major = major,
+            Orthodontics = ortho,
+            OrthodonticLifetimeMaximum = LifetimeAmount(benefits, remaining: false),
+            OrthodonticLifetimeMaximumRemaining = LifetimeAmount(benefits, remaining: true),
+            AnnualMaximum = annualMaximum,
+            AnnualMaximumRemaining = annualMaximumRemaining,
+            Deductible = deductible,
+            DeductibleRemaining = deductibleRemaining,
+            MissingFields = missing
+        };
+    }
+
+    private static CategoryCoverage Category(IReadOnlyList<ChoBenefit> benefits, IReadOnlyList<string> codes, CategoryCoverage? general)
+    {
+        static string? Code(ChoBenefit b) => b.BenefitCode?.Trim().ToUpperInvariant();
+        var lines = benefits.Where(b => b.ServiceTypeCode?.Trim() is { } c && codes.Contains(c, StringComparer.OrdinalIgnoreCase)).ToList();
+
+        // The category's first code leads ("Restorative" for basic), so an 80% restorative
+        // line wins over a 50% oral surgery line on the same plan.
+        var patientShare = lines
+            .Where(b => Code(b) == CoInsurance && (b.CoinsurancePercent ?? b.Percent) is not null)
+            .OrderByDescending(b => b.InNetwork)
+            .ThenByDescending(b => IsIndividual(b.CoverageLevel))
+            .ThenBy(b => IndexOf(codes, b.ServiceTypeCode))
+            .Select(b => b.CoinsurancePercent ?? b.Percent)
+            .FirstOrDefault();
+
+        bool? covered = lines.Any(b => Code(b) is "1" or CoInsurance or CoPayment or Deductible or Limitation) ? true
+            : lines.Any(b => Code(b) == NonCovered) ? false
+            : null;
+
+        var notes = lines.SelectMany(b => b.Messages ?? []).Where(m => !string.IsNullOrWhiteSpace(m)).Select(m => m.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase).Take(MaxMessages).ToList();
+
+        if (patientShare is { } share)
+            return new CategoryCoverage(Math.Clamp(1m - share, 0m, 1m), covered ?? true, false, notes);
+
+        // Nothing specific to this category: use the general dental line, unless the payer excluded the category.
+        if (general is { PlanPaysPercent: not null } && covered != false)
+            return new CategoryCoverage(general.PlanPaysPercent, covered ?? general.Covered, true, notes);
+
+        return new CategoryCoverage(null, covered, false, notes);
+    }
+
+    private static int IndexOf(IReadOnlyList<string> codes, string? code)
+    {
+        for (var i = 0; i < codes.Count; i++)
+            if (string.Equals(codes[i], code?.Trim(), StringComparison.OrdinalIgnoreCase)) return i;
+        return codes.Count;
+    }
+
+    private static decimal? LifetimeAmount(IReadOnlyList<ChoBenefit> benefits, bool remaining) => benefits
+        .Where(b => string.Equals(b.BenefitCode?.Trim(), Limitation, StringComparison.OrdinalIgnoreCase))
+        .Where(b => b.Amount is not null && DentalServiceTypes.Orthodontics.Contains(b.ServiceTypeCode?.Trim() ?? string.Empty))
+        .Where(b => remaining ? IsLifetimeRemaining(b.TimePeriod) : IsLifetime(b.TimePeriod))
+        .OrderByDescending(b => b.InNetwork)
+        .ThenByDescending(b => IsIndividual(b.CoverageLevel))
+        .Select(b => b.Amount)
+        .FirstOrDefault();
 
     public static string ValidationMessage(ChoValidationError? error)
     {
@@ -494,6 +591,13 @@ public static class CloudHealthOfficeEligibilityMapper
 
     private static bool IsAnnual(string? timePeriod) =>
         timePeriod is not null && AnnualPeriods.Contains(timePeriod.Trim());
+
+    // EB06 32 Lifetime, 33 Lifetime Remaining.
+    private static bool IsLifetime(string? timePeriod) =>
+        timePeriod?.Trim() is { } t && (t.Equals("Lifetime", StringComparison.OrdinalIgnoreCase) || t == "32");
+
+    private static bool IsLifetimeRemaining(string? timePeriod) =>
+        timePeriod?.Trim() is { } t && (t.Equals("Lifetime Remaining", StringComparison.OrdinalIgnoreCase) || t == "33");
 
     private static bool IsUnspecified(string? timePeriod) => string.IsNullOrWhiteSpace(timePeriod);
 

@@ -241,7 +241,7 @@ public sealed record CategoryCoverage(decimal? PlanPaysPercent, bool? Covered, I
 |---|---|---|
 | 1 (#88) | `EligibilityVerifications` history; manual checks write to it; `LastVerifiedAt` on coverage; **G5 fan-out fix** with tests | History, and the basis for everything below |
 | 2 | Typed `EligibilityFailureKind`; `CoverageVerification` (unique per appointment + slot); `AppointmentScheduled` event; `WorkerTenantContext`; lease-claimed `CoverageVerificationWorker` (triggers, backoff, T-72h/morning-of, never `SelfPay`); "Insurance to verify" queue page listing non-`Verified` rows for the next 3 days | Hands-off verification |
-| 3 | `Detailed` profile on the Stedi gateway, `Basic` fallback, `DentalBenefitSummary`, completeness → `VerifiedPartial` + `MissingFields` | Useful benefit breakdown; better estimates |
+| 3 | `Detailed` profile on the Stedi gateway, `Basic` fallback, `DentalBenefitSummary`, completeness → `VerifiedPartial` + `MissingFields` | Useful benefit breakdown; better estimates. **Partly done:** `DentalBenefitSummary` with `MissingFields`, and the `Detailed` inquiry with a one-time `Basic` retry on HTTP 400/422 behind `Stedi:RequestDetailedDentalBenefits` (off until §6). Still open: `VerifiedPartial`, the `SupportsMultiStc` cache, and retrying on payer `Errors` |
 | 4 | Zocdoc insurance hint (G3) + intake token/endpoint (§5) + `SelfPay` | Fixes the Zocdoc intake gap |
 | 5 | Card scan → Stedi payer resolution → auto-`Ready` (G7) | Removes staff lookup of payer IDs |
 | 6 | Learned payer-mapping table + AHCCCS/MA seed | Fewer `NeedsInfo` over time |
