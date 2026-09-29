@@ -304,6 +304,7 @@ jobs:
               jwtKey=${{ secrets.JWT_KEY }} \
               serviceBusSendConnection='${{ steps.servicebus.outputs.send_connection }}' \
               serviceBusListenConnection='${{ steps.servicebus.outputs.listen_connection }}' \
+              coverageVerificationEnabled=${{ vars.COVERAGE_VERIFICATION_ENABLED == 'true' }} \
               coverageIntakeEnabled=${{ vars.COVERAGE_INTAKE_ENABLED == 'true' }} \
               emailSmtpHost='${{ vars.EMAIL_SMTP_HOST }}' \
               emailSmtpPort=${{ vars.EMAIL_SMTP_PORT || '587' }} \

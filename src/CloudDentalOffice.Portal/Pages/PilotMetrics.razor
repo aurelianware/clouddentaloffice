@@ -1,0 +1,160 @@
+@page "/pilot-metrics"
+@attribute [Authorize(Roles = CloudDentalOffice.Portal.Services.Auth.StaffRoles.PayerManagers)]
+@inject IPilotMetricsService Metrics
+@inject ILogger<PilotMetrics> Logger
+
+<PageTitle>Pilot Metrics - Cloud Dental Office</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-4">
+    <MudPaper Class="pa-4" Style="background:#0a0a0a;border:1px solid #00ffff;">
+        <MudStack Row Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Wrap="Wrap.Wrap">
+            <div>
+                <MudText Typo="Typo.h4" Color="Color.Primary"><MudIcon Icon="@Icons.Material.Filled.Insights" /> Pilot Metrics</MudText>
+                <MudText Typo="Typo.body2">How coverage checks, intake and claims are doing for this practice, from what the Portal records.</MudText>
+            </div>
+            <MudSelect T="int" Value="_days" ValueChanged="DaysChanged" Label="Period" Dense Variant="Variant.Outlined" Style="min-width:160px">
+                <MudSelectItem Value="7">Last 7 days</MudSelectItem>
+                <MudSelectItem Value="30">Last 30 days</MudSelectItem>
+                <MudSelectItem Value="90">Last 90 days</MudSelectItem>
+                <MudSelectItem Value="365">Last 12 months</MudSelectItem>
+            </MudSelect>
+        </MudStack>
+    </MudPaper>
+
+    @if (_loading)
+    {
+        <MudProgressLinear Indeterminate Color="Color.Primary" Class="mt-4" />
+    }
+    else if (_error is not null)
+    {
+        <MudAlert Severity="Severity.Error" Class="mt-4">@_error</MudAlert>
+    }
+    else if (_metrics is { } m)
+    {
+        <MudGrid Class="mt-2">
+            <MudItem xs="12" md="6">
+                <MudPaper Class="pa-4" Style="background:#0a0a0a;border:1px solid rgba(0,255,255,.3);height:100%">
+                    <MudText Typo="Typo.h6" Color="Color.Primary">Coverage before the visit</MudText>
+                    <MudText Typo="Typo.caption">Appointments in the period that have already started.</MudText>
+                    <MudSimpleTable Dense Class="mt-2" Style="background:transparent">
+                        <tbody>
+                            <tr><td>Verified before the visit</td><td class="num"><strong>@Percent(m.Coverage.VerifiedRate)</strong> (@m.Coverage.VerifiedBeforeVisit of @(m.Coverage.Appointments - m.Coverage.SelfPay))</td></tr>
+                            <tr><td>Problems caught before the visit</td><td class="num"><strong>@m.Coverage.ProblemsCaught</strong></td></tr>
+                            <tr><td class="sub">Dental not covered (e.g. medical card)</td><td class="num">@m.Coverage.NotDental</td></tr>
+                            <tr><td class="sub">Coverage inactive</td><td class="num">@m.Coverage.Inactive</td></tr>
+                            <tr><td class="sub">No coverage on file or missing details</td><td class="num">@m.Coverage.NeedsInfo</td></tr>
+                            <tr><td>Payer answer unclear</td><td class="num">@m.Coverage.Unconfirmed</td></tr>
+                            <tr><td>Payer unreachable at last try</td><td class="num">@m.Coverage.Unavailable</td></tr>
+                            <tr><td>Not checked</td><td class="num">@m.Coverage.NotChecked</td></tr>
+                            <tr><td>Self-pay (excluded from the rate)</td><td class="num">@m.Coverage.SelfPay</td></tr>
+                            <tr><td>Appointments</td><td class="num">@m.Coverage.Appointments</td></tr>
+                        </tbody>
+                    </MudSimpleTable>
+                </MudPaper>
+            </MudItem>
+
+            <MudItem xs="12" md="6">
+                <MudPaper Class="pa-4" Style="background:#0a0a0a;border:1px solid rgba(0,255,255,.3);height:100%">
+                    <MudText Typo="Typo.h6" Color="Color.Primary">Claims</MudText>
+                    <MudText Typo="Typo.caption">Claims submitted in the period.</MudText>
+                    @if (m.Claims.Submitted == 0)
+                    {
+                        <MudText Typo="Typo.body2" Class="mt-3">No claims submitted in this period yet.</MudText>
+                    }
+                    else
+                    {
+                        <MudSimpleTable Dense Class="mt-2" Style="background:transparent">
+                            <tbody>
+                                <tr><td>Not rejected at submission</td><td class="num"><strong>@Percent(m.Claims.AcceptedRate)</strong></td></tr>
+                                <tr><td>Submitted</td><td class="num">@m.Claims.Submitted</td></tr>
+                                <tr><td>Rejected at submission</td><td class="num">@m.Claims.Rejected</td></tr>
+                                <tr><td>Paid</td><td class="num">@m.Claims.Paid</td></tr>
+                                <tr><td>Partially paid</td><td class="num">@m.Claims.PartiallyPaid</td></tr>
+                                <tr><td>Denied</td><td class="num">@m.Claims.Denied</td></tr>
+                                <tr><td>Average days from service to payment</td><td class="num">@(m.Claims.AverageDaysToPayment?.ToString("0.0") ?? "—")</td></tr>
+                            </tbody>
+                        </MudSimpleTable>
+                    }
+                </MudPaper>
+            </MudItem>
+
+            <MudItem xs="12" md="6">
+                <MudPaper Class="pa-4" Style="background:#0a0a0a;border:1px solid rgba(0,255,255,.3);height:100%">
+                    <MudText Typo="Typo.h6" Color="Color.Primary">Eligibility checks</MudText>
+                    <MudSimpleTable Dense Class="mt-2" Style="background:transparent">
+                        <tbody>
+                            <tr><td>Checks run</td><td class="num">@m.Checks.Checks</td></tr>
+                            <tr><td>Answered by the payer</td><td class="num">@m.Checks.Answered</td></tr>
+                            <tr><td>Estimated clearinghouse cost</td><td class="num">@m.Checks.EstimatedCost.ToString("C2")</td></tr>
+                        </tbody>
+                    </MudSimpleTable>
+                    <MudText Typo="Typo.caption">Estimate: answered checks at the configured list price. See the clearinghouse invoice for the actual amount.</MudText>
+                </MudPaper>
+            </MudItem>
+
+            <MudItem xs="12" md="6">
+                <MudPaper Class="pa-4" Style="background:#0a0a0a;border:1px solid rgba(0,255,255,.3);height:100%">
+                    <MudText Typo="Typo.h6" Color="Color.Primary">Patient coverage requests</MudText>
+                    <MudText Typo="Typo.caption">Links emailed to patients with no dental coverage on file.</MudText>
+                    <MudSimpleTable Dense Class="mt-2" Style="background:transparent">
+                        <tbody>
+                            <tr><td>Sent</td><td class="num">@m.Intake.Sent</td></tr>
+                            <tr><td>Answered</td><td class="num">@m.Intake.Answered</td></tr>
+                            <tr><td class="sub">Gave a dental plan</td><td class="num">@m.Intake.AnsweredWithPlan</td></tr>
+                            <tr><td class="sub">No dental insurance</td><td class="num">@m.Intake.AnsweredNoInsurance</td></tr>
+                        </tbody>
+                    </MudSimpleTable>
+                </MudPaper>
+            </MudItem>
+        </MudGrid>
+
+        <MudText Typo="Typo.caption" Class="mt-3 d-block">
+            @m.From.ToLocalTime().ToString("d") – @m.To.ToLocalTime().ToString("d"). Staff time saved isn't recorded by the Portal; track it separately.
+        </MudText>
+    }
+</MudContainer>
+
+<style>
+    td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    td.sub { padding-left: 28px !important; color: #b0b0b0; }
+</style>
+
+@code {
+    private int _days = 30;
+    private bool _loading = true;
+    private string? _error;
+    private PilotMetricsReport? _metrics;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task DaysChanged(int days)
+    {
+        _days = days;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _error = null;
+        try
+        {
+            _metrics = await Metrics.GetAsync(_days);
+        }
+        catch (UnauthorizedAccessException)
+        {
+            _error = "Practice staff access is required to see these numbers.";
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Pilot metrics failed to load.");
+            _error = "The metrics couldn't be loaded. Try again in a minute.";
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private static string Percent(decimal? value) => value.HasValue ? value.Value.ToString("P0") : "—";
+}

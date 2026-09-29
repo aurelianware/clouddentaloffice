@@ -375,6 +375,11 @@ builder.Services.AddScoped<ICoverageVerificationSweep, CoverageVerificationSweep
 builder.Services.AddScoped<ICoverageVerificationQueue, CoverageVerificationQueue>();
 builder.Services.AddSingleton<ICoverageVerificationRunner, CoverageVerificationRunner>();
 builder.Services.AddHostedService<CoverageVerificationWorker>();
+// Pilot metrics: read-only numbers for the practice from what the Portal already records.
+builder.Services.AddOptions<PilotMetricsOptions>()
+    .Bind(builder.Configuration.GetSection(PilotMetricsOptions.SectionName))
+    .ValidateDataAnnotations();
+builder.Services.AddScoped<IPilotMetricsService, PilotMetricsService>();
 // Coverage intake: emails patients with no coverage on file a signed link to the
 // public IntakeService form; answers come back over Service Bus.
 builder.Services.AddOptions<CoverageIntakeOptions>()
