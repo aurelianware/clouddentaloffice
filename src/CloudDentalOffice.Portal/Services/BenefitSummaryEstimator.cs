@@ -42,10 +42,12 @@ public static class BenefitSummaryEstimator
     public static TreatmentEstimateResult Estimate(
         TreatmentEstimateRequest request, DentalBenefitSummary summary, DateTimeOffset verifiedAt)
     {
-        var deductibleLeft = summary.DeductibleRemaining ?? summary.Deductible ?? 0m;
-        var annualLeft = summary.AnnualMaximumRemaining ?? summary.AnnualMaximum;
-        var orthoLeft = summary.OrthodonticLifetimeMaximumRemaining ?? summary.OrthodonticLifetimeMaximum;
-        var anyDeductibleUnknown = summary.DeductibleRemaining is null && summary.Deductible is null;
+        // Only what the payer says is still available is used. A plan total is not what's
+        // left, so a missing remaining amount is unknown, never the total.
+        var deductibleLeft = summary.DeductibleRemaining ?? 0m;
+        var annualLeft = summary.AnnualMaximumRemaining;
+        var orthoLeft = summary.OrthodonticLifetimeMaximumRemaining;
+        var estimatedOrtho = false;
         var unestimated = 0;
         var cappedByMaximum = false;
 
@@ -99,6 +101,7 @@ public static class BenefitSummaryEstimator
             // Orthodontics draws on its lifetime maximum; everything else on the annual one.
             if (category == DentalBenefitCategory.Orthodontics)
             {
+                estimatedOrtho = true;
                 if (orthoLeft is { } left && insurance > left)
                 {
                     insurance = Math.Max(left, 0m);
@@ -128,10 +131,18 @@ public static class BenefitSummaryEstimator
         };
         if (summary.MissingFields.Count > 0)
             warnings.Add(new("MISSING_BENEFITS", "The payer didn't report: " + string.Join(", ", summary.MissingFields) + "."));
-        if (anyDeductibleUnknown)
-            warnings.Add(new("DEDUCTIBLE_UNKNOWN", "No deductible was reported, so none was applied."));
-        if (annualLeft is null)
-            warnings.Add(new("MAXIMUM_UNKNOWN", "No annual maximum was reported, so the estimate isn't limited by one."));
+        var deductibleUnknown = summary.DeductibleRemaining is null;
+        var annualUnknown = summary.AnnualMaximumRemaining is null;
+        var orthoUnknown = estimatedOrtho && summary.OrthodonticLifetimeMaximumRemaining is null;
+        if (deductibleUnknown)
+            warnings.Add(new("DEDUCTIBLE_UNKNOWN", "The payer didn't report how much deductible is left, so none was applied" +
+                (summary.Deductible is { } d ? $". Up to {d:C2} may still apply." : ".")));
+        if (annualUnknown)
+            warnings.Add(new("MAXIMUM_UNKNOWN", "The payer didn't report how much of the annual maximum is left, so the estimate isn't limited by it" +
+                (summary.AnnualMaximum is { } m ? $". The plan's maximum is {m:C2}." : ".")));
+        if (orthoUnknown)
+            warnings.Add(new("ORTHO_MAXIMUM_UNKNOWN", "The payer didn't report how much of the orthodontic lifetime maximum is left, so the estimate isn't limited by it" +
+                (summary.OrthodonticLifetimeMaximum is { } o ? $". The lifetime maximum is {o:C2}." : ".")));
         if (cappedByMaximum)
             warnings.Add(new("MAXIMUM_REACHED", "Part of this plan exceeds the remaining maximum, so the patient pays more."));
 
@@ -139,7 +150,9 @@ public static class BenefitSummaryEstimator
         {
             Status = unestimated > 0 ? EstimateStatus.Partial : EstimateStatus.Completed,
             Authority = EstimateAuthority.EligibilityBenefits,
-            Confidence = unestimated > 0 || !summary.IsComplete ? EstimateConfidence.Low : EstimateConfidence.Medium,
+            Confidence = unestimated > 0 || !summary.IsComplete || deductibleUnknown || annualUnknown || orthoUnknown
+                ? EstimateConfidence.Low
+                : EstimateConfidence.Medium,
             TotalCharges = lines.Sum(l => l.ChargeAmount),
             EstimatedAllowed = lines.Sum(l => l.AllowedAmount),
             EstimatedInsurancePayment = lines.Sum(l => l.InsurancePayment),

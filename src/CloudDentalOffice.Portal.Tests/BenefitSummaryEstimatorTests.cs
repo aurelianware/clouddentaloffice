@@ -95,6 +95,22 @@ public sealed class BenefitSummaryEstimatorTests
     }
 
     [Fact]
+    public void Plan_totals_are_never_used_as_the_amount_left()
+    {
+        // $1,500 maximum and $50 deductible reported, but not how much of either is left.
+        var summary = Plan(deductibleRemaining: null, annualRemaining: null);
+
+        var result = BenefitSummaryEstimator.Estimate(Request(("D2391", 200m), ("D2740", 4000m)), summary, VerifiedAt);
+
+        Assert.Equal(0m, result.Lines[0].Deductible);
+        Assert.Equal(160m, result.Lines[0].InsurancePayment);
+        Assert.Equal(2000m, result.Lines[1].InsurancePayment);
+        Assert.Equal(EstimateConfidence.Low, result.Confidence);
+        Assert.Contains(result.Warnings, w => w.Code == "DEDUCTIBLE_UNKNOWN" && w.Message.Contains("50"));
+        Assert.Contains(result.Warnings, w => w.Code == "MAXIMUM_UNKNOWN" && w.Message.Contains("1,500"));
+    }
+
+    [Fact]
     public void Missing_benefits_are_named_on_the_estimate()
     {
         var summary = Plan() with { MissingFields = ["Deductible"], Deductible = null, DeductibleRemaining = null };
