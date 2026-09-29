@@ -73,7 +73,10 @@ public sealed class PatientBillingNotificationService(CloudDentalDbContext db, T
 }
 
 public enum BillingNotificationSendDisposition { Sent, TransientFailure, PermanentFailure }
-public sealed record BillingNotificationMessage(string Recipient, string Subject, string Body);
+/// <param name="PracticeName">Shown as the sender's name.</param>
+/// <param name="ReplyTo">The practice's own address, so patient replies reach the office.</param>
+public sealed record BillingNotificationMessage(string Recipient, string Subject, string Body,
+    string? PracticeName = null, string? ReplyTo = null);
 public sealed record BillingNotificationSendResult(BillingNotificationSendDisposition Disposition,
     string? FailureReason = null);
 public interface IPatientBillingNotificationSender
@@ -99,8 +102,8 @@ public sealed class EmailPatientBillingNotificationSender(IOptions<ReviewEmailOp
             return new(BillingNotificationSendDisposition.PermanentFailure, "email_transport_not_configured");
         try
         {
-            using var mail = new MailMessage(settings.FromAddress, message.Recipient)
-            { Subject = message.Subject, Body = message.Body, IsBodyHtml = false };
+            using var mail = PracticeMail.Create(settings.FromAddress, message.PracticeName, message.Recipient,
+                message.ReplyTo, message.Subject, message.Body, isHtml: false);
             using var client = new SmtpClient(settings.Host, settings.Port) { EnableSsl = settings.EnableSsl };
             if (!string.IsNullOrWhiteSpace(settings.Username))
                 client.Credentials = new NetworkCredential(settings.Username, settings.Password);
@@ -124,7 +127,8 @@ public interface IPatientBillingNotificationDispatcher
 public sealed class PatientBillingNotificationDispatcher(CloudDentalDbContext db,
     IPatientBillingNotificationService notifications, IPatientBillingNotificationSender sender,
     IOptions<PatientBillingNotificationOptions> options, TimeProvider clock,
-    ILogger<PatientBillingNotificationDispatcher> logger) : IPatientBillingNotificationDispatcher
+    ILogger<PatientBillingNotificationDispatcher> logger, IOptions<PracticeEmailOptions>? practiceEmail = null)
+    : IPatientBillingNotificationDispatcher
 {
     public async Task<int> DispatchBatchAsync(CancellationToken cancellationToken = default)
     {
@@ -160,7 +164,10 @@ public sealed class PatientBillingNotificationDispatcher(CloudDentalDbContext db
                     cancellationToken);
                 continue;
             }
-            var message = CreateMessage(row, settings.PatientPortalBaseUrl);
+            var message = CreateMessage(row, settings.PatientPortalBaseUrl) with
+            {
+                PracticeName = row.PracticeName, ReplyTo = practiceEmail?.Value.ReplyToFor(row.TenantId)
+            };
             var result = await SendSafely(message, cancellationToken);
             if (result.Disposition == BillingNotificationSendDisposition.Sent)
             {

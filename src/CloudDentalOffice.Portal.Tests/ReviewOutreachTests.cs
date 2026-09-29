@@ -115,6 +115,7 @@ public sealed class ReviewOutreachTests : IDisposable
         var request = Assert.Single(sender.Requests);
         Assert.Equal(PatientEmail, request.Recipient);
         Assert.Equal("Practice A", request.PracticeName);
+        Assert.Equal("office@practice-a.test", request.ReplyTo);
         Assert.Equal("https://practice-a.test/review/", request.LandingPageUrl.AbsoluteUri);
         var serialized = $"{request.PracticeName} {request.LandingPageUrl}";
         Assert.DoesNotContain(Appointment.ToString(), serialized);
@@ -201,7 +202,8 @@ public sealed class ReviewOutreachTests : IDisposable
     private IReviewOutreachScheduler Scheduler() => new ReviewOutreachScheduler(_db, Eligibility(), _clock, NullLogger<ReviewOutreachScheduler>.Instance);
     private IReviewOutreachDispatcher Dispatcher(params IReviewOutreachSender[] senders) => new ReviewOutreachDispatcher(_db, Eligibility(), senders,
         Options.Create(new ReviewOutreachWorkerOptions { InitialRetrySeconds = 60, MaximumRetrySeconds = 60 }), _clock,
-        NullLogger<ReviewOutreachDispatcher>.Instance);
+        NullLogger<ReviewOutreachDispatcher>.Instance,
+        Options.Create(new PracticeEmailOptions { Practices = [new() { TenantId = "tenant-a", ReplyTo = "office@practice-a.test" }] }));
 
     private void SeedSettings(bool enabled = true, int delayMinutes = 0)
     {

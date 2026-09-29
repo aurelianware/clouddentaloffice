@@ -306,6 +306,12 @@ jobs:
               serviceBusListenConnection='${{ steps.servicebus.outputs.listen_connection }}' \
               coverageVerificationEnabled=${{ vars.COVERAGE_VERIFICATION_ENABLED == 'true' }} \
               coverageIntakeEnabled=${{ vars.COVERAGE_INTAKE_ENABLED == 'true' }} \
+              emailSmtpHost='${{ vars.EMAIL_SMTP_HOST }}' \
+              emailSmtpPort=${{ vars.EMAIL_SMTP_PORT || '587' }} \
+              emailSmtpUsername='${{ vars.EMAIL_SMTP_USERNAME }}' \
+              emailSmtpPassword='${{ secrets.EMAIL_SMTP_PASSWORD }}' \
+              emailFromAddress='${{ vars.EMAIL_FROM_ADDRESS }}' \
+              practiceReplyTo='${{ vars.PRACTICE_REPLY_TO }}' \
               coverageIntakeSigningKey='${{ secrets.COVERAGE_INTAKE_SIGNING_KEY }}' \
               coverageIntakeLinkBaseUrl='${{ vars.COVERAGE_INTAKE_LINK_BASE_URL }}' \
               coverageIntakeListenConnection='${{ steps.servicebus.outputs.coverage_intake_listen }}' \

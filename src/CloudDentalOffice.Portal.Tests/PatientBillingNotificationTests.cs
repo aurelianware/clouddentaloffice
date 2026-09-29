@@ -58,6 +58,24 @@ public sealed class PatientBillingNotificationTests : IDisposable
     }
 
     [Fact]
+    public async Task Messages_carry_the_practice_name_and_reply_to()
+    {
+        var options = Options.Create(new PatientBillingNotificationOptions { Enabled = true });
+        var service = new PatientBillingNotificationService(_db, TimeProvider.System, options);
+        Assert.True(await service.EnqueueAsync("tenant-a", _accountId, PatientBillingNotificationType.NewStatement, "test", "s-1"));
+        var sender = new CaptureSender();
+        var dispatcher = new PatientBillingNotificationDispatcher(_db, service, sender, options, TimeProvider.System,
+            NullLogger<PatientBillingNotificationDispatcher>.Instance,
+            Options.Create(new PracticeEmailOptions { Practices = [new() { TenantId = "tenant-a", ReplyTo = "office@example.test" }] }));
+
+        await dispatcher.DispatchBatchAsync();
+
+        var message = Assert.Single(sender.Messages);
+        Assert.Equal("Example Dental", message.PracticeName);
+        Assert.Equal("office@example.test", message.ReplyTo);
+    }
+
+    [Fact]
     public async Task Duplicate_source_is_enqueued_once()
     {
         var options = Options.Create(new PatientBillingNotificationOptions { Enabled = true });

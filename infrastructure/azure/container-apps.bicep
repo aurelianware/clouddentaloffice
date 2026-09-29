@@ -36,6 +36,13 @@ param serviceBusSendConnection string
 param serviceBusListenConnection string
 param coverageVerificationEnabled bool = false
 param coverageIntakeEnabled bool = false
+param emailSmtpHost string = ''
+param emailSmtpPort int = 587
+param emailSmtpUsername string = ''
+@secure()
+param emailSmtpPassword string = ''
+param emailFromAddress string = ''
+param practiceReplyTo string = ''
 @secure()
 param coverageIntakeSigningKey string = ''
 param coverageIntakeLinkBaseUrl string = ''
@@ -162,6 +169,26 @@ var coverageIntakePortalEnv = concat(coverageIntakeCommonEnv, coverageIntakeOn ?
   { name: 'CoverageIntake__ServiceBusConnectionString', secretRef: 'coverage-intake-listen' }
 ] : [])
 
+// Patient email (billing notices, review invitations, coverage intake) goes out over
+// SMTP from the platform address, under each practice's name, replying to the practice.
+var emailOn = !empty(emailSmtpHost) && !empty(emailFromAddress)
+var emailSecrets = emailOn && !empty(emailSmtpPassword) ? [
+  { name: 'smtp-password', value: emailSmtpPassword }
+] : []
+var emailEnv = concat(emailOn ? [
+  { name: 'ReviewOutreach__Email__Mode', value: 'Smtp' }
+  { name: 'ReviewOutreach__Email__Host', value: emailSmtpHost }
+  { name: 'ReviewOutreach__Email__Port', value: string(emailSmtpPort) }
+  { name: 'ReviewOutreach__Email__EnableSsl', value: 'true' }
+  { name: 'ReviewOutreach__Email__Username', value: emailSmtpUsername }
+  { name: 'ReviewOutreach__Email__FromAddress', value: emailFromAddress }
+] : [], empty(emailSecrets) ? [] : [
+  { name: 'ReviewOutreach__Email__Password', secretRef: 'smtp-password' }
+], empty(practiceReplyTo) ? [] : [
+  { name: 'PracticeEmail__Practices__0__TenantId', value: initialTenantId }
+  { name: 'PracticeEmail__Practices__0__ReplyTo', value: practiceReplyTo }
+])
+
 // Shared registry config — Managed Identity pulls from ACR (no admin credentials)
 var registry = [
   {
@@ -215,7 +242,7 @@ resource portal 'Microsoft.App/containerApps@2024-03-01' = {
         { name: 'jwt-key', value: jwtKey }
         { name: 'google-oauth-client-secret', value: googleOAuthClientSecret }
         { name: 'cloudhealthoffice-api-key', value: cloudHealthOfficeApiKey }
-      ], choEligibilitySecrets, coverageIntakePortalSecrets)
+      ], choEligibilitySecrets, coverageIntakePortalSecrets, emailSecrets)
     }
     template: {
       containers: [
@@ -256,7 +283,7 @@ resource portal 'Microsoft.App/containerApps@2024-03-01' = {
             { name: 'CloudHealthOffice__ApiKey', secretRef: 'cloudhealthoffice-api-key' }
             { name: 'CloudHealthOffice__BenefitPlanMappings__${cloudHealthOfficePayerId}', value: cloudHealthOfficeBenefitPlanId }
             { name: 'PayerConnectivity__Payers__${cloudHealthOfficePayerId}__PaymentEstimate__0', value: 'CloudHealthOffice' }
-          ], choEligibilityEnv, stediEnv, coverageVerificationEnv, coverageIntakePortalEnv)
+          ], choEligibilityEnv, stediEnv, coverageVerificationEnv, coverageIntakePortalEnv, emailEnv)
           probes: [
             // Liveness has no database dependency, so a transient database outage
             // does not cause the platform to restart an otherwise-healthy process.

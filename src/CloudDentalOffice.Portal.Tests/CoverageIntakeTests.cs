@@ -68,6 +68,8 @@ public sealed partial class CoverageIntakeTests : IDisposable
 
         var message = Assert.Single(_sender.Messages);
         Assert.Equal("rowan@example.test", message.Recipient);
+        Assert.Equal("Sunrise Dental", message.PracticeName);
+        Assert.Equal("info@sunrise.test", message.ReplyTo);
         Assert.Contains("Sunrise Dental", message.Body);
         Assert.Contains("Saturday, October 10", message.Body);
         var request = await Request();
@@ -351,6 +353,7 @@ public sealed partial class CoverageIntakeTests : IDisposable
         services.AddSingleton<TimeProvider>(_clock);
         services.AddSingleton(Options.Create(_verification));
         services.AddSingleton(Options.Create(_intake));
+        services.AddSingleton(Options.Create(new PracticeEmailOptions { Practices = [new() { TenantId = Tenant, ReplyTo = "info@sunrise.test" }] }));
         services.AddScoped<IEligibilityVerificationService, EligibilityVerificationService>();
         services.AddScoped<ICoverageVerificationSweep, CoverageVerificationSweep>();
         services.AddScoped<ICoverageIntakeService, CoverageIntakeService>();

@@ -95,7 +95,8 @@ public sealed class ReviewOutreachScheduler(CloudDentalDbContext db, IReviewOutr
 }
 
 public enum ReviewOutreachSendDisposition { Sent, TransientFailure, PermanentFailure }
-public sealed record ReviewOutreachSendRequest(string Recipient, string PracticeName, Uri LandingPageUrl);
+public sealed record ReviewOutreachSendRequest(string Recipient, string PracticeName, Uri LandingPageUrl,
+    string? ReplyTo = null);
 public sealed record ReviewOutreachSendResult(ReviewOutreachSendDisposition Disposition, string? FailureReason = null);
 public interface IReviewOutreachSender
 {
@@ -132,11 +133,10 @@ public sealed class EmailReviewOutreachSender(IOptions<ReviewEmailOptions> optio
             string.IsNullOrWhiteSpace(settings.FromAddress)) return new(ReviewOutreachSendDisposition.PermanentFailure, "email_transport_not_configured");
         try
         {
-            using var message = new MailMessage(settings.FromAddress, request.Recipient)
-            {
-                Subject = $"Thanks for visiting {request.PracticeName}", IsBodyHtml = true,
-                Body = $"<p>Thanks for visiting us.</p><p>If you'd like to share your experience, we'd appreciate your feedback.</p><p><a href=\"{WebUtility.HtmlEncode(request.LandingPageUrl.AbsoluteUri)}\">Leave a Review</a></p>"
-            };
+            using var message = PracticeMail.Create(settings.FromAddress, request.PracticeName, request.Recipient,
+                request.ReplyTo, $"Thanks for visiting {request.PracticeName}",
+                $"<p>Thanks for visiting us.</p><p>If you'd like to share your experience, we'd appreciate your feedback.</p><p><a href=\"{WebUtility.HtmlEncode(request.LandingPageUrl.AbsoluteUri)}\">Leave a Review</a></p>",
+                isHtml: true);
             using var client = new SmtpClient(settings.Host, settings.Port) { EnableSsl = settings.EnableSsl };
             if (!string.IsNullOrWhiteSpace(settings.Username)) client.Credentials = new NetworkCredential(settings.Username, settings.Password);
             await client.SendMailAsync(message, cancellationToken);
@@ -166,7 +166,8 @@ public interface IReviewOutreachDispatcher { Task<int> DispatchBatchAsync(Cancel
 
 public sealed class ReviewOutreachDispatcher(CloudDentalDbContext db, IReviewOutreachEligibilityService eligibility,
     IEnumerable<IReviewOutreachSender> senders, IOptions<ReviewOutreachWorkerOptions> options,
-    TimeProvider timeProvider, ILogger<ReviewOutreachDispatcher> logger) : IReviewOutreachDispatcher
+    TimeProvider timeProvider, ILogger<ReviewOutreachDispatcher> logger,
+    IOptions<PracticeEmailOptions>? practiceEmail = null) : IReviewOutreachDispatcher
 {
     public async Task<int> DispatchBatchAsync(CancellationToken cancellationToken = default)
     {
@@ -202,7 +203,7 @@ public sealed class ReviewOutreachDispatcher(CloudDentalDbContext db, IReviewOut
             }
             var matchingSenders = senders.Where(x => x.Channel == row.Channel).Take(2).ToArray();
             var request = new ReviewOutreachSendRequest(row.RecipientEmail, revalidation.Settings!.SenderName,
-                new Uri(revalidation.Settings.ReviewLandingPageUrl!));
+                new Uri(revalidation.Settings.ReviewLandingPageUrl!), practiceEmail?.Value.ReplyToFor(row.TenantId));
             var result = matchingSenders.Length switch
             {
                 0 => new(ReviewOutreachSendDisposition.PermanentFailure, "sender_missing"),

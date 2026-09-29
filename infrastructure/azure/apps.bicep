@@ -135,6 +135,24 @@ param coverageIntakeLinkBaseUrl string = ''
 @description('Listen-only connection for the coverage-intake topic (rule portal-listen).')
 param coverageIntakeListenConnection string = ''
 
+@description('SMTP host for patient email (e.g. smtp.azurecomm.net). Empty leaves email off.')
+param emailSmtpHost string = ''
+
+param emailSmtpPort int = 587
+
+@description('SMTP user name (for Azure Communication Services, its SMTP username).')
+param emailSmtpUsername string = ''
+
+@secure()
+@description('SMTP password (for Azure Communication Services, the Entra app client secret).')
+param emailSmtpPassword string = ''
+
+@description('Platform sending address, e.g. no-reply@clouddental.io. Shown under the practice name.')
+param emailFromAddress string = ''
+
+@description('The initial practice\'s own address for patient replies, e.g. info@3rdsetsmiles.com.')
+param practiceReplyTo string = ''
+
 param jwtIssuer string = 'CloudDentalOffice'
 param jwtAudience string = 'CloudDentalOfficeUsers'
 
@@ -162,6 +180,12 @@ module apps 'container-apps.bicep' = {
     serviceBusListenConnection: serviceBusListenConnection
     coverageVerificationEnabled: coverageVerificationEnabled
     coverageIntakeEnabled: coverageIntakeEnabled
+    emailSmtpHost: emailSmtpHost
+    emailSmtpPort: emailSmtpPort
+    emailSmtpUsername: emailSmtpUsername
+    emailSmtpPassword: emailSmtpPassword
+    emailFromAddress: emailFromAddress
+    practiceReplyTo: practiceReplyTo
     coverageIntakeSigningKey: coverageIntakeSigningKey
     coverageIntakeLinkBaseUrl: coverageIntakeLinkBaseUrl
     coverageIntakeListenConnection: coverageIntakeListenConnection

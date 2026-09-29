@@ -390,6 +390,7 @@ builder.Services.AddScoped<ICoverageIntakeProcessor, CoverageIntakeProcessor>();
 builder.Services.AddHostedService<CoverageIntakeConsumer>();
 builder.Services.AddEventPublishing(builder.Configuration);
 builder.Services.Configure<ReviewEmailOptions>(builder.Configuration.GetSection(ReviewEmailOptions.SectionName));
+builder.Services.Configure<PracticeEmailOptions>(builder.Configuration.GetSection(PracticeEmailOptions.SectionName));
 builder.Services.Configure<ReviewOutreachWorkerOptions>(builder.Configuration.GetSection(ReviewOutreachWorkerOptions.SectionName));
 builder.Services.AddScoped<IReviewOutreachEligibilityService, ReviewOutreachEligibilityService>();
 builder.Services.AddScoped<IReviewOutreachScheduler, ReviewOutreachScheduler>();
