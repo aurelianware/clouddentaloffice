@@ -40,23 +40,21 @@ public static class InternalPatientApi
     public static void UseInternalPortIsolation(this WebApplication app)
     {
         var port = Port(app.Configuration);
-        app.Use(async (context, next) =>
+        app.Use((context, next) => IsolateInternalPort(context, port, next));
+    }
+
+    public static Task IsolateInternalPort(HttpContext context, int port, RequestDelegate next)
+    {
+        if (context.Connection.LocalPort != port) return next(context);
+
+context.Request.Headers.Remove(ContainerAppsStaffIdentity.PrincipalHeader);
+        if (!context.Request.Path.Equals(MatchOrCreatePath, StringComparison.OrdinalIgnoreCase))
         {
-            if (context.Connection.LocalPort != port)
-            {
-                await next(context);
-                return;
-            }
+            context.Response.StatusCode = StatusCodes.Status404NotFound;
+            return Task.CompletedTask;
+        }
 
-            context.Request.Headers.Remove(ContainerAppsStaffIdentity.PrincipalHeader);
-            if (!context.Request.Path.Equals(MatchOrCreatePath, StringComparison.OrdinalIgnoreCase))
-            {
-                context.Response.StatusCode = StatusCodes.Status404NotFound;
-                return;
-            }
-
-            await next(context);
-        });
+        return next(context);
     }
 
     public static void MapInternalPatientApi(this WebApplication app)
