@@ -14,6 +14,8 @@ public interface IStripeRefundWebhookProcessor
 public sealed class StripeRefundWebhookProcessor(CloudDentalDbContext db, TimeProvider clock,
     StripePaymentMetrics metrics, ILogger<StripeRefundWebhookProcessor> logger) : IStripeRefundWebhookProcessor
 {
+    private const string SucceededAfterFailure = "refund-succeeded-after-failure";
+
     public async Task ProcessAsync(StripeRefundWebhookEvent webhook, CancellationToken cancellationToken = default)
     {
         Validate(webhook);
@@ -61,8 +63,20 @@ public sealed class StripeRefundWebhookProcessor(CloudDentalDbContext db, TimePr
         refund.ExternalRefundId ??= webhook.ExternalRefundId;
         if (webhook.EventType == "refund.failed" || webhook.RefundStatus is "failed" or "canceled")
         {
-            refund.Status = PatientRefundStatus.Failed;
-            refund.FailureCode = "stripe-refund-failed";
+            if (refund.LedgerEntryId is { } refundEntryId && refund.Status != PatientRefundStatus.Reversed)
+            {
+                // Stripe can fail a refund after it succeeded (for example, the card issuer rejects it).
+                // The refund credit was already posted, so reverse it rather than leaving a refund that
+                // never reached the patient on the ledger and outside the refund cap.
+                await ReverseRefundEntryAsync(refund, refundEntryId, now, cancellationToken);
+                refund.Status = PatientRefundStatus.Reversed;
+                refund.FailureCode = "stripe-refund-failed-after-success";
+            }
+            else if (refund.Status != PatientRefundStatus.Reversed)
+            {
+                refund.Status = PatientRefundStatus.Failed;
+                refund.FailureCode = "stripe-refund-failed";
+            }
             processorEvent.Status = PaymentProcessorEventStatus.Processed;
             processorEvent.ProcessedAt = now;
             await db.SaveChangesAsync(cancellationToken);
@@ -73,7 +87,27 @@ public sealed class StripeRefundWebhookProcessor(CloudDentalDbContext db, TimePr
 
         if (webhook.RefundStatus != "succeeded")
         {
-            refund.Status = PatientRefundStatus.Pending;
+            // Stripe delivers events out of order; a late pending event never moves a finished refund back.
+            if (refund.Status is not (PatientRefundStatus.Succeeded or PatientRefundStatus.Failed or PatientRefundStatus.Reversed))
+                refund.Status = PatientRefundStatus.Pending;
+            processorEvent.Status = PaymentProcessorEventStatus.Processed;
+            processorEvent.ProcessedAt = now;
+            await db.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+            return;
+        }
+
+        if (refund.Status is PatientRefundStatus.Failed or PatientRefundStatus.Reversed ||
+            (refund.Status == PatientRefundStatus.ReviewRequired && refund.FailureCode == SucceededAfterFailure))
+        {
+            // A failed refund is final at Stripe, so a succeeded event after it is stale. Reversed refunds
+            // stay reversed; a Failed one goes to review, and stays there for any later succeeded events,
+            // rather than posting a credit on stale data.
+            if (refund.Status == PatientRefundStatus.Failed)
+            {
+                refund.Status = PatientRefundStatus.ReviewRequired;
+                refund.FailureCode = SucceededAfterFailure;
+            }
             processorEvent.Status = PaymentProcessorEventStatus.Processed;
             processorEvent.ProcessedAt = now;
             await db.SaveChangesAsync(cancellationToken);
@@ -121,6 +155,27 @@ public sealed class StripeRefundWebhookProcessor(CloudDentalDbContext db, TimePr
         if (byExternal is not null) return byExternal;
         return string.IsNullOrWhiteSpace(webhook.RefundReference) ? null : await query.SingleOrDefaultAsync(x =>
             x.InternalRefundReference == webhook.RefundReference, cancellationToken);
+    }
+
+    private async Task ReverseRefundEntryAsync(PatientRefund refund, Guid refundEntryId, DateTime now,
+        CancellationToken cancellationToken)
+    {
+        var original = await db.PatientLedgerEntries.IgnoreQueryFilters().SingleAsync(x =>
+            x.TenantId == refund.TenantId && x.LedgerEntryId == refundEntryId, cancellationToken);
+        db.PatientLedgerEntries.Add(new PatientLedgerEntry
+        {
+            LedgerEntryId = Guid.NewGuid(), TenantId = original.TenantId, PatientAccountId = original.PatientAccountId,
+            EntryType = original.EntryType, Amount = -original.Amount, Currency = original.Currency, EffectiveDate = now,
+            SourceType = PatientLedgerSourceType.SystemReversal, SourceId = refund.RefundId.ToString("N"),
+            DescriptionCode = "refund-reversal", CreatedAt = now, CreatedBy = "processor:Stripe",
+            ReversalOfEntryId = original.LedgerEntryId
+        });
+        db.FinancialAuditEvents.Add(new FinancialAuditEvent
+        {
+            Id = Guid.NewGuid(), TenantId = refund.TenantId, Action = "RefundReversed",
+            EntityType = nameof(PatientRefund), EntityId = refund.RefundId.ToString("N"),
+            Actor = "processor:Stripe", ReasonCode = "stripe-refund-failed-after-success", CreatedAt = now
+        });
     }
 
     private async Task ReverseAllocationsAsync(PatientPayment payment, decimal refundAmount, DateTime now,
