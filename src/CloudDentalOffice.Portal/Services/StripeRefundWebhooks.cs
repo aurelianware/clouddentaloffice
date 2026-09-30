@@ -14,6 +14,8 @@ public interface IStripeRefundWebhookProcessor
 public sealed class StripeRefundWebhookProcessor(CloudDentalDbContext db, TimeProvider clock,
     StripePaymentMetrics metrics, ILogger<StripeRefundWebhookProcessor> logger) : IStripeRefundWebhookProcessor
 {
+    private const string SucceededAfterFailure = "refund-succeeded-after-failure";
+
     public async Task ProcessAsync(StripeRefundWebhookEvent webhook, CancellationToken cancellationToken = default)
     {
         Validate(webhook);
@@ -95,14 +97,16 @@ public sealed class StripeRefundWebhookProcessor(CloudDentalDbContext db, TimePr
             return;
         }
 
-        if (refund.Status is PatientRefundStatus.Failed or PatientRefundStatus.Reversed)
+        if (refund.Status is PatientRefundStatus.Failed or PatientRefundStatus.Reversed ||
+            (refund.Status == PatientRefundStatus.ReviewRequired && refund.FailureCode == SucceededAfterFailure))
         {
             // A failed refund is final at Stripe, so a succeeded event after it is stale. Reversed refunds
-            // stay reversed; a Failed one goes to review rather than posting a credit on stale data.
+            // stay reversed; a Failed one goes to review, and stays there for any later succeeded events,
+            // rather than posting a credit on stale data.
             if (refund.Status == PatientRefundStatus.Failed)
             {
                 refund.Status = PatientRefundStatus.ReviewRequired;
-                refund.FailureCode = "refund-succeeded-after-failure";
+                refund.FailureCode = SucceededAfterFailure;
             }
             processorEvent.Status = PaymentProcessorEventStatus.Processed;
             processorEvent.ProcessedAt = now;

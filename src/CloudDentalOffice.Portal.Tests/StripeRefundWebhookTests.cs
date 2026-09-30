@@ -138,6 +138,7 @@ public sealed class StripeRefundWebhookTests : IDisposable
     {
         await Service().ProcessAsync(Event() with { ExternalEventId = "evt_failed", EventType = "refund.failed", RefundStatus = "failed" });
         await Service().ProcessAsync(Event() with { ExternalEventId = "evt_late_succeeded" });
+        await Service().ProcessAsync(Event() with { ExternalEventId = "evt_late_succeeded_again" });
         var refund = await _db.PatientRefunds.IgnoreQueryFilters().SingleAsync();
         Assert.Equal(PatientRefundStatus.ReviewRequired, refund.Status);
         Assert.Equal("refund-succeeded-after-failure", refund.FailureCode);
