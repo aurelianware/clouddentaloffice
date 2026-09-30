@@ -33,6 +33,9 @@ public interface IStripeApiClient
         string accountId, Uri refreshUrl, Uri returnUrl, CancellationToken cancellationToken = default);
     Task<StripeCheckoutSessionSnapshot> CreateCheckoutSessionAsync(PaymentProcessorConfiguration configuration,
         string connectedAccountId, PaymentRequest request, CancellationToken cancellationToken = default);
+    /// <summary>Expires an open Checkout Session and returns its resulting status: expired, or complete if already paid.</summary>
+    Task<string> ExpireCheckoutSessionAsync(PaymentProcessorConfiguration configuration,
+        string connectedAccountId, string checkoutSessionId, CancellationToken cancellationToken = default);
     Task<StripeRefundSnapshot> CreateRefundAsync(PaymentProcessorConfiguration configuration,
         string connectedAccountId, PaymentRefundRequest request, string externalPaymentId,
         CancellationToken cancellationToken = default);
@@ -183,6 +186,24 @@ public sealed class StripeApiClient(HttpClient httpClient, IStripeCredentialProv
             !Uri.TryCreate(dto.Url, UriKind.Absolute, out var checkoutUrl) || checkoutUrl.Scheme != Uri.UriSchemeHttps)
             throw new StripeConnectException("Stripe returned an invalid Checkout Session.");
         return new(dto.Id, dto.PaymentIntentId, checkoutUrl, ParseTimestamp(dto.ExpiresAt));
+    }
+
+    public async Task<string> ExpireCheckoutSessionAsync(PaymentProcessorConfiguration config,
+        string connectedAccountId, string checkoutSessionId, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(checkoutSessionId) || checkoutSessionId.Length > 128 ||
+            !checkoutSessionId.StartsWith("cs_", StringComparison.Ordinal))
+            throw new ArgumentException("A valid Stripe Checkout Session ID is required.", nameof(checkoutSessionId));
+        var path = $"/v1/checkout/sessions/{Uri.EscapeDataString(checkoutSessionId)}";
+        using (var expired = await SendV1Async(config, connectedAccountId, HttpMethod.Post, path + "/expire", null, null,
+                   cancellationToken, false))
+        {
+            if (expired.IsSuccessStatusCode)
+                return (await ReadAsync<StripeCheckoutSessionStatusDto>(expired, cancellationToken)).Status;
+        }
+        // Stripe refuses to expire a session that is no longer open, so report the state it is actually in.
+        using var current = await SendV1Async(config, connectedAccountId, HttpMethod.Get, path, null, null, cancellationToken);
+        return (await ReadAsync<StripeCheckoutSessionStatusDto>(current, cancellationToken)).Status;
     }
 
     public async Task<StripeRefundSnapshot> CreateRefundAsync(PaymentProcessorConfiguration config,
@@ -463,6 +484,7 @@ internal sealed record StripeCheckoutSessionDto(
     [property: JsonPropertyName("payment_intent")] string? PaymentIntentId,
     [property: JsonPropertyName("url")] string Url,
     [property: JsonPropertyName("expires_at")] JsonElement ExpiresAt);
+internal sealed record StripeCheckoutSessionStatusDto([property: JsonPropertyName("status")] string Status);
 internal interface IStripeListItem { string Id { get; } }
 internal sealed record StripePaymentIntentDto(
     [property: JsonPropertyName("id")] string Id,
@@ -520,5 +542,18 @@ public sealed class StripePaymentProcessor(IStripeApiClient api) : IPaymentProce
             request, externalPaymentId, cancellationToken);
         var status = result.Status == "failed" ? PaymentStatus.Failed : PaymentStatus.Pending;
         return new(request.InternalRefundReference, result.Id, status);
+    }
+    public async Task<PaymentSessionClosure> ExpireSessionAsync(PaymentProcessorConfiguration configuration,
+        string externalSessionId, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(configuration.ConnectedMerchantReference))
+            throw new PaymentProcessorUnavailableException("The practice Stripe account is not configured.");
+        return await api.ExpireCheckoutSessionAsync(configuration, configuration.ConnectedMerchantReference,
+                externalSessionId, cancellationToken) switch
+        {
+            "expired" => PaymentSessionClosure.Expired,
+            "complete" => PaymentSessionClosure.Completed,
+            _ => throw new StripeConnectException("Stripe did not close the Checkout Session.")
+        };
     }
 }

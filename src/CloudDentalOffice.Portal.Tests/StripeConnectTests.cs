@@ -242,6 +242,9 @@ public sealed class StripeConnectTests : IDisposable
         public Task<StripeCheckoutSessionSnapshot> CreateCheckoutSessionAsync(PaymentProcessorConfiguration configuration,
             string connectedAccountId, PaymentRequest request, CancellationToken cancellationToken = default) =>
             throw new NotSupportedException();
+        public Task<string> ExpireCheckoutSessionAsync(PaymentProcessorConfiguration configuration,
+            string connectedAccountId, string checkoutSessionId, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
         public Task<StripeRefundSnapshot> CreateRefundAsync(PaymentProcessorConfiguration configuration,
             string connectedAccountId, PaymentRefundRequest request, string externalPaymentId,
             CancellationToken cancellationToken = default) => throw new NotSupportedException();
