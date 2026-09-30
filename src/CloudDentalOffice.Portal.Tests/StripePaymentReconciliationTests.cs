@@ -89,5 +89,7 @@ public sealed class StripePaymentReconciliationTests : IDisposable
             string a, PaymentRequest r, CancellationToken ct = default) => throw new NotSupportedException();
         public Task<StripeRefundSnapshot> CreateRefundAsync(PaymentProcessorConfiguration c, string a,
             PaymentRefundRequest r, string p, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<string> ExpireCheckoutSessionAsync(PaymentProcessorConfiguration c, string a, string s,
+            CancellationToken ct = default) => throw new NotSupportedException();
     }
 }

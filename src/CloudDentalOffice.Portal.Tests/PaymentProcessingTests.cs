@@ -299,5 +299,10 @@ public sealed class PaymentProcessingTests : IDisposable
             if (RefundFailure is not null) throw RefundFailure;
             return Task.FromResult(new PaymentRefundResult(request.InternalRefundReference, "refund-1", PaymentStatus.Pending));
         }
+        public Task<PaymentSessionClosure> ExpireSessionAsync(PaymentProcessorConfiguration configuration,
+            string externalSessionId, CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult(PaymentSessionClosure.Expired);
+        }
     }
 }
