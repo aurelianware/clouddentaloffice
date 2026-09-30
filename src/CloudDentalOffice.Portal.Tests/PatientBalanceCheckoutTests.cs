@@ -200,15 +200,18 @@ public sealed class PatientBalanceCheckoutTests : IDisposable
     }
 
     [Fact]
-    public async Task Links_older_than_a_day_are_not_expired_again()
+    public async Task Unresolved_links_are_closed_however_old_they_are_and_only_once()
     {
         await SeedBalance(500m);
         await Service().CreateAsync(Request(PatientPaymentSelection.FullBalance));
+        // Our clock is not Stripe's: a link created "25 hours ago" here may still be open there.
         await _db.PatientPaymentAttempts.ExecuteUpdateAsync(x => x.SetProperty(a => a.CreatedAt, DateTime.UtcNow.AddHours(-25)));
+        _db.ChangeTracker.Clear();
 
         await Service().CreateAsync(Request(PatientPaymentSelection.FullBalance));
+        await Service().CreateAsync(Request(PatientPaymentSelection.FullBalance));
 
-        Assert.Empty(_checkout.Expired);
+        Assert.Equal(["cs_1", "cs_2"], _checkout.Expired);
     }
 
     [Fact]

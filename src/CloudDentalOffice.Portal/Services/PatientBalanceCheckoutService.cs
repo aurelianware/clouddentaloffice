@@ -126,15 +126,16 @@ public sealed class PatientBalanceCheckoutService(CloudDentalDbContext db, IPaym
     /// Each open link charges the amount it was created for, and the balance only counts payments
     /// that have completed, so two open links could each collect the whole balance. A new link
     /// therefore closes the account's earlier open links first. If one of them was already paid,
-    /// no new link is created until that payment posts.
+    /// no new link is created until that payment posts. Every unresolved link is checked, however
+    /// old: Stripe decides when a session lapses, and one that already has is simply confirmed
+    /// expired and closed here once.
     /// </summary>
     private async Task SupersedeOpenLinksAsync(string tenantId, Guid accountId, DateTime now,
         CancellationToken cancellationToken)
     {
-        var openSince = now - CheckoutSessionLifetime;
         var open = await db.PatientPaymentAttempts.IgnoreQueryFilters().Where(x => x.TenantId == tenantId &&
                 x.PatientAccountId == accountId && x.Status == PatientPaymentAttemptStatus.SessionCreated &&
-                x.StripeCheckoutSessionId != null && x.CreatedAt > openSince)
+                x.StripeCheckoutSessionId != null)
             .ToListAsync(cancellationToken);
         foreach (var attempt in open)
         {
@@ -157,9 +158,6 @@ public sealed class PatientBalanceCheckoutService(CloudDentalDbContext db, IPaym
             await db.SaveChangesAsync(cancellationToken);
         }
     }
-
-    /// <summary>Stripe Checkout Sessions stay open for 24 hours unless an expiry is set, and none is set here.</summary>
-    private static readonly TimeSpan CheckoutSessionLifetime = TimeSpan.FromHours(24);
 
     private static void ValidateSelectionFields(PatientBalanceCheckoutRequest request)
     {
