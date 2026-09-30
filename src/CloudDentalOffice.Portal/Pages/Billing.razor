@@ -6,6 +6,7 @@
 @inject IPatientService PatientService
 @inject AuthenticationStateProvider AuthenticationState
 @inject ISnackbar Snackbar
+@inject IJSRuntime JS
 
 <PageTitle>Patient Billing & Payments</PageTitle>
 <MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-4">
@@ -54,6 +55,43 @@
                 <MudTable Items="_account.Statements" Dense="true"><HeaderContent><MudTh>Date</MudTh><MudTh>Due</MudTh><MudTh>Status</MudTh><MudTh>Amount due</MudTh><MudTh></MudTh></HeaderContent><RowTemplate><MudTd>@context.StatementDate.ToString("d")</MudTd><MudTd>@context.DueDate.ToString("d")</MudTd><MudTd>@context.Status</MudTd><MudTd>@Money(context.AmountDue, context.Currency)</MudTd><MudTd>@if (context.Status == PatientStatementStatus.Ready && Can(BillingPermissions.Adjust)){<MudButton Size="Size.Small" OnClick="@(() => SendStatement(context.StatementId))">Send</MudButton>}</MudTd></RowTemplate></MudTable>
             </MudTabPanel>
             <MudTabPanel Text="Payments">
+                @if (Can(BillingPermissions.PostPayment))
+                {
+                    <MudText Typo="Typo.h6">Online payment link</MudText>
+                    <MudText Typo="Typo.caption">Creates a secure Stripe payment page for this practice. Send the link to the patient by email or text. The balance changes only after Stripe confirms the payment.</MudText>
+                    <MudStack Row="true" AlignItems="AlignItems.End" Class="mt-2 mb-2" Spacing="2">
+                        <MudSelect T="PatientPaymentSelection" @bind-Value="_linkSelection" Label="Amount" Variant="Variant.Outlined">
+                            <MudSelectItem Value="PatientPaymentSelection.FullBalance">Full balance</MudSelectItem>
+                            <MudSelectItem Value="PatientPaymentSelection.StatementBalance">Statement balance</MudSelectItem>
+                            <MudSelectItem Value="PatientPaymentSelection.Partial">Partial amount</MudSelectItem>
+                        </MudSelect>
+                        @if (_linkSelection == PatientPaymentSelection.StatementBalance)
+                        {
+                            <MudSelect T="Guid?" @bind-Value="_linkStatementId" Label="Statement" Variant="Variant.Outlined">
+                                @foreach (var statement in PayableStatements())
+                                {
+                                    <MudSelectItem T="Guid?" Value="@statement.StatementId">@statement.StatementDate.ToString("d") · @Money(statement.AmountDue, statement.Currency)</MudSelectItem>
+                                }
+                            </MudSelect>
+                        }
+                        @if (_linkSelection == PatientPaymentSelection.Partial)
+                        {
+                            <MudNumericField T="decimal" @bind-Value="_linkAmount" Label="Amount" Min="0.01m" Variant="Variant.Outlined" />
+                        }
+                        <MudButton OnClick="CreatePaymentLink" Disabled="_busy" Variant="Variant.Filled" Color="Color.Primary">Create payment link</MudButton>
+                    </MudStack>
+                    @if (_paymentLink is not null)
+                    {
+                        <MudAlert Severity="Severity.Success" Variant="Variant.Outlined" Class="mb-4">
+                            <MudText>Payment link for @Money(_paymentLink.Amount.Amount, _paymentLink.Amount.Currency)@(_paymentLink.ExpiresAt is { } expires ? $", expires {expires.ToLocalTime():g}" : "").</MudText>
+                            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="mt-2">
+                                <MudTextField T="string" Value="@_paymentLink.CheckoutUrl.AbsoluteUri" ReadOnly="true" Variant="Variant.Outlined" Label="Payment link" Style="flex: 1 1 30rem;" />
+                                <MudButton OnClick="CopyPaymentLink" Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.ContentCopy">Copy link</MudButton>
+                            </MudStack>
+                        </MudAlert>
+                    }
+                    <MudDivider Class="my-4" />
+                }
                 @if (Can(BillingPermissions.PostPayment)){<MudStack Row="true" AlignItems="AlignItems.End" Class="mb-3" Spacing="2"><MudSelect T="PatientPaymentMethod" @bind-Value="_method" Label="Method" Variant="Variant.Outlined"><MudSelectItem Value="PatientPaymentMethod.Cash">Cash</MudSelectItem><MudSelectItem Value="PatientPaymentMethod.Check">Check</MudSelectItem><MudSelectItem Value="PatientPaymentMethod.External">External</MudSelectItem></MudSelect><MudNumericField T="decimal" @bind-Value="_paymentAmount" Label="Amount" Min="0.01m" Variant="Variant.Outlined" /><MudTextField @bind-Value="_reference" Label="Receipt/check reference" Variant="Variant.Outlined" /><MudButton OnClick="RecordPayment" Variant="Variant.Filled" Color="Color.Success">Record payment</MudButton></MudStack>}
                 <MudTable Items="_account.Payments" Dense="true" Breakpoint="Breakpoint.Sm"><HeaderContent><MudTh>Date</MudTh><MudTh>Amount</MudTh><MudTh>Method</MudTh><MudTh>Processor</MudTh><MudTh>Status</MudTh><MudTh>Reference</MudTh><MudTh>Payment ID</MudTh><MudTh>Allocation</MudTh><MudTh>Active allocation IDs</MudTh><MudTh>Refund</MudTh><MudTh></MudTh></HeaderContent><RowTemplate><MudTd>@context.PaymentDate.ToString("g")</MudTd><MudTd>@Money(context.Amount, context.Currency)</MudTd><MudTd>@context.Method</MudTd><MudTd>@context.Processor</MudTd><MudTd>@context.Status</MudTd><MudTd>@context.SafeReference</MudTd><MudTd>@context.PaymentId</MudTd><MudTd>@Money(context.Allocated, context.Currency) / @Money(context.Amount, context.Currency)</MudTd><MudTd>@string.Join(", ", context.Allocations.Where(x => !x.UnappliedAt.HasValue).Select(x => x.PaymentAllocationId))</MudTd><MudTd>@context.RefundStatus</MudTd><MudTd>@if (context.CanReverse && Can(BillingPermissions.Adjust)){<MudButton Size="Size.Small" Color="Color.Error" OnClick="@(() => ReversePayment(context.PaymentId))">Reverse</MudButton>}</MudTd></RowTemplate></MudTable>
                 @if (Can(BillingPermissions.Refund)){<MudDivider Class="my-4" /><MudText Typo="Typo.h6">Request Stripe refund</MudText><MudStack Row="true" AlignItems="AlignItems.End"><MudTextField @bind-Value="_refundPayment" Label="Payment ID" /><MudNumericField T="decimal" @bind-Value="_refundAmount" Label="Amount" Min="0.01m" /><MudTextField @bind-Value="_refundReason" Label="Reason" /><MudButton OnClick="RequestRefund" Color="Color.Warning">Request refund</MudButton></MudStack><MudText Typo="Typo.caption">The balance changes only after Stripe confirms the refund by signed webhook.</MudText>}
@@ -68,6 +106,7 @@
     private const int PatientSearchResultLimit = 20;
     private ClaimsPrincipal _user = new(new ClaimsIdentity()); private StaffBillingDashboard? _dashboard; private StaffPatientBillingAccount? _account; private List<Patient> _patients = new(); private Patient? _selectedPatient; private int _patientId; private bool _busy;
     private decimal _paymentAmount, _adjustmentAmount, _allocationAmount, _refundAmount; private string _reference = "", _reason = "", _allocationPayment = "", _allocationLedger = "", _allocationId = "", _unapplyReason = "", _refundPayment = "", _refundReason = "requested_by_customer"; private StripeReconciliationSummary? _reconciliation;
+    private PatientPaymentSelection _linkSelection = PatientPaymentSelection.FullBalance; private Guid? _linkStatementId; private decimal _linkAmount; private PatientBalanceCheckoutResult? _paymentLink;
     private PatientPaymentMethod _method = PatientPaymentMethod.Cash; private PatientLedgerEntryType _adjustmentType = PatientLedgerEntryType.Credit; private DateTime? _dueDate = DateTime.Today.AddDays(30);
     protected override async Task OnInitializedAsync()
     {
@@ -112,9 +151,20 @@
         _selectedPatient = patient;
         _patientId = patient?.PatientId ?? 0;
         _account = null;
+        _paymentLink = null;
         return Task.CompletedTask;
     }
-    private async Task LoadAccount()=>await Run(async()=>_account=await BillingAdminService.GetAccountAsync(_user,_patientId));
+    private async Task LoadAccount()=>await Run(async()=>{_paymentLink=null;_account=await BillingAdminService.GetAccountAsync(_user,_patientId);});
+    private IEnumerable<PatientStatement> PayableStatements()=>_account?.Statements.Where(x=>x.Status is PatientStatementStatus.Ready or PatientStatementStatus.Sent or PatientStatementStatus.PartiallyPaid)??Enumerable.Empty<PatientStatement>();
+    private async Task CreatePaymentLink()=>await Run(async()=>_paymentLink=await BillingAdminService.CreatePaymentLinkAsync(_user,_patientId,_linkSelection,
+        _linkSelection==PatientPaymentSelection.StatementBalance?_linkStatementId??throw new ArgumentException("Choose a statement."):null,
+        _linkSelection==PatientPaymentSelection.Partial?new Money(_linkAmount):null));
+    private async Task CopyPaymentLink()
+    {
+        if (_paymentLink is null) return;
+        try { await JS.InvokeVoidAsync("navigator.clipboard.writeText", _paymentLink.CheckoutUrl.AbsoluteUri); Snackbar.Add("Payment link copied.", Severity.Success); }
+        catch (Exception) { Snackbar.Add("Couldn't copy automatically. Select the link and copy it.", Severity.Warning); }
+    }
     private async Task RecordPayment()=>await Run(async()=>{await BillingAdminService.RecordPaymentAsync(_user,new(_patientId,new Money(_paymentAmount),_method,_reference,DateTime.UtcNow));await Reload();});
     private async Task PostAdjustment()=>await Run(async()=>{await BillingAdminService.PostAdjustmentAsync(_user,new(_patientId,new Money(_adjustmentAmount),_adjustmentType,_reason,DateTime.UtcNow));await Reload();});
     private async Task ReversePayment(Guid id)=>await Run(async()=>{await BillingAdminService.ReverseManualPaymentAsync(_user,id,string.IsNullOrWhiteSpace(_reason)?"staff-correction":_reason);await Reload();});

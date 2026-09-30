@@ -1,0 +1,43 @@
+@page "/payments/success"
+@page "/payments/cancel"
+@attribute [AllowAnonymous]
+@inject NavigationManager Navigation
+
+@* Stripe Checkout returns patients here after a hosted payment. The page is public because
+   staff-sent payment links are opened by patients who are not signed in. It shows only neutral
+   text: the session_id Stripe appends is ignored, and the redirect is never treated as proof of
+   payment. The payment posts only when Stripe's signed webhook confirms it. *@
+
+<PageTitle>@(_canceled ? "Payment canceled" : "Payment submitted") - Cloud Dental Office</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Small" Class="mt-16">
+    <MudPaper Elevation="3" Class="pa-8" role="status">
+        @if (_canceled)
+        {
+            <MudText Typo="Typo.h5" Class="mb-4">Payment canceled</MudText>
+            <MudText Class="mb-2">No payment was made.</MudText>
+            <MudText>If you still want to pay, open the payment link again while it's valid, or contact the practice for a new one.</MudText>
+        }
+        else
+        {
+            <MudText Typo="Typo.h5" Class="mb-4">Thank you. Your payment was submitted.</MudText>
+            <MudText Class="mb-2">The practice's payment processor is confirming it now. Your account balance updates once the payment is confirmed.</MudText>
+            <MudText>You can close this page.</MudText>
+        }
+        <AuthorizeView Roles="Patient">
+            <Authorized>
+                <MudButton Href="/patient/billing" Variant="Variant.Filled" Color="Color.Primary" Class="mt-6">View your billing</MudButton>
+            </Authorized>
+        </AuthorizeView>
+    </MudPaper>
+</MudContainer>
+
+@code {
+    private bool _canceled;
+
+    protected override void OnInitialized()
+    {
+        var path = new Uri(Navigation.Uri).AbsolutePath;
+        _canceled = path.EndsWith("/cancel", StringComparison.OrdinalIgnoreCase);
+    }
+}
