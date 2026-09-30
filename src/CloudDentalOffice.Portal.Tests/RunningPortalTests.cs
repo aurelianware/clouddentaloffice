@@ -76,6 +76,33 @@ public sealed class RunningPortalTests(RunningPortalFixture portal) : IClassFixt
         Assert.Equal(HttpStatusCode.OK, valid.StatusCode);
     }
 
+    [Fact]
+    public async Task Internal_socket_serves_nothing_but_the_internal_endpoint_even_with_a_staff_principal()
+    {
+        using var http = new HttpClient();
+
+        async Task<HttpStatusCode> Get(Uri baseUri, string path, bool withPrincipal)
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Get, new Uri(baseUri, path));
+            if (withPrincipal) request.Headers.Add(ContainerAppsStaffIdentity.PrincipalHeader, RunningPortalFixture.EasyAuthPrincipal);
+            return (await http.SendAsync(request)).StatusCode;
+        }
+
+        // Control: the forged-looking principal is a real allowlisted staff identity, accepted on the public socket.
+        Assert.Equal(HttpStatusCode.OK, await Get(portal.PublicUrl, "/api/patient-statements", withPrincipal: true));
+
+        // Another workload in the environment reaching the internal port directly with the same header.
+        Assert.Equal(HttpStatusCode.NotFound, await Get(portal.InternalUrl, "/api/patient-statements", withPrincipal: true));
+        Assert.Equal(HttpStatusCode.NotFound, await Get(portal.InternalUrl, "/", withPrincipal: true));
+        Assert.Equal(HttpStatusCode.NotFound, await Get(portal.InternalUrl, "/health/live", withPrincipal: false));
+
+        // The internal endpoint still works when a caller also sends the principal header; it is ignored.
+        var valid = MatchRequest(new Uri(portal.InternalUrl,
+            $"{InternalPatientApi.MatchOrCreatePath}?tenantId={RunningPortalFixture.TenantId}"), RunningPortalFixture.ServiceKey);
+        valid.Headers.Add(ContainerAppsStaffIdentity.PrincipalHeader, RunningPortalFixture.EasyAuthPrincipal);
+        Assert.Equal(HttpStatusCode.OK, (await http.SendAsync(valid)).StatusCode);
+    }
+
     private static HttpRequestMessage MatchRequest(Uri uri, string key)
     {
         var request = new HttpRequestMessage(HttpMethod.Post, uri)

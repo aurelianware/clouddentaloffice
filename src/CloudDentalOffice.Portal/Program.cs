@@ -605,6 +605,8 @@ using (var scope = app.Services.CreateScope())
 }
 
 // Configure the HTTP request pipeline.
+app.UseInternalPortIsolation();
+
 if (!app.Environment.IsDevelopment())
 {
     app.UseExceptionHandler("/Error");
