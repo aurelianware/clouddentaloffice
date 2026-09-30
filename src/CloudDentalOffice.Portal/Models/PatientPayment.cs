@@ -11,7 +11,8 @@ public enum PaymentProcessorEventStatus { Received, Processed, Failed, Conflict 
 public enum PaymentProcessorOnboardingStatus { NotStarted, Pending, Enabled, Restricted, Disabled }
 public enum PatientPaymentSelection { FullBalance, StatementBalance, Partial }
 public enum PatientPaymentAttemptStatus { Pending, SessionCreated, Failed, Completed, Cancelled, ReviewRequired }
-public enum PatientRefundStatus { Requested, Pending, Succeeded, Failed, ReviewRequired }
+/// <summary>Reversed: the refund succeeded and was posted, then Stripe reported it failed, so its ledger credit was reversed.</summary>
+public enum PatientRefundStatus { Requested, Pending, Succeeded, Failed, ReviewRequired, Reversed }
 public enum PaymentReconciliationIssueType
 {
     MissingStripePayment, UnknownStripePayment, AmountMismatch, CurrencyMismatch,

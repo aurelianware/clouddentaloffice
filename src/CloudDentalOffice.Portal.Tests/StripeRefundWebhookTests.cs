@@ -99,6 +99,52 @@ public sealed class StripeRefundWebhookTests : IDisposable
             .Where(x => !x.UnappliedAt.HasValue).Select(x => x.Amount).ToListAsync()).Sum());
     }
 
+    [Fact]
+    public async Task Refund_that_fails_after_succeeding_reverses_its_ledger_credit_once()
+    {
+        await Service().ProcessAsync(Event());
+        await Service().ProcessAsync(Event() with { ExternalEventId = "evt_failed", EventType = "refund.failed", RefundStatus = "failed" });
+        await Service().ProcessAsync(Event() with { ExternalEventId = "evt_failed_again", EventType = "refund.updated", RefundStatus = "failed" });
+
+        var refund = await _db.PatientRefunds.IgnoreQueryFilters().SingleAsync();
+        Assert.Equal(PatientRefundStatus.Reversed, refund.Status);
+        var refundEntries = await _db.PatientLedgerEntries.IgnoreQueryFilters()
+            .Where(x => x.EntryType == PatientLedgerEntryType.Refund).ToListAsync();
+        Assert.Equal(2, refundEntries.Count);
+        Assert.Equal(0m, refundEntries.Sum(x => x.Amount));
+        Assert.Contains(refundEntries, x => x.ReversalOfEntryId == refund.LedgerEntryId);
+        Assert.Equal(0m, PatientAccountService.Calculate(await _db.PatientLedgerEntries.IgnoreQueryFilters()
+            .ToListAsync()).AmountDue);
+        Assert.Single(await _db.FinancialAuditEvents.IgnoreQueryFilters()
+            .Where(x => x.Action == "RefundReversed").ToListAsync());
+
+        // A stale succeeded event does not post the credit again.
+        await Service().ProcessAsync(Event() with { ExternalEventId = "evt_stale_succeeded" });
+        Assert.Equal(PatientRefundStatus.Reversed, (await _db.PatientRefunds.IgnoreQueryFilters().SingleAsync()).Status);
+        Assert.Equal(2, await _db.PatientLedgerEntries.IgnoreQueryFilters()
+            .CountAsync(x => x.EntryType == PatientLedgerEntryType.Refund));
+    }
+
+    [Fact]
+    public async Task Late_pending_event_does_not_move_a_succeeded_refund_back()
+    {
+        await Service().ProcessAsync(Event());
+        await Service().ProcessAsync(Event() with { ExternalEventId = "evt_created", EventType = "refund.created", RefundStatus = "pending" });
+        Assert.Equal(PatientRefundStatus.Succeeded, (await _db.PatientRefunds.IgnoreQueryFilters().SingleAsync()).Status);
+    }
+
+    [Fact]
+    public async Task Succeeded_event_after_a_failure_goes_to_review_without_posting()
+    {
+        await Service().ProcessAsync(Event() with { ExternalEventId = "evt_failed", EventType = "refund.failed", RefundStatus = "failed" });
+        await Service().ProcessAsync(Event() with { ExternalEventId = "evt_late_succeeded" });
+        var refund = await _db.PatientRefunds.IgnoreQueryFilters().SingleAsync();
+        Assert.Equal(PatientRefundStatus.ReviewRequired, refund.Status);
+        Assert.Equal("refund-succeeded-after-failure", refund.FailureCode);
+        Assert.Empty(await _db.PatientLedgerEntries.IgnoreQueryFilters()
+            .Where(x => x.EntryType == PatientLedgerEntryType.Refund).ToListAsync());
+    }
+
     [Theory]
     [InlineData(4100, "USD", "amount-mismatch")]
     [InlineData(4000, "EUR", "currency-mismatch")]

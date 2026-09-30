@@ -212,7 +212,8 @@ public sealed class PaymentRefundService(CloudDentalDbContext db, IPaymentProces
             throw new ArgumentOutOfRangeException(nameof(request.Amount));
         await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
         var reserved = await db.PatientRefunds.IgnoreQueryFilters().Where(x => x.TenantId == request.TenantId &&
-                x.PaymentId == request.PaymentId && x.Status != PatientRefundStatus.Failed)
+                x.PaymentId == request.PaymentId && x.Status != PatientRefundStatus.Failed &&
+                x.Status != PatientRefundStatus.Reversed)
             .Select(x => x.Amount).ToListAsync(cancellationToken);
         if (reserved.Sum() + request.Amount.Amount > payment.Amount)
             throw new InvalidOperationException("Cumulative refunds cannot exceed the settled payment amount.");

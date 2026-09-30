@@ -178,6 +178,24 @@ public sealed class PaymentProcessingTests : IDisposable
     }
 
     [Fact]
+    public async Task Reversed_refund_no_longer_counts_toward_the_refund_cap()
+    {
+        await SeedAccount();
+        await Checkout().CreateAsync(Request(50m, "payment-1"));
+        var payment = await Reconciliation().ReconcileAsync(Event("event-1", "external-payment-1", "payment-1", 50m));
+        var refunds = new PaymentRefundService(_db, _resolver, _tenant);
+        await refunds.RefundAsync(new PaymentRefundRequest("tenant-a", payment.PaymentId, new Money(50m), "refund-1"));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => refunds.RefundAsync(new PaymentRefundRequest(
+            "tenant-a", payment.PaymentId, new Money(50m), "refund-2")));
+
+        await _db.PatientRefunds.IgnoreQueryFilters().ExecuteUpdateAsync(x => x
+            .SetProperty(r => r.Status, PatientRefundStatus.Reversed).SetProperty(r => r.ExternalRefundId, "refund-old"));
+        _db.ChangeTracker.Clear();
+        var again = await refunds.RefundAsync(new PaymentRefundRequest("tenant-a", payment.PaymentId, new Money(50m), "refund-3"));
+        Assert.Equal(PaymentStatus.Pending, again.Status);
+    }
+
+    [Fact]
     public async Task Transient_refund_transport_failure_is_durable_and_retryable()
     {
         await SeedAccount();
