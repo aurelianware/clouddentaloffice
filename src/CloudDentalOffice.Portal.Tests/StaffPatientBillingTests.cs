@@ -178,6 +178,70 @@ public sealed class StaffPatientBillingTests : IDisposable
         Assert.Contains("Pending", account.Payments.Single(x => x.PaymentId == payments[^1].PaymentId).RefundStatus);
     }
 
+    [Fact]
+    public async Task Billing_staff_can_create_a_payment_link_for_the_patient_account_in_their_tenant()
+    {
+        var checkout = new RecordingBalanceCheckout();
+        var service = ServiceWith(checkout);
+
+        var result = await service.CreatePaymentLinkAsync(User("BillingStaff"), 101, PatientPaymentSelection.FullBalance);
+
+        var request = Assert.Single(checkout.Requests);
+        Assert.Equal("tenant-a", request.TenantId);
+        Assert.Equal(_charge.PatientAccountId, request.PatientAccountId);
+        Assert.Equal(PatientPaymentSelection.FullBalance, request.Selection);
+        Assert.Null(request.StatementId);
+        Assert.Null(request.CustomAmount);
+        Assert.Equal(RecordingBalanceCheckout.Url, result.CheckoutUrl);
+        Assert.Contains(_db.FinancialAuditEvents, x => x.Action == "PaymentLinkCreated" &&
+            x.EntityId == result.AttemptId.ToString() && x.Actor == "staff@example.com");
+    }
+
+    [Fact]
+    public async Task Payment_link_passes_partial_amount_and_statement_through_to_checkout()
+    {
+        var checkout = new RecordingBalanceCheckout();
+        var service = ServiceWith(checkout);
+        var statementId = Guid.NewGuid();
+
+        await service.CreatePaymentLinkAsync(User("BillingStaff"), 101, PatientPaymentSelection.Partial,
+            customAmount: new Money(25m));
+        await service.CreatePaymentLinkAsync(User("BillingStaff"), 101, PatientPaymentSelection.StatementBalance,
+            statementId: statementId);
+
+        Assert.Equal(new Money(25m), checkout.Requests[0].CustomAmount);
+        Assert.Equal(statementId, checkout.Requests[1].StatementId);
+    }
+
+    [Fact]
+    public async Task Payment_link_requires_post_payment_permission()
+    {
+        var checkout = new RecordingBalanceCheckout();
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => ServiceWith(checkout)
+            .CreatePaymentLinkAsync(User("Staff"), 101, PatientPaymentSelection.FullBalance));
+        Assert.Empty(checkout.Requests);
+    }
+
+    [Fact]
+    public async Task Payment_link_cannot_target_another_tenants_patient()
+    {
+        var checkout = new RecordingBalanceCheckout();
+        await Assert.ThrowsAsync<KeyNotFoundException>(() => ServiceWith(checkout)
+            .CreatePaymentLinkAsync(User("BillingStaff"), 202, PatientPaymentSelection.FullBalance));
+        Assert.Empty(checkout.Requests);
+    }
+
+    [Fact]
+    public async Task Payment_link_fails_closed_when_online_payments_are_not_configured()
+    {
+        await Assert.ThrowsAsync<InvalidOperationException>(() => _service
+            .CreatePaymentLinkAsync(User("BillingStaff"), 101, PatientPaymentSelection.FullBalance));
+    }
+
+    private StaffPatientBillingService ServiceWith(IPatientBalanceCheckoutService checkout) =>
+        new(_db, _accounts, new PatientStatementService(_db, _tenant, _clock, NullLogger<PatientStatementService>.Instance),
+            new PaymentAllocationService(_db, _tenant, _clock), _tenant, _clock, balanceCheckout: checkout);
+
     private RecordManualPayment Payment(PatientPaymentMethod method, string reference) =>
         new(101, new Money(100m), method, reference, _clock.GetUtcNow().UtcDateTime);
     private static Patient Patient(int id, string tenant, string first) => new() { PatientId = id, TenantId = tenant,
@@ -191,4 +255,16 @@ public sealed class StaffPatientBillingTests : IDisposable
     public void Dispose() { _db.Dispose(); _connection.Dispose(); }
     private sealed class FixedTenant(string tenant) : ITenantProvider { public string TenantId => tenant; public ClaimsPrincipal? User => null; }
     private sealed class FixedClock(DateTimeOffset now) : TimeProvider { public override DateTimeOffset GetUtcNow() => now; }
+    private sealed class RecordingBalanceCheckout : IPatientBalanceCheckoutService
+    {
+        public static readonly Uri Url = new("https://checkout.stripe.test/c/pay_test");
+        public List<PatientBalanceCheckoutRequest> Requests { get; } = new();
+        public Task<PatientBalanceCheckoutResult> CreateAsync(PatientBalanceCheckoutRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            Requests.Add(request);
+            return Task.FromResult(new PatientBalanceCheckoutResult(Guid.NewGuid(), Guid.NewGuid(), "pay_test",
+                request.CustomAmount ?? new Money(500m), Url, null));
+        }
+    }
 }
