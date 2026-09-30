@@ -3,6 +3,7 @@ using System.Text;
 using CloudDentalOffice.Contracts.Patients;
 using CloudDentalOffice.Portal.Data;
 using CloudDentalOffice.Portal.Models;
+using CloudDentalOffice.Portal.Services.Auth;
 using Microsoft.EntityFrameworkCore;
 
 namespace CloudDentalOffice.Portal.Services;
@@ -27,6 +28,35 @@ public static class InternalPatientApi
         builder.WebHost.UseUrls(
             $"{(string.IsNullOrWhiteSpace(publicUrls) ? "http://localhost:5000" : publicUrls)};http://+:{Port(builder.Configuration)}");
         builder.Services.AddScoped<ExternalPatientMatcher>();
+    }
+
+    /// <summary>
+    /// Confines the internal port to the internal endpoint. Kestrel serves the whole app on every
+    /// port it listens on, and the internal port is reachable by every workload in the Container Apps
+    /// environment without the EasyAuth proxy, so any other path there is refused, and the EasyAuth
+    /// principal header is dropped so it can never establish a staff identity on that port.
+    /// Register first in the pipeline.
+    /// </summary>
+    public static void UseInternalPortIsolation(this WebApplication app)
+    {
+        var port = Port(app.Configuration);
+        app.Use(async (context, next) =>
+        {
+            if (context.Connection.LocalPort != port)
+            {
+                await next(context);
+                return;
+            }
+
+            context.Request.Headers.Remove(ContainerAppsStaffIdentity.PrincipalHeader);
+            if (!context.Request.Path.Equals(MatchOrCreatePath, StringComparison.OrdinalIgnoreCase))
+            {
+                context.Response.StatusCode = StatusCodes.Status404NotFound;
+                return;
+            }
+
+            await next(context);
+        });
     }
 
     public static void MapInternalPatientApi(this WebApplication app)
