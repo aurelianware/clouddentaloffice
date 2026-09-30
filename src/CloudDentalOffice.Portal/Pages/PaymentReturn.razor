@@ -8,15 +8,15 @@
    text: the session_id Stripe appends is ignored, and the redirect is never treated as proof of
    payment. The payment posts only when Stripe's signed webhook confirms it. *@
 
-<PageTitle>@(_canceled ? "Payment canceled" : "Payment submitted") - Cloud Dental Office</PageTitle>
+<PageTitle>@(_canceled ? "Checkout closed" : "Payment submitted") - Cloud Dental Office</PageTitle>
 
 <MudContainer MaxWidth="MaxWidth.Small" Class="mt-16">
     <MudPaper Elevation="3" Class="pa-8" role="status">
         @if (_canceled)
         {
-            <MudText Typo="Typo.h5" Class="mb-4">Payment canceled</MudText>
-            <MudText Class="mb-2">No payment was made.</MudText>
-            <MudText>If you still want to pay, open the payment link again while it's valid, or contact the practice for a new one.</MudText>
+            <MudText Typo="Typo.h5" Class="mb-4">Checkout closed</MudText>
+            <MudText Class="mb-2">You left the payment page before finishing.</MudText>
+            <MudText>If you still want to pay, open the payment link again while it's valid, or contact the practice for a new one. Your account balance shows any payment the practice has received.</MudText>
         }
         else
         {

@@ -83,7 +83,7 @@
                     @if (_paymentLink is not null)
                     {
                         <MudAlert Severity="Severity.Success" Variant="Variant.Outlined" Class="mb-4">
-                            <MudText>Payment link for @Money(_paymentLink.Amount.Amount, _paymentLink.Amount.Currency)@(_paymentLink.ExpiresAt is { } expires ? $", expires {expires.ToLocalTime():g}" : "").</MudText>
+                            <MudText>Payment link for @Money(_paymentLink.Amount.Amount, _paymentLink.Amount.Currency)@(_paymentLink.ExpiresAt is { } expires ? $", expires {expires:g} UTC" : "").</MudText>
                             <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="mt-2">
                                 <MudTextField T="string" Value="@_paymentLink.CheckoutUrl.AbsoluteUri" ReadOnly="true" Variant="Variant.Outlined" Label="Payment link" Style="flex: 1 1 30rem;" />
                                 <MudButton OnClick="CopyPaymentLink" Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.ContentCopy">Copy link</MudButton>
@@ -151,10 +151,18 @@
         _selectedPatient = patient;
         _patientId = patient?.PatientId ?? 0;
         _account = null;
-        _paymentLink = null;
+        ResetPaymentLink();
         return Task.CompletedTask;
     }
-    private async Task LoadAccount()=>await Run(async()=>{_paymentLink=null;_account=await BillingAdminService.GetAccountAsync(_user,_patientId);});
+
+    private void ResetPaymentLink()
+    {
+        _linkSelection = PatientPaymentSelection.FullBalance;
+        _linkStatementId = null;
+        _linkAmount = 0;
+        _paymentLink = null;
+    }
+    private async Task LoadAccount()=>await Run(async()=>{ResetPaymentLink();_account=await BillingAdminService.GetAccountAsync(_user,_patientId);});
     private IEnumerable<PatientStatement> PayableStatements()=>_account?.Statements.Where(x=>x.Status is PatientStatementStatus.Ready or PatientStatementStatus.Sent or PatientStatementStatus.PartiallyPaid)??Enumerable.Empty<PatientStatement>();
     private async Task CreatePaymentLink()=>await Run(async()=>_paymentLink=await BillingAdminService.CreatePaymentLinkAsync(_user,_patientId,_linkSelection,
         _linkSelection==PatientPaymentSelection.StatementBalance?_linkStatementId??throw new ArgumentException("Choose a statement."):null,
