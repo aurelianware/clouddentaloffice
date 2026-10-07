@@ -19,12 +19,14 @@ public sealed class StripeWebhookMetrics : IDisposable
     public Counter<long> Received { get; }
     public Counter<long> Persisted { get; }
     public Counter<long> ValidationFailures { get; }
+    public Counter<long> Ignored { get; }
 
     public StripeWebhookMetrics()
     {
         Received = _meter.CreateCounter<long>("stripe.events.received");
         Persisted = _meter.CreateCounter<long>("stripe.events.persisted");
         ValidationFailures = _meter.CreateCounter<long>("stripe.webhook.validation_failures");
+        Ignored = _meter.CreateCounter<long>("stripe.events.ignored");
     }
 
     public void Dispose() => _meter.Dispose();
@@ -83,7 +85,7 @@ public static class StripeWebhookEndpoint
             .WithMetadata(new Microsoft.AspNetCore.Mvc.RequestSizeLimitAttribute(1_048_576))
             .RequireRateLimiting("stripe-webhooks").WithTags("StripeWebhooks");
 
-    private static async Task<IResult> HandleAsync(HttpContext http, IConfiguration configuration,
+    internal static async Task<IResult> HandleAsync(HttpContext http, IConfiguration configuration,
         IIntegrationInbox inbox, TimeProvider timeProvider, StripeWebhookMetrics metrics)
     {
         metrics.Received.Add(1);
@@ -143,7 +145,14 @@ public static class StripeWebhookEndpoint
             {
                 var reference = OptionalMetadata(data, "payment_reference");
                 var sessionId = RequiredString(data, "id");
-                if (string.IsNullOrWhiteSpace(reference)) return Invalid(metrics);
+                // A signed session without our reference was created outside this app (for example a
+                // Payment Link the practice made in its own dashboard). It is not ours to post, and
+                // rejecting it would only make Stripe retry it for days.
+                if (string.IsNullOrWhiteSpace(reference))
+                {
+                    metrics.Ignored.Add(1);
+                    return Results.Ok();
+                }
                 integrationEvent = new StripePaymentWebhookEvent(account.TenantId, eventId, eventType, accountId,
                     sessionId, OptionalId(data, "payment_intent"), reference,
                     data.GetProperty("amount_total").GetInt64(), RequiredString(data, "currency").ToUpperInvariant(),

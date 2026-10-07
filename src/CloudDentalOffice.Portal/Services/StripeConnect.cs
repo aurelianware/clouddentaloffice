@@ -159,14 +159,14 @@ public sealed class StripeApiClient(HttpClient httpClient, IStripeCredentialProv
         if (request.Amount.Amount <= 0) throw new ArgumentOutOfRangeException(nameof(request.Amount));
         ValidateCheckoutUrl(request.SuccessUrl, config.Environment, nameof(request.SuccessUrl));
         ValidateCheckoutUrl(request.CancelUrl, config.Environment, nameof(request.CancelUrl));
-        var cents = checked((long)(request.Amount.Amount * 100m));
+        var minorUnits = StripeCurrency.ToExactMinorUnits(request.Amount);
         var fields = new Dictionary<string, string>
         {
             ["mode"] = "payment",
             ["success_url"] = request.SuccessUrl!,
             ["cancel_url"] = request.CancelUrl!,
             ["line_items[0][price_data][currency]"] = request.Amount.Currency.ToLowerInvariant(),
-            ["line_items[0][price_data][unit_amount]"] = cents.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            ["line_items[0][price_data][unit_amount]"] = minorUnits.ToString(System.Globalization.CultureInfo.InvariantCulture),
             ["line_items[0][price_data][product_data][name]"] = "Account payment",
             ["line_items[0][quantity]"] = "1",
             ["metadata[payment_reference]"] = request.InternalPaymentReference,
@@ -424,8 +424,55 @@ public sealed class StripeConnectService(CloudDentalDbContext db, IStripeApiClie
     public async Task DisableAsync(string tenantId, CancellationToken cancellationToken = default)
     {
         EnsureTenant(tenantId); var config = await Configuration(tenantId, cancellationToken);
+        // Save first, then close sessions: a link created concurrently either is found by this scan or
+        // sees the disabled configuration itself and is never handed out (PatientBalanceCheckoutService).
         config.Enabled = false; config.OnboardingStatus = PaymentProcessorOnboardingStatus.Disabled;
         config.UpdatedAt = clock.GetUtcNow().UtcDateTime; await db.SaveChangesAsync(cancellationToken);
+        await ExpireOpenCheckoutSessionsAsync(config, cancellationToken);
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Disabling stops patients paying links that are still open. This is best effort: disabling
+    /// must not fail because Stripe is unreachable, and a session paid anyway still posts through
+    /// its webhook, which accepts events for a disabled configuration.
+    /// </summary>
+    private async Task ExpireOpenCheckoutSessionsAsync(PaymentProcessorConfiguration config,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(config.ConnectedMerchantReference)) return;
+        var open = await db.PatientPaymentAttempts.IgnoreQueryFilters().Where(x => x.TenantId == config.TenantId &&
+                x.Status == PatientPaymentAttemptStatus.SessionCreated && x.StripeCheckoutSessionId != null)
+            .ToListAsync(cancellationToken);
+        var now = clock.GetUtcNow().UtcDateTime;
+        foreach (var attempt in open)
+        {
+            string status;
+            try
+            {
+                status = await api.ExpireCheckoutSessionAsync(config, config.ConnectedMerchantReference,
+                    attempt.StripeCheckoutSessionId!, cancellationToken);
+            }
+            catch (Exception ex) when (ex is StripeConnectException or HttpRequestException ||
+                                       (ex is OperationCanceledException && !cancellationToken.IsCancellationRequested))
+            {
+                // Includes an HTTP timeout; a cancellation the caller asked for still propagates.
+                continue;
+            }
+            if (status != "expired") continue;
+            attempt.Status = PatientPaymentAttemptStatus.Cancelled;
+            attempt.FailureCode = "processor-disabled";
+            attempt.UpdatedAt = now;
+            var payment = attempt.PaymentId is { } paymentId
+                ? await db.PatientPayments.IgnoreQueryFilters().SingleOrDefaultAsync(x =>
+                    x.TenantId == config.TenantId && x.PaymentId == paymentId, cancellationToken)
+                : null;
+            if (payment is { Status: PaymentStatus.Pending })
+            {
+                payment.Status = PaymentStatus.Cancelled;
+                payment.UpdatedAt = now;
+            }
+        }
     }
 
     private async Task<PaymentProcessorConfiguration> Configuration(string tenantId, CancellationToken cancellationToken,
@@ -509,11 +556,20 @@ internal static class StripeCurrency
         { "BIF", "CLP", "DJF", "GNF", "JPY", "KMF", "KRW", "MGA", "PYG", "RWF", "UGX", "VND", "VUV", "XAF", "XOF", "XPF" };
     private static readonly HashSet<string> ThreeDecimal = new(StringComparer.OrdinalIgnoreCase)
         { "BHD", "JOD", "KWD", "OMR", "TND" };
-    public static long ToMinorUnits(Money value)
+    public static long ToMinorUnits(Money value) =>
+        decimal.ToInt64(decimal.Round(value.Amount * Multiplier(value.Currency), 0, MidpointRounding.AwayFromZero));
+
+    /// <summary>Minor units for a charge; an amount the currency cannot express (50.50 JPY) is refused, not rounded.</summary>
+    public static long ToExactMinorUnits(Money value)
     {
-        var multiplier = ZeroDecimal.Contains(value.Currency) ? 1m : ThreeDecimal.Contains(value.Currency) ? 1_000m : 100m;
-        return decimal.ToInt64(decimal.Round(value.Amount * multiplier, 0, MidpointRounding.AwayFromZero));
+        var scaled = value.Amount * Multiplier(value.Currency);
+        if (scaled != decimal.Truncate(scaled))
+            throw new ArgumentException($"{value.Amount} is not a valid {value.Currency.ToUpperInvariant()} amount.", nameof(value));
+        return decimal.ToInt64(scaled);
     }
+
+    private static decimal Multiplier(string currency) =>
+        ZeroDecimal.Contains(currency) ? 1m : ThreeDecimal.Contains(currency) ? 1_000m : 100m;
 }
 
 // Patient checkout/refund support is intentionally separate from Connect onboarding in this PR.

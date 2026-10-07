@@ -142,6 +142,33 @@ public sealed class PatientBalanceCheckoutTests : IDisposable
     }
 
     [Fact]
+    public async Task Link_created_while_payments_are_turned_off_is_closed_and_never_handed_out()
+    {
+        await SeedBalance(100m); _checkout.DisableDuringCreate = true;
+
+        await Assert.ThrowsAsync<PaymentProcessorUnavailableException>(() => Service().CreateAsync(
+            Request(PatientPaymentSelection.FullBalance)));
+
+        Assert.Equal(["cs_1"], _checkout.Expired);
+        var attempt = await _db.PatientPaymentAttempts.SingleAsync();
+        Assert.Equal(PatientPaymentAttemptStatus.Cancelled, attempt.Status);
+        Assert.Equal("processor-disabled", attempt.FailureCode);
+        Assert.Equal(PaymentStatus.Cancelled, (await _db.PatientPayments.SingleAsync()).Status);
+    }
+
+    [Fact]
+    public async Task Link_created_while_payments_are_turned_off_is_withheld_even_if_Stripe_expire_fails()
+    {
+        await SeedBalance(100m); _checkout.DisableDuringCreate = true;
+        _checkout.ExpireFailure = new StripeConnectException("remote failed");
+
+        await Assert.ThrowsAsync<PaymentProcessorUnavailableException>(() => Service().CreateAsync(
+            Request(PatientPaymentSelection.FullBalance)));
+
+        Assert.Equal(["cs_1"], _checkout.Expired);
+    }
+
+    [Fact]
     public async Task Multiple_sessions_have_distinct_opaque_references()
     {
         await SeedBalance(100m); var service = Service();
@@ -241,6 +268,40 @@ public sealed class PatientBalanceCheckoutTests : IDisposable
         Assert.All(handler.Accounts, account => Assert.Equal("acct_practice", account));
     }
 
+    [Theory]
+    [InlineData("USD", 50, "5000")]
+    [InlineData("JPY", 5000, "5000")]
+    [InlineData("KWD", 5, "5000")]
+    public async Task Stripe_checkout_amount_uses_the_currency_exponent(string currency, int amount, string unitAmount)
+    {
+        var handler = new RecordingHandler("""
+            {"id":"cs_test_opaque","payment_intent":null,"url":"https://checkout.stripe.test/session","expires_at":1787171400}
+            """);
+        var values = new Dictionary<string, string?> { ["Secrets:StripeTest"] = "sk_test_not-a-real-secret" };
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(values).Build();
+        var api = new StripeApiClient(new HttpClient(handler) { BaseAddress = new Uri("https://api.stripe.com") },
+            new ConfigurationStripeCredentialProvider(configuration), configuration);
+        await api.CreateCheckoutSessionAsync(Configuration(), "acct_practice",
+            new PaymentRequest("tenant-a", Guid.NewGuid(), null, new Money(amount, currency), $"pay_{new string('b', 32)}",
+                PatientPaymentMethod.Card, "https://portal.example.test/payments/success", "https://portal.example.test/payments/cancel"));
+        Assert.Contains($"unit_amount%5D={unitAmount}&", handler.Body);
+    }
+
+    [Fact]
+    public async Task Stripe_checkout_refuses_an_amount_the_currency_cannot_express()
+    {
+        var handler = new RecordingHandler("{}");
+        var values = new Dictionary<string, string?> { ["Secrets:StripeTest"] = "sk_test_not-a-real-secret" };
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(values).Build();
+        var api = new StripeApiClient(new HttpClient(handler) { BaseAddress = new Uri("https://api.stripe.com") },
+            new ConfigurationStripeCredentialProvider(configuration), configuration);
+
+        await Assert.ThrowsAsync<ArgumentException>(() => api.CreateCheckoutSessionAsync(Configuration(), "acct_practice",
+            new PaymentRequest("tenant-a", Guid.NewGuid(), null, new Money(50.50m, "JPY"), $"pay_{new string('c', 32)}",
+                PatientPaymentMethod.Card, "https://portal.example.test/payments/success", "https://portal.example.test/payments/cancel")));
+        Assert.Equal(string.Empty, handler.Body);
+    }
+
     [Fact]
     public async Task Stripe_request_contains_only_generic_presentation_and_opaque_reference()
     {
@@ -289,10 +350,11 @@ public sealed class PatientBalanceCheckoutTests : IDisposable
     {
         public int Calls; public PaymentRequest? Last; public Exception? Failure;
         public List<string> Expired = []; public PaymentSessionClosure Closure = PaymentSessionClosure.Expired;
+        public bool DisableDuringCreate; public Exception? ExpireFailure;
         public Task<PaymentSessionClosure> ExpireAsync(string tenantId, string externalSessionId,
             CancellationToken cancellationToken = default)
         {
-            Expired.Add(externalSessionId);
+            Expired.Add(externalSessionId); if (ExpireFailure is not null) throw ExpireFailure;
             return Task.FromResult(Closure);
         }
         public Task<PaymentSession> CreateAsync(PaymentRequest request, CancellationToken cancellationToken = default)
@@ -304,6 +366,9 @@ public sealed class PatientBalanceCheckoutTests : IDisposable
                 Processor = PaymentProcessorProvider.Stripe, InternalPaymentReference = request.InternalPaymentReference,
                 Status = PaymentStatus.Pending, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow });
             db.SaveChanges();
+            // Another request turns online payments off while Stripe is creating this session.
+            if (DisableDuringCreate) db.PaymentProcessorConfigurations.IgnoreQueryFilters()
+                .ExecuteUpdate(x => x.SetProperty(c => c.Enabled, false));
             return Task.FromResult(new PaymentSession(request.InternalPaymentReference, $"cs_{Calls}", null,
                 new Uri($"https://checkout.stripe.test/{Calls}"), null, DateTime.UtcNow.AddMinutes(30), PaymentStatus.Pending));
         }

@@ -24,12 +24,13 @@ public sealed class StripeRefundWebhookProcessor(CloudDentalDbContext db, TimePr
                 x.ExternalEventId == webhook.ExternalEventId, cancellationToken)) return;
 
         await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
+        // Refunds already issued still settle after the practice disables online payments.
         var configuration = await db.PaymentProcessorConfigurations.IgnoreQueryFilters().AsNoTracking()
             .SingleOrDefaultAsync(x => x.TenantId == webhook.TenantId &&
-                x.Provider == PaymentProcessorProvider.Stripe && x.Enabled, cancellationToken);
+                x.Provider == PaymentProcessorProvider.Stripe, cancellationToken);
         if (configuration is null || configuration.ConnectedMerchantReference != webhook.ConnectedAccountId ||
             (configuration.Environment == PaymentProcessorEnvironment.Production) != webhook.LiveMode)
-            throw new StripeWebhookPermanentException("Connected Stripe account mapping is invalid or disabled.");
+            throw new StripeWebhookPermanentException("Connected Stripe account mapping is invalid.");
 
         var refund = await FindRefundAsync(webhook, cancellationToken)
             ?? throw new StripeWebhookPermanentException("Stripe refund reference is unknown.");

@@ -54,6 +54,17 @@ public sealed class PaymentProcessingTests : IDisposable
     }
 
     [Fact]
+    public async Task Open_sessions_can_still_be_closed_after_payments_are_turned_off()
+    {
+        _db.PaymentProcessorConfigurations.Single().Enabled = false;
+        await _db.SaveChangesAsync();
+
+        Assert.Equal(PaymentSessionClosure.Expired, await Checkout().ExpireAsync("tenant-a", "cs_open"));
+        Assert.Equal(["cs_open"], _processor.ExpiredSessions);
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => Checkout().ExpireAsync("tenant-b", "cs_open"));
+    }
+
+    [Fact]
     public async Task Checkout_persists_canonical_payment_and_calls_only_neutral_adapter()
     {
         await SeedAccount();
@@ -284,6 +295,7 @@ public sealed class PaymentProcessingTests : IDisposable
         public int SessionCalls { get; private set; }
         public int RefundCalls { get; private set; }
         public Exception? RefundFailure { get; set; }
+        public List<string> ExpiredSessions { get; } = [];
         public Task<PaymentSession> CreateSessionAsync(PaymentProcessorConfiguration configuration, PaymentRequest request,
             CancellationToken cancellationToken = default)
         {
@@ -302,6 +314,7 @@ public sealed class PaymentProcessingTests : IDisposable
         public Task<PaymentSessionClosure> ExpireSessionAsync(PaymentProcessorConfiguration configuration,
             string externalSessionId, CancellationToken cancellationToken = default)
         {
+            ExpiredSessions.Add(externalSessionId);
             return Task.FromResult(PaymentSessionClosure.Expired);
         }
     }

@@ -48,6 +48,12 @@ public interface IPaymentProcessorResolver
 {
     Task<(IPaymentProcessor Processor, PaymentProcessorConfiguration Configuration)> ResolveAsync(
         string tenantId, CancellationToken cancellationToken = default);
+    /// <summary>
+    /// The tenant's processor for winding down sessions it already created. Unlike ResolveAsync it
+    /// also returns a disabled configuration, because closing open sessions is part of turning it off.
+    /// </summary>
+    Task<(IPaymentProcessor Processor, PaymentProcessorConfiguration Configuration)> ResolveForExistingSessionsAsync(
+        string tenantId, PaymentProcessorProvider provider, CancellationToken cancellationToken = default);
 }
 
 public interface IPaymentCheckoutService
@@ -104,6 +110,20 @@ public sealed class PaymentProcessorResolver(CloudDentalDbContext db, IEnumerabl
         return (processor, configuration);
     }
 
+    public async Task<(IPaymentProcessor Processor, PaymentProcessorConfiguration Configuration)> ResolveForExistingSessionsAsync(
+        string tenantId, PaymentProcessorProvider provider, CancellationToken cancellationToken = default)
+    {
+        PaymentTenantGuard.Ensure(tenantProvider, tenantId);
+        var configuration = await db.PaymentProcessorConfigurations.IgnoreQueryFilters().AsNoTracking()
+            .SingleOrDefaultAsync(x => x.TenantId == tenantId && x.Provider == provider, cancellationToken)
+            ?? throw new PaymentProcessorUnavailableException("The payment processor is not configured for the tenant.");
+        if (string.IsNullOrWhiteSpace(configuration.CredentialReference))
+            throw new PaymentProcessorUnavailableException("The payment processor has no credential reference.");
+        if (!_processors.TryGetValue(provider, out var processor))
+            throw new PaymentProcessorUnavailableException("The configured payment processor adapter is not installed.");
+        return (processor, configuration);
+    }
+
     private static IReadOnlyDictionary<PaymentProcessorProvider, IPaymentProcessor> BuildProcessorMap(
         IEnumerable<IPaymentProcessor> processors)
     {
@@ -122,7 +142,9 @@ public sealed class PaymentCheckoutService(CloudDentalDbContext db, IPaymentProc
         CancellationToken cancellationToken = default)
     {
         PaymentTenantGuard.Ensure(tenantProvider, tenantId);
-        var (processor, configuration) = await resolver.ResolveAsync(tenantId, cancellationToken);
+        // Checkout sessions are Stripe's; closing one must still work after online payments are turned off.
+        var (processor, configuration) = await resolver.ResolveForExistingSessionsAsync(tenantId,
+            PaymentProcessorProvider.Stripe, cancellationToken);
         return await processor.ExpireSessionAsync(configuration, externalSessionId, cancellationToken);
     }
 

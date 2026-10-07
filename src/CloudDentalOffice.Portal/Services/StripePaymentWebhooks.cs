@@ -77,12 +77,13 @@ public sealed class StripePaymentWebhookProcessor(CloudDentalDbContext db, TimeP
     private async Task ProcessNewAsync(StripePaymentWebhookEvent webhook, CancellationToken cancellationToken)
     {
         await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
+        // A disabled configuration stops new payments, not the posting of money Stripe already took
+        // for a session this app created; the account, environment and attempt bindings still apply.
         var configuration = await db.PaymentProcessorConfigurations.IgnoreQueryFilters().AsNoTracking().SingleOrDefaultAsync(x =>
-            x.TenantId == webhook.TenantId && x.Provider == PaymentProcessorProvider.Stripe && x.Enabled,
-            cancellationToken);
+            x.TenantId == webhook.TenantId && x.Provider == PaymentProcessorProvider.Stripe, cancellationToken);
         if (configuration is null || configuration.ConnectedMerchantReference != webhook.ConnectedAccountId ||
             (configuration.Environment == PaymentProcessorEnvironment.Production) != webhook.LiveMode)
-            throw new StripeWebhookPermanentException("Connected Stripe account mapping is invalid or disabled.");
+            throw new StripeWebhookPermanentException("Connected Stripe account mapping is invalid.");
         if (!webhook.LiveMode && !options.Value.AllowedSandboxTenantIds.Contains(webhook.TenantId,
                 StringComparer.Ordinal))
             throw new StripeWebhookPermanentException("Sandbox ledger posting is not enabled for this tenant.");
@@ -118,6 +119,20 @@ public sealed class StripePaymentWebhookProcessor(CloudDentalDbContext db, TimeP
             metrics.Conflicts.Add(1);
             logger.LogWarning("Stripe payment event {ExternalEventId} requires review ({ConflictCode}).",
                 webhook.ExternalEventId, conflict);
+            return;
+        }
+
+        if (webhook.EventType == "checkout.session.async_payment_failed" && payment.Status == PaymentStatus.Succeeded)
+        {
+            // Stripe should never fail a payment it reported paid; never undo a posted payment on it.
+            processorEvent.Status = PaymentProcessorEventStatus.Conflict;
+            processorEvent.FailureCode = "failed-after-succeeded";
+            processorEvent.ProcessedAt = now;
+            await db.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+            metrics.Conflicts.Add(1);
+            logger.LogWarning("Stripe payment event {ExternalEventId} reported a failure for a succeeded payment.",
+                webhook.ExternalEventId);
             return;
         }
 
