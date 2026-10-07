@@ -424,9 +424,12 @@ public sealed class StripeConnectService(CloudDentalDbContext db, IStripeApiClie
     public async Task DisableAsync(string tenantId, CancellationToken cancellationToken = default)
     {
         EnsureTenant(tenantId); var config = await Configuration(tenantId, cancellationToken);
-        await ExpireOpenCheckoutSessionsAsync(config, cancellationToken);
+        // Save first, then close sessions: a link created concurrently either is found by this scan or
+        // sees the disabled configuration itself and is never handed out (PatientBalanceCheckoutService).
         config.Enabled = false; config.OnboardingStatus = PaymentProcessorOnboardingStatus.Disabled;
         config.UpdatedAt = clock.GetUtcNow().UtcDateTime; await db.SaveChangesAsync(cancellationToken);
+        await ExpireOpenCheckoutSessionsAsync(config, cancellationToken);
+        await db.SaveChangesAsync(cancellationToken);
     }
 
     /// <summary>

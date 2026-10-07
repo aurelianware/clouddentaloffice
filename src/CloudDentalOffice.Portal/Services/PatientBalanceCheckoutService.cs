@@ -88,6 +88,7 @@ public sealed class PatientBalanceCheckoutService(CloudDentalDbContext db, IPaym
         db.PatientPaymentAttempts.Add(attempt);
         await db.SaveChangesAsync(cancellationToken);
 
+        PatientBalanceCheckoutResult result;
         try
         {
             var session = await checkout.CreateAsync(new PaymentRequest(request.TenantId, account.Id,
@@ -99,7 +100,7 @@ public sealed class PatientBalanceCheckoutService(CloudDentalDbContext db, IPaym
             attempt.PaymentId = paymentId; attempt.StripeCheckoutSessionId = session.ExternalSessionId;
             attempt.StripePaymentIntentId = session.ExternalPaymentId; attempt.Status = PatientPaymentAttemptStatus.SessionCreated;
             attempt.UpdatedAt = clock.GetUtcNow().UtcDateTime; await db.SaveChangesAsync(cancellationToken);
-            return new(attempt.Id, paymentId, reference, amount,
+            result = new(attempt.Id, paymentId, reference, amount,
                 session.CheckoutUrl ?? throw new InvalidOperationException("Stripe did not return a Checkout URL."), session.ExpiresAt);
         }
         catch
@@ -110,6 +111,49 @@ public sealed class PatientBalanceCheckoutService(CloudDentalDbContext db, IPaym
             attempt.UpdatedAt = clock.GetUtcNow().UtcDateTime; await db.SaveChangesAsync(CancellationToken.None);
             throw;
         }
+
+        await CloseIfPaymentsWereTurnedOffAsync(attempt, cancellationToken);
+        return result;
+    }
+
+    /// <summary>
+    /// Disabling online payments saves the change first and then closes every open session, while this
+    /// method runs after the new session is saved. Whichever commits first, one side sees the other:
+    /// either disable's scan finds this session, or this check finds the practice disabled. The link
+    /// is then never handed out, and is expired at Stripe as well.
+    /// </summary>
+    private async Task CloseIfPaymentsWereTurnedOffAsync(PatientPaymentAttempt attempt, CancellationToken cancellationToken)
+    {
+        var enabled = await db.PaymentProcessorConfigurations.IgnoreQueryFilters().AsNoTracking()
+            .Where(x => x.TenantId == attempt.TenantId && x.Provider == PaymentProcessorProvider.Stripe)
+            .Select(x => (bool?)x.Enabled).SingleOrDefaultAsync(cancellationToken);
+        if (enabled == true) return;
+
+        PaymentSessionClosure? closure = null;
+        try
+        {
+            closure = await checkout.ExpireAsync(attempt.TenantId, attempt.StripeCheckoutSessionId!, CancellationToken.None);
+        }
+        catch (Exception ex) when (ex is StripeConnectException or HttpRequestException or PaymentProcessorUnavailableException)
+        {
+            // The URL is still withheld; the session lapses at Stripe on its own expiry.
+        }
+        if (closure == PaymentSessionClosure.Expired)
+        {
+            var now = clock.GetUtcNow().UtcDateTime;
+            attempt.Status = PatientPaymentAttemptStatus.Cancelled;
+            attempt.FailureCode = "processor-disabled";
+            attempt.UpdatedAt = now;
+            var payment = await db.PatientPayments.IgnoreQueryFilters().SingleOrDefaultAsync(x =>
+                x.TenantId == attempt.TenantId && x.PaymentId == attempt.PaymentId, CancellationToken.None);
+            if (payment is { Status: PaymentStatus.Pending })
+            {
+                payment.Status = PaymentStatus.Cancelled;
+                payment.UpdatedAt = now;
+            }
+            await db.SaveChangesAsync(CancellationToken.None);
+        }
+        throw new PaymentProcessorUnavailableException("Online payments were turned off for this practice.");
     }
 
     private async Task EnsureWithinLinkLimitAsync(string tenantId, Guid accountId, PatientCheckoutOptions settings,

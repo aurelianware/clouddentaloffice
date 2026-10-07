@@ -234,6 +234,21 @@ public sealed class StripeConnectTests : IDisposable
         Assert.Equal(PatientPaymentAttemptStatus.SessionCreated, attempts[timedOut.Id].Status);
     }
 
+    [Fact]
+    public async Task Disable_saves_the_disabled_state_before_closing_payment_links()
+    {
+        await _service.CreateOnboardingLinkAsync("tenant-a", "admin@example.test", Refresh, Return);
+        AddOpenAttempt("cs_open"); await _db.SaveChangesAsync();
+        bool? enabledInDatabaseDuringExpire = null;
+        _api.OnExpire = () => enabledInDatabaseDuringExpire =
+            _db.PaymentProcessorConfigurations.AsNoTracking().Single().Enabled;
+
+        await _service.DisableAsync("tenant-a");
+
+        // A link created meanwhile then either is found by this scan or sees the practice disabled itself.
+        Assert.False(enabledInDatabaseDuringExpire);
+    }
+
     private Guid? _accountId;
 
     private PatientPaymentAttempt AddOpenAttempt(string sessionId)
@@ -298,10 +313,11 @@ public sealed class StripeConnectTests : IDisposable
             throw new NotSupportedException();
         public Dictionary<string, string> SessionStatuses { get; } = [];
         public List<string> ExpiredSessions { get; } = [];
+        public Action? OnExpire { get; set; }
         public Task<string> ExpireCheckoutSessionAsync(PaymentProcessorConfiguration configuration,
             string connectedAccountId, string checkoutSessionId, CancellationToken cancellationToken = default)
         {
-            ExpiredSessions.Add(checkoutSessionId);
+            ExpiredSessions.Add(checkoutSessionId); OnExpire?.Invoke();
             return SessionStatuses.TryGetValue(checkoutSessionId, out var status)
                 ? status == "error" ? throw new StripeConnectException("Stripe unavailable.")
                 : status == "timeout" ? throw new TaskCanceledException("HTTP timeout.") : Task.FromResult(status)
