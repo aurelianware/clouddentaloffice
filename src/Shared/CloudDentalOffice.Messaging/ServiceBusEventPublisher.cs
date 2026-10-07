@@ -52,7 +52,7 @@ public sealed class ServiceBusEventPublisher : IEventPublisher, IAsyncDisposable
             SchedulingAvailabilityChangedEvent => _availabilitySender,
             ZocdocAppointmentWebhookEvent => _zocdocWebhookSender,
             AppointmentLifecycleChangedEvent => _appointmentLifecycleSender,
-            StripePaymentWebhookEvent or StripeRefundWebhookEvent => _stripeWebhookSender,
+            StripePaymentWebhookEvent or StripeRefundWebhookEvent or StripeDisputeWebhookEvent => _stripeWebhookSender,
             CoverageIntakeSubmittedEvent => _coverageIntakeSender,
             _ => _bookingSender
         };

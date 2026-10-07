@@ -16,7 +16,7 @@ public enum PatientRefundStatus { Requested, Pending, Succeeded, Failed, ReviewR
 public enum PaymentReconciliationIssueType
 {
     MissingStripePayment, UnknownStripePayment, AmountMismatch, CurrencyMismatch,
-    PendingTooLong, RefundMismatch, DisconnectedAccount
+    PendingTooLong, RefundMismatch, DisconnectedAccount, Dispute
 }
 public enum PaymentReconciliationIssueStatus { ReviewRequired, Resolved }
 

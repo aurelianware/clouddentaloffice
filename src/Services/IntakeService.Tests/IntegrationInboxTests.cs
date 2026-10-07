@@ -72,6 +72,21 @@ public sealed class IntegrationInboxTests : IDisposable
     }
 
     [Fact]
+    public async Task Stripe_dispute_event_is_dispatched_from_the_inbox()
+    {
+        await using var db = CreateDb();
+        var inbox = new IntegrationInbox(db, _clock);
+        var dispute = new StripeDisputeWebhookEvent("tenant-a", "evt_dispute", "charge.dispute.created",
+            "acct_practice", "dp_test", "pi_test", 2500, "USD", "needs_response", false);
+        await inbox.PersistAsync("tenant-a", "Stripe", "evt_dispute", nameof(StripeDisputeWebhookEvent), dispute);
+        var publisher = new RecordingPublisher();
+        Assert.Equal(1, await Dispatcher(db, publisher,
+            new ServiceBusOptions { ConnectionString = "configured" }).DispatchBatchAsync());
+        Assert.Equal(dispute.ExternalDisputeId,
+            Assert.IsType<StripeDisputeWebhookEvent>(Assert.Single(publisher.Events)).ExternalDisputeId);
+    }
+
+    [Fact]
     public async Task Database_constraint_prevents_duplicate_logical_event()
     {
         await using var db = CreateDb();

@@ -40,6 +40,24 @@ public sealed class StripeWebhookEndpointTests : IDisposable
         Assert.Single(_inbox.Persisted);
     }
 
+    [Fact]
+    public async Task Dispute_event_is_persisted_without_any_cardholder_detail()
+    {
+        var body = "{\"id\":\"evt_2\",\"type\":\"charge.dispute.created\",\"account\":\"acct_practice\"," +
+            "\"livemode\":false,\"created\":" + DateTimeOffset.UtcNow.ToUnixTimeSeconds() + "," +
+            "\"data\":{\"object\":{\"id\":\"dp_1\",\"payment_intent\":\"pi_1\",\"amount\":5000," +
+            "\"currency\":\"usd\",\"status\":\"needs_response\",\"reason\":\"fraudulent\"," +
+            "\"evidence\":{\"customer_name\":\"Private Patient\"}}}}";
+
+        var status = await Send(body);
+
+        Assert.Equal(StatusCodes.Status202Accepted, status);
+        var dispute = Assert.IsType<StripeDisputeWebhookEvent>(Assert.Single(_inbox.Persisted));
+        Assert.Equal(("dp_1", "pi_1", 5000L, "USD", "needs_response"),
+            (dispute.ExternalDisputeId, dispute.PaymentIntentId, dispute.AmountMinor, dispute.Currency, dispute.DisputeStatus));
+        Assert.DoesNotContain("Private", System.Text.Json.JsonSerializer.Serialize(dispute));
+    }
+
     private async Task<int> Send(string body)
     {
         var bytes = Encoding.UTF8.GetBytes(body);

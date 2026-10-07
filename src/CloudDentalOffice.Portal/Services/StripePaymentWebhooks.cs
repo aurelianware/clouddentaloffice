@@ -20,6 +20,8 @@ public sealed class StripePaymentMetrics : IDisposable
     public Counter<long> Failed { get; }
     public Counter<long> Conflicts { get; }
     public Counter<long> DeadLetters { get; }
+    public Counter<long> Ignored { get; }
+    public Counter<long> Disputes { get; }
     public Histogram<double> PostingLatency { get; }
 
     public StripePaymentMetrics()
@@ -28,6 +30,8 @@ public sealed class StripePaymentMetrics : IDisposable
         Failed = _meter.CreateCounter<long>("stripe.payments.failed");
         Conflicts = _meter.CreateCounter<long>("stripe.payments.conflicts");
         DeadLetters = _meter.CreateCounter<long>("stripe.events.dead_lettered");
+        Ignored = _meter.CreateCounter<long>("stripe.events.ignored");
+        Disputes = _meter.CreateCounter<long>("stripe.disputes");
         PostingLatency = _meter.CreateHistogram<double>("stripe.payment.posting_latency", "s");
     }
 
@@ -335,7 +339,8 @@ public sealed class StripePaymentWebhookConsumer(IServiceProvider services, Serv
 
     private async Task ProcessAsync(ProcessMessageEventArgs args)
     {
-        if (args.Message.Subject is not (nameof(StripePaymentWebhookEvent) or nameof(StripeRefundWebhookEvent)))
+        if (args.Message.Subject is not (nameof(StripePaymentWebhookEvent) or nameof(StripeRefundWebhookEvent) or
+                nameof(StripeDisputeWebhookEvent)))
         {
             metrics.DeadLetters.Add(1);
             await args.DeadLetterMessageAsync(args.Message, "UnexpectedSubject");
@@ -344,9 +349,12 @@ public sealed class StripePaymentWebhookConsumer(IServiceProvider services, Serv
         object? webhook;
         try
         {
-            webhook = args.Message.Subject == nameof(StripeRefundWebhookEvent)
-                ? JsonSerializer.Deserialize<StripeRefundWebhookEvent>(args.Message.Body.ToString())
-                : JsonSerializer.Deserialize<StripePaymentWebhookEvent>(args.Message.Body.ToString());
+            webhook = args.Message.Subject switch
+            {
+                nameof(StripeRefundWebhookEvent) => JsonSerializer.Deserialize<StripeRefundWebhookEvent>(args.Message.Body.ToString()),
+                nameof(StripeDisputeWebhookEvent) => JsonSerializer.Deserialize<StripeDisputeWebhookEvent>(args.Message.Body.ToString()),
+                _ => JsonSerializer.Deserialize<StripePaymentWebhookEvent>(args.Message.Body.ToString())
+            };
         }
         catch (JsonException) { webhook = null; }
         if (webhook is null)
@@ -361,6 +369,9 @@ public sealed class StripePaymentWebhookConsumer(IServiceProvider services, Serv
             if (webhook is StripeRefundWebhookEvent refund)
                 await scope.ServiceProvider.GetRequiredService<IStripeRefundWebhookProcessor>()
                     .ProcessAsync(refund, args.CancellationToken);
+            else if (webhook is StripeDisputeWebhookEvent dispute)
+                await scope.ServiceProvider.GetRequiredService<IStripeDisputeWebhookProcessor>()
+                    .ProcessAsync(dispute, args.CancellationToken);
             else
                 await scope.ServiceProvider.GetRequiredService<IStripePaymentWebhookProcessor>()
                     .ProcessAsync((StripePaymentWebhookEvent)webhook, args.CancellationToken);
@@ -386,6 +397,7 @@ public sealed class StripePaymentWebhookConsumer(IServiceProvider services, Serv
     {
         StripePaymentWebhookEvent payment => payment.ExternalEventId,
         StripeRefundWebhookEvent refund => refund.ExternalEventId,
+        StripeDisputeWebhookEvent dispute => dispute.ExternalEventId,
         _ => "unknown"
     };
 

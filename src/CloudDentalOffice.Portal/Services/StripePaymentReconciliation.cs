@@ -88,6 +88,23 @@ public sealed class StripePaymentReconciliationService(CloudDentalDbContext db, 
                 candidates.Add(Candidate(PaymentReconciliationIssueType.RefundMismatch, refund.PaymentId,
                     refund.RefundId, "refund-state-mismatch", refund.ExternalRefundId));
         }
+        // A refund of one of our payments that we have no record of (its event was lost or ignored).
+        var refundedPayments = remoteRefunds.Where(x => x.PaymentIntentId is not null).Select(x => x.PaymentIntentId!)
+            .Distinct().ToList();
+        var paymentsByIntent = await db.PatientPayments.IgnoreQueryFilters().AsNoTracking().Where(x =>
+                x.TenantId == tenantId && x.Processor == PaymentProcessorProvider.Stripe &&
+                x.ExternalPaymentId != null && refundedPayments.Contains(x.ExternalPaymentId))
+            .ToDictionaryAsync(x => x.ExternalPaymentId!, x => x.PaymentId, cancellationToken);
+        var remoteRefundIds = remoteRefunds.Select(x => x.Id).ToList();
+        var recordedRefundIds = (await db.PatientRefunds.IgnoreQueryFilters().AsNoTracking().Where(x =>
+                x.TenantId == tenantId && x.Processor == PaymentProcessorProvider.Stripe &&
+                x.ExternalRefundId != null && remoteRefundIds.Contains(x.ExternalRefundId))
+            .Select(x => x.ExternalRefundId!).ToListAsync(cancellationToken)).ToHashSet(StringComparer.Ordinal);
+        candidates.AddRange(remoteRefunds.Where(x => x.PaymentIntentId is not null &&
+                paymentsByIntent.ContainsKey(x.PaymentIntentId) && !recordedRefundIds.Contains(x.Id))
+            .Select(x => Candidate(PaymentReconciliationIssueType.RefundMismatch, paymentsByIntent[x.PaymentIntentId!],
+                null, "unrecorded-stripe-refund", x.Id)));
+
         await ReplaceIssuesAsync(tenantId, candidates, now, cancellationToken);
         var diagnostics = await ListAsync(tenantId, cancellationToken);
         await RecordRunAsync(tenantId, now, diagnostics.Count == 0 ? "clean" : "review-required", cancellationToken);
@@ -107,8 +124,11 @@ public sealed class StripePaymentReconciliationService(CloudDentalDbContext db, 
     private async Task ReplaceIssuesAsync(string tenantId, IReadOnlyCollection<IssueCandidate> candidates,
         DateTime now, CancellationToken cancellationToken)
     {
+        // Dispute items come from Stripe's dispute events, not from this comparison; only the dispute's
+        // closing event clears them.
         var existing = await db.PaymentReconciliationIssues.IgnoreQueryFilters().Where(x =>
-            x.TenantId == tenantId && x.Status == PaymentReconciliationIssueStatus.ReviewRequired)
+            x.TenantId == tenantId && x.Status == PaymentReconciliationIssueStatus.ReviewRequired &&
+            x.IssueType != PaymentReconciliationIssueType.Dispute)
             .ToListAsync(cancellationToken);
         foreach (var issue in existing)
         {
@@ -132,7 +152,7 @@ public sealed class StripePaymentReconciliationService(CloudDentalDbContext db, 
         issue.RefundId == candidate.RefundId && issue.DiagnosticCode == candidate.Code;
     private static IssueCandidate Candidate(PaymentReconciliationIssueType type, Guid? paymentId, Guid? refundId,
         string code, string? external = null) => new(type, paymentId, refundId, code, external);
-    private static string? SafeReference(string? value) => string.IsNullOrWhiteSpace(value) ? null :
+    internal static string? SafeReference(string? value) => string.IsNullOrWhiteSpace(value) ? null :
         value.Length <= 8 ? value : $"…{value[^8..]}";
 
     private async Task RecordRunAsync(string tenantId, DateTime now, string status,
