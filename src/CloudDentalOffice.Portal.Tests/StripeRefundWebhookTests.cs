@@ -126,6 +126,17 @@ public sealed class StripeRefundWebhookTests : IDisposable
     }
 
     [Fact]
+    public async Task Refund_still_settles_after_the_practice_disables_online_payments()
+    {
+        await _db.PaymentProcessorConfigurations.IgnoreQueryFilters().ExecuteUpdateAsync(x => x.SetProperty(c => c.Enabled, false));
+        _db.ChangeTracker.Clear();
+
+        await Service().ProcessAsync(Event());
+
+        Assert.Equal(PatientRefundStatus.Succeeded, (await _db.PatientRefunds.IgnoreQueryFilters().SingleAsync()).Status);
+    }
+
+    [Fact]
     public async Task Late_pending_event_does_not_move_a_succeeded_refund_back()
     {
         await Service().ProcessAsync(Event());

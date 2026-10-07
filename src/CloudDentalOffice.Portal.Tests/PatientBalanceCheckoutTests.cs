@@ -241,6 +241,25 @@ public sealed class PatientBalanceCheckoutTests : IDisposable
         Assert.All(handler.Accounts, account => Assert.Equal("acct_practice", account));
     }
 
+    [Theory]
+    [InlineData("USD", 50, "5000")]
+    [InlineData("JPY", 5000, "5000")]
+    [InlineData("KWD", 5, "5000")]
+    public async Task Stripe_checkout_amount_uses_the_currency_exponent(string currency, int amount, string unitAmount)
+    {
+        var handler = new RecordingHandler("""
+            {"id":"cs_test_opaque","payment_intent":null,"url":"https://checkout.stripe.test/session","expires_at":1787171400}
+            """);
+        var values = new Dictionary<string, string?> { ["Secrets:StripeTest"] = "sk_test_not-a-real-secret" };
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(values).Build();
+        var api = new StripeApiClient(new HttpClient(handler) { BaseAddress = new Uri("https://api.stripe.com") },
+            new ConfigurationStripeCredentialProvider(configuration), configuration);
+        await api.CreateCheckoutSessionAsync(Configuration(), "acct_practice",
+            new PaymentRequest("tenant-a", Guid.NewGuid(), null, new Money(amount, currency), $"pay_{new string('b', 32)}",
+                PatientPaymentMethod.Card, "https://portal.example.test/payments/success", "https://portal.example.test/payments/cancel"));
+        Assert.Contains($"unit_amount%5D={unitAmount}&", handler.Body);
+    }
+
     [Fact]
     public async Task Stripe_request_contains_only_generic_presentation_and_opaque_reference()
     {

@@ -159,14 +159,14 @@ public sealed class StripeApiClient(HttpClient httpClient, IStripeCredentialProv
         if (request.Amount.Amount <= 0) throw new ArgumentOutOfRangeException(nameof(request.Amount));
         ValidateCheckoutUrl(request.SuccessUrl, config.Environment, nameof(request.SuccessUrl));
         ValidateCheckoutUrl(request.CancelUrl, config.Environment, nameof(request.CancelUrl));
-        var cents = checked((long)(request.Amount.Amount * 100m));
+        var minorUnits = StripeCurrency.ToMinorUnits(request.Amount);
         var fields = new Dictionary<string, string>
         {
             ["mode"] = "payment",
             ["success_url"] = request.SuccessUrl!,
             ["cancel_url"] = request.CancelUrl!,
             ["line_items[0][price_data][currency]"] = request.Amount.Currency.ToLowerInvariant(),
-            ["line_items[0][price_data][unit_amount]"] = cents.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            ["line_items[0][price_data][unit_amount]"] = minorUnits.ToString(System.Globalization.CultureInfo.InvariantCulture),
             ["line_items[0][price_data][product_data][name]"] = "Account payment",
             ["line_items[0][quantity]"] = "1",
             ["metadata[payment_reference]"] = request.InternalPaymentReference,
@@ -424,8 +424,50 @@ public sealed class StripeConnectService(CloudDentalDbContext db, IStripeApiClie
     public async Task DisableAsync(string tenantId, CancellationToken cancellationToken = default)
     {
         EnsureTenant(tenantId); var config = await Configuration(tenantId, cancellationToken);
+        await ExpireOpenCheckoutSessionsAsync(config, cancellationToken);
         config.Enabled = false; config.OnboardingStatus = PaymentProcessorOnboardingStatus.Disabled;
         config.UpdatedAt = clock.GetUtcNow().UtcDateTime; await db.SaveChangesAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Disabling stops patients paying links that are still open. This is best effort: disabling
+    /// must not fail because Stripe is unreachable, and a session paid anyway still posts through
+    /// its webhook, which accepts events for a disabled configuration.
+    /// </summary>
+    private async Task ExpireOpenCheckoutSessionsAsync(PaymentProcessorConfiguration config,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(config.ConnectedMerchantReference)) return;
+        var open = await db.PatientPaymentAttempts.IgnoreQueryFilters().Where(x => x.TenantId == config.TenantId &&
+                x.Status == PatientPaymentAttemptStatus.SessionCreated && x.StripeCheckoutSessionId != null)
+            .ToListAsync(cancellationToken);
+        var now = clock.GetUtcNow().UtcDateTime;
+        foreach (var attempt in open)
+        {
+            string status;
+            try
+            {
+                status = await api.ExpireCheckoutSessionAsync(config, config.ConnectedMerchantReference,
+                    attempt.StripeCheckoutSessionId!, cancellationToken);
+            }
+            catch (Exception ex) when (ex is StripeConnectException or HttpRequestException)
+            {
+                continue;
+            }
+            if (status != "expired") continue;
+            attempt.Status = PatientPaymentAttemptStatus.Cancelled;
+            attempt.FailureCode = "processor-disabled";
+            attempt.UpdatedAt = now;
+            var payment = attempt.PaymentId is { } paymentId
+                ? await db.PatientPayments.IgnoreQueryFilters().SingleOrDefaultAsync(x =>
+                    x.TenantId == config.TenantId && x.PaymentId == paymentId, cancellationToken)
+                : null;
+            if (payment is { Status: PaymentStatus.Pending })
+            {
+                payment.Status = PaymentStatus.Cancelled;
+                payment.UpdatedAt = now;
+            }
+        }
     }
 
     private async Task<PaymentProcessorConfiguration> Configuration(string tenantId, CancellationToken cancellationToken,

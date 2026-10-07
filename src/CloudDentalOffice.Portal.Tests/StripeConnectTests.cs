@@ -207,6 +207,57 @@ public sealed class StripeConnectTests : IDisposable
         Assert.Equal(1, _api.CreateAccountCalls); Assert.Equal(1, _api.CreateLinkCalls);
     }
 
+    [Fact]
+    public async Task Disable_closes_open_payment_links_and_still_disables_if_Stripe_fails()
+    {
+        await _service.CreateOnboardingLinkAsync("tenant-a", "admin@example.test", Refresh, Return);
+        var open = AddOpenAttempt("cs_open");
+        var paid = AddOpenAttempt("cs_paid");
+        var unreachable = AddOpenAttempt("cs_error");
+        await _db.SaveChangesAsync();
+        _api.SessionStatuses["cs_paid"] = "complete";
+        _api.SessionStatuses["cs_error"] = "error";
+
+        await _service.DisableAsync("tenant-a");
+
+        Assert.False((await _db.PaymentProcessorConfigurations.SingleAsync()).Enabled);
+        Assert.Equal(["cs_error", "cs_open", "cs_paid"], _api.ExpiredSessions.Order());
+        var attempts = await _db.PatientPaymentAttempts.ToDictionaryAsync(x => x.Id);
+        Assert.Equal(PatientPaymentAttemptStatus.Cancelled, attempts[open.Id].Status);
+        Assert.Equal("processor-disabled", attempts[open.Id].FailureCode);
+        Assert.Equal(PaymentStatus.Cancelled, (await _db.PatientPayments.SingleAsync(x => x.PaymentId == open.PaymentId)).Status);
+        // Paid or unreachable sessions are left for their webhook to settle.
+        Assert.Equal(PatientPaymentAttemptStatus.SessionCreated, attempts[paid.Id].Status);
+        Assert.Equal(PatientPaymentAttemptStatus.SessionCreated, attempts[unreachable.Id].Status);
+    }
+
+    private Guid? _accountId;
+
+    private PatientPaymentAttempt AddOpenAttempt(string sessionId)
+    {
+        var now = DateTime.UtcNow;
+        if (_accountId is null)
+        {
+            _accountId = Guid.NewGuid();
+            _db.Patients.Add(new Patient { PatientId = 101, TenantId = "tenant-a", FirstName = "Test", LastName = "Patient",
+                DateOfBirth = new(1980, 1, 1), Gender = "U", Status = "Active" });
+            _db.PatientAccounts.Add(new PatientAccount { Id = _accountId.Value, TenantId = "tenant-a", PatientId = 101,
+                CreatedAt = now, UpdatedAt = now });
+        }
+        var accountId = _accountId.Value;
+        var paymentId = Guid.NewGuid();
+        _db.PatientPayments.Add(new PatientPayment { PaymentId = paymentId, TenantId = "tenant-a",
+            PatientAccountId = accountId, Amount = 10m, Currency = "USD", PaymentDate = now,
+            Method = PatientPaymentMethod.Card, Processor = PaymentProcessorProvider.Stripe,
+            InternalPaymentReference = $"pay_{sessionId}", Status = PaymentStatus.Pending, CreatedAt = now, UpdatedAt = now });
+        var attempt = new PatientPaymentAttempt { Id = Guid.NewGuid(), TenantId = "tenant-a", PatientAccountId = accountId,
+            PaymentId = paymentId, Selection = PatientPaymentSelection.FullBalance, Amount = 10m, Currency = "USD",
+            PaymentReference = $"pay_{sessionId}", Status = PatientPaymentAttemptStatus.SessionCreated,
+            StripeCheckoutSessionId = sessionId, ConnectedAccountId = "acct_test_practice", CreatedAt = now, UpdatedAt = now };
+        _db.PatientPaymentAttempts.Add(attempt);
+        return attempt;
+    }
+
     private static readonly Uri Refresh = new("https://portal.example.test/settings/payments/stripe?flow=refresh");
     private static readonly Uri Return = new("https://portal.example.test/settings/payments/stripe?flow=return");
     private static PaymentProcessorConfiguration Configuration() => new()
@@ -242,9 +293,16 @@ public sealed class StripeConnectTests : IDisposable
         public Task<StripeCheckoutSessionSnapshot> CreateCheckoutSessionAsync(PaymentProcessorConfiguration configuration,
             string connectedAccountId, PaymentRequest request, CancellationToken cancellationToken = default) =>
             throw new NotSupportedException();
+        public Dictionary<string, string> SessionStatuses { get; } = [];
+        public List<string> ExpiredSessions { get; } = [];
         public Task<string> ExpireCheckoutSessionAsync(PaymentProcessorConfiguration configuration,
-            string connectedAccountId, string checkoutSessionId, CancellationToken cancellationToken = default) =>
-            throw new NotSupportedException();
+            string connectedAccountId, string checkoutSessionId, CancellationToken cancellationToken = default)
+        {
+            ExpiredSessions.Add(checkoutSessionId);
+            return SessionStatuses.TryGetValue(checkoutSessionId, out var status)
+                ? status == "error" ? throw new StripeConnectException("Stripe unavailable.") : Task.FromResult(status)
+                : Task.FromResult("expired");
+        }
         public Task<StripeRefundSnapshot> CreateRefundAsync(PaymentProcessorConfiguration configuration,
             string connectedAccountId, PaymentRefundRequest request, string externalPaymentId,
             CancellationToken cancellationToken = default) => throw new NotSupportedException();
