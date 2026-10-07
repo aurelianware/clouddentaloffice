@@ -20,6 +20,7 @@ public sealed class StripeDisputeWebhookProcessor(CloudDentalDbContext db, TimeP
     StripePaymentMetrics metrics, ILogger<StripeDisputeWebhookProcessor> logger) : IStripeDisputeWebhookProcessor
 {
     private const string Actor = "processor:Stripe";
+    private const string ClosedMarker = "dispute-closed";
 
     public async Task ProcessAsync(StripeDisputeWebhookEvent webhook, CancellationToken cancellationToken = default)
     {
@@ -59,6 +60,14 @@ public sealed class StripeDisputeWebhookProcessor(CloudDentalDbContext db, TimeP
         }
         else if (webhook.EventType == "charge.dispute.created")
         {
+            if (await IsClosedAsync(payment, webhook, cancellationToken))
+            {
+                // Delivered after the dispute's closing event (the broker does not preserve order).
+                processorEvent.FailureCode = "stale-dispute-event";
+                await db.SaveChangesAsync(cancellationToken);
+                await transaction.CommitAsync(cancellationToken);
+                return;
+            }
             await OpenIssueAsync(payment, webhook, "payment-disputed", now, cancellationToken);
             Audit(payment, "PaymentDisputed", "stripe-dispute-opened", now);
             metrics.Disputes.Add(1);
@@ -76,6 +85,16 @@ public sealed class StripeDisputeWebhookProcessor(CloudDentalDbContext db, TimeP
                 issue.Status = PaymentReconciliationIssueStatus.Resolved;
                 issue.ResolvedAt = now;
             }
+            if (!await IsClosedAsync(payment, webhook, cancellationToken))
+                db.PaymentReconciliationIssues.Add(new PaymentReconciliationIssue
+                {
+                    // Already resolved: it only records that this dispute is over, so a late "created"
+                    // event cannot reopen it.
+                    Id = Guid.NewGuid(), TenantId = payment.TenantId, IssueType = PaymentReconciliationIssueType.Dispute,
+                    Status = PaymentReconciliationIssueStatus.Resolved, PaymentId = payment.PaymentId,
+                    ExternalReference = StripePaymentReconciliationService.SafeReference(webhook.ExternalDisputeId),
+                    DiagnosticCode = ClosedMarker, DetectedAt = now, ResolvedAt = now
+                });
             if (webhook.DisputeStatus == "lost")
                 await PostLostDisputeAsync(payment, webhook, now, cancellationToken);
             else
@@ -111,7 +130,8 @@ public sealed class StripeDisputeWebhookProcessor(CloudDentalDbContext db, TimeP
             LedgerEntryId = Guid.NewGuid(), TenantId = payment.TenantId, PatientAccountId = original.PatientAccountId,
             EntryType = PatientLedgerEntryType.PatientPayment, Amount = -lost, Currency = original.Currency,
             EffectiveDate = now, SourceType = PatientLedgerSourceType.SystemReversal, SourceId = sourceId,
-            DescriptionCode = "dispute-lost", CreatedAt = now, CreatedBy = Actor
+            DescriptionCode = "dispute-lost", CreatedAt = now, CreatedBy = Actor,
+            ReversalOfEntryId = original.LedgerEntryId
         };
         db.PatientLedgerEntries.Add(reversal);
         await PaymentAllocationUnwinder.UnapplyAsync(db, payment, lost, "dispute-lost", now, cancellationToken);
@@ -126,6 +146,15 @@ public sealed class StripeDisputeWebhookProcessor(CloudDentalDbContext db, TimeP
         Audit(payment, "PaymentDisputeLost", "stripe-dispute-lost", now);
         logger.LogWarning("Stripe dispute on payment {PaymentId} was lost; the disputed amount was reversed.",
             payment.PaymentId);
+    }
+
+    private Task<bool> IsClosedAsync(PatientPayment payment, StripeDisputeWebhookEvent webhook,
+        CancellationToken cancellationToken)
+    {
+        var reference = StripePaymentReconciliationService.SafeReference(webhook.ExternalDisputeId);
+        return db.PaymentReconciliationIssues.IgnoreQueryFilters().AnyAsync(x => x.TenantId == payment.TenantId &&
+            x.PaymentId == payment.PaymentId && x.IssueType == PaymentReconciliationIssueType.Dispute &&
+            x.DiagnosticCode == ClosedMarker && x.ExternalReference == reference, cancellationToken);
     }
 
     private async Task OpenIssueAsync(PatientPayment payment, StripeDisputeWebhookEvent webhook, string code,

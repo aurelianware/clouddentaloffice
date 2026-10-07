@@ -80,6 +80,7 @@ public sealed class StripeDisputeWebhookTests : IDisposable
             .Where(x => x.SourceType == PatientLedgerSourceType.SystemReversal).ToListAsync());
         Assert.Equal(-100m, reversal.Amount);
         Assert.Equal("dispute-lost", reversal.DescriptionCode);
+        Assert.Equal(_paymentEntryId, reversal.ReversalOfEntryId);
         Assert.Empty(await _db.PatientPaymentAllocations.IgnoreQueryFilters().Where(x => !x.UnappliedAt.HasValue).ToListAsync());
         var payment = await _db.PatientPayments.IgnoreQueryFilters().SingleAsync();
         Assert.Equal(reversal.LedgerEntryId, payment.ReversalLedgerEntryId);
@@ -119,6 +120,19 @@ public sealed class StripeDisputeWebhookTests : IDisposable
         Assert.Equal(0m, await AmountDue());
         Assert.Contains(await _db.FinancialAuditEvents.IgnoreQueryFilters().ToListAsync(),
             x => x.Action == "PaymentDisputeClosed" && x.ReasonCode == $"stripe-dispute-{status}");
+    }
+
+    [Theory]
+    [InlineData("won")]
+    [InlineData("lost")]
+    public async Task Created_event_delivered_after_the_dispute_closed_does_not_reopen_it(string status)
+    {
+        await Service().ProcessAsync(Closed(status));
+        await Service().ProcessAsync(Opened());
+
+        Assert.Empty(await OpenIssues());
+        Assert.Contains(await _db.PaymentProcessorEvents.IgnoreQueryFilters().ToListAsync(),
+            x => x.ExternalEventId == "evt_opened" && x.FailureCode == "stale-dispute-event");
     }
 
     [Fact]

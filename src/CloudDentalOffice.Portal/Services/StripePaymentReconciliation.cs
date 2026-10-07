@@ -149,7 +149,8 @@ public sealed class StripePaymentReconciliationService(CloudDentalDbContext db, 
 
     private static bool Same(PaymentReconciliationIssue issue, IssueCandidate candidate) =>
         issue.IssueType == candidate.Type && issue.PaymentId == candidate.PaymentId &&
-        issue.RefundId == candidate.RefundId && issue.DiagnosticCode == candidate.Code;
+        issue.RefundId == candidate.RefundId && issue.DiagnosticCode == candidate.Code &&
+        issue.ExternalReference == SafeReference(candidate.ExternalReference);
     private static IssueCandidate Candidate(PaymentReconciliationIssueType type, Guid? paymentId, Guid? refundId,
         string code, string? external = null) => new(type, paymentId, refundId, code, external);
     internal static string? SafeReference(string? value) => string.IsNullOrWhiteSpace(value) ? null :

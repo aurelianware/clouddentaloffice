@@ -176,7 +176,8 @@ the dispute is open. `charge.dispute.closed`:
   `dispute-lost-amount-mismatch` for review.
 
 Dispute review items are not cleared by reconciliation runs, only by Stripe's
-dispute events. Respond to disputes (evidence, deadlines) in the Stripe
+dispute events. A closed dispute is remembered, so a `created` event delivered
+late cannot reopen it. Respond to disputes (evidence, deadlines) in the Stripe
 Dashboard.
 
 Use **Billing → Stripe reconciliation → Run 30-day reconciliation** to compare
