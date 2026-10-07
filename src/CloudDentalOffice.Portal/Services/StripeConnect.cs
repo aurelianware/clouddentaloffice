@@ -159,7 +159,7 @@ public sealed class StripeApiClient(HttpClient httpClient, IStripeCredentialProv
         if (request.Amount.Amount <= 0) throw new ArgumentOutOfRangeException(nameof(request.Amount));
         ValidateCheckoutUrl(request.SuccessUrl, config.Environment, nameof(request.SuccessUrl));
         ValidateCheckoutUrl(request.CancelUrl, config.Environment, nameof(request.CancelUrl));
-        var minorUnits = StripeCurrency.ToMinorUnits(request.Amount);
+        var minorUnits = StripeCurrency.ToExactMinorUnits(request.Amount);
         var fields = new Dictionary<string, string>
         {
             ["mode"] = "payment",
@@ -450,8 +450,10 @@ public sealed class StripeConnectService(CloudDentalDbContext db, IStripeApiClie
                 status = await api.ExpireCheckoutSessionAsync(config, config.ConnectedMerchantReference,
                     attempt.StripeCheckoutSessionId!, cancellationToken);
             }
-            catch (Exception ex) when (ex is StripeConnectException or HttpRequestException)
+            catch (Exception ex) when (ex is StripeConnectException or HttpRequestException ||
+                                       (ex is OperationCanceledException && !cancellationToken.IsCancellationRequested))
             {
+                // Includes an HTTP timeout; a cancellation the caller asked for still propagates.
                 continue;
             }
             if (status != "expired") continue;
@@ -551,11 +553,20 @@ internal static class StripeCurrency
         { "BIF", "CLP", "DJF", "GNF", "JPY", "KMF", "KRW", "MGA", "PYG", "RWF", "UGX", "VND", "VUV", "XAF", "XOF", "XPF" };
     private static readonly HashSet<string> ThreeDecimal = new(StringComparer.OrdinalIgnoreCase)
         { "BHD", "JOD", "KWD", "OMR", "TND" };
-    public static long ToMinorUnits(Money value)
+    public static long ToMinorUnits(Money value) =>
+        decimal.ToInt64(decimal.Round(value.Amount * Multiplier(value.Currency), 0, MidpointRounding.AwayFromZero));
+
+    /// <summary>Minor units for a charge; an amount the currency cannot express (50.50 JPY) is refused, not rounded.</summary>
+    public static long ToExactMinorUnits(Money value)
     {
-        var multiplier = ZeroDecimal.Contains(value.Currency) ? 1m : ThreeDecimal.Contains(value.Currency) ? 1_000m : 100m;
-        return decimal.ToInt64(decimal.Round(value.Amount * multiplier, 0, MidpointRounding.AwayFromZero));
+        var scaled = value.Amount * Multiplier(value.Currency);
+        if (scaled != decimal.Truncate(scaled))
+            throw new ArgumentException($"{value.Amount} is not a valid {value.Currency.ToUpperInvariant()} amount.", nameof(value));
+        return decimal.ToInt64(scaled);
     }
+
+    private static decimal Multiplier(string currency) =>
+        ZeroDecimal.Contains(currency) ? 1m : ThreeDecimal.Contains(currency) ? 1_000m : 100m;
 }
 
 // Patient checkout/refund support is intentionally separate from Connect onboarding in this PR.

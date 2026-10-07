@@ -214,14 +214,16 @@ public sealed class StripeConnectTests : IDisposable
         var open = AddOpenAttempt("cs_open");
         var paid = AddOpenAttempt("cs_paid");
         var unreachable = AddOpenAttempt("cs_error");
+        var timedOut = AddOpenAttempt("cs_timeout");
         await _db.SaveChangesAsync();
         _api.SessionStatuses["cs_paid"] = "complete";
         _api.SessionStatuses["cs_error"] = "error";
+        _api.SessionStatuses["cs_timeout"] = "timeout";
 
         await _service.DisableAsync("tenant-a");
 
         Assert.False((await _db.PaymentProcessorConfigurations.SingleAsync()).Enabled);
-        Assert.Equal(["cs_error", "cs_open", "cs_paid"], _api.ExpiredSessions.Order());
+        Assert.Equal(["cs_error", "cs_open", "cs_paid", "cs_timeout"], _api.ExpiredSessions.Order());
         var attempts = await _db.PatientPaymentAttempts.ToDictionaryAsync(x => x.Id);
         Assert.Equal(PatientPaymentAttemptStatus.Cancelled, attempts[open.Id].Status);
         Assert.Equal("processor-disabled", attempts[open.Id].FailureCode);
@@ -229,6 +231,7 @@ public sealed class StripeConnectTests : IDisposable
         // Paid or unreachable sessions are left for their webhook to settle.
         Assert.Equal(PatientPaymentAttemptStatus.SessionCreated, attempts[paid.Id].Status);
         Assert.Equal(PatientPaymentAttemptStatus.SessionCreated, attempts[unreachable.Id].Status);
+        Assert.Equal(PatientPaymentAttemptStatus.SessionCreated, attempts[timedOut.Id].Status);
     }
 
     private Guid? _accountId;
@@ -300,7 +303,8 @@ public sealed class StripeConnectTests : IDisposable
         {
             ExpiredSessions.Add(checkoutSessionId);
             return SessionStatuses.TryGetValue(checkoutSessionId, out var status)
-                ? status == "error" ? throw new StripeConnectException("Stripe unavailable.") : Task.FromResult(status)
+                ? status == "error" ? throw new StripeConnectException("Stripe unavailable.")
+                : status == "timeout" ? throw new TaskCanceledException("HTTP timeout.") : Task.FromResult(status)
                 : Task.FromResult("expired");
         }
         public Task<StripeRefundSnapshot> CreateRefundAsync(PaymentProcessorConfiguration configuration,

@@ -261,6 +261,21 @@ public sealed class PatientBalanceCheckoutTests : IDisposable
     }
 
     [Fact]
+    public async Task Stripe_checkout_refuses_an_amount_the_currency_cannot_express()
+    {
+        var handler = new RecordingHandler("{}");
+        var values = new Dictionary<string, string?> { ["Secrets:StripeTest"] = "sk_test_not-a-real-secret" };
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(values).Build();
+        var api = new StripeApiClient(new HttpClient(handler) { BaseAddress = new Uri("https://api.stripe.com") },
+            new ConfigurationStripeCredentialProvider(configuration), configuration);
+
+        await Assert.ThrowsAsync<ArgumentException>(() => api.CreateCheckoutSessionAsync(Configuration(), "acct_practice",
+            new PaymentRequest("tenant-a", Guid.NewGuid(), null, new Money(50.50m, "JPY"), $"pay_{new string('c', 32)}",
+                PatientPaymentMethod.Card, "https://portal.example.test/payments/success", "https://portal.example.test/payments/cancel")));
+        Assert.Equal(string.Empty, handler.Body);
+    }
+
+    [Fact]
     public async Task Stripe_request_contains_only_generic_presentation_and_opaque_reference()
     {
         var handler = new RecordingHandler("""
