@@ -15,6 +15,8 @@ public sealed class PatientCheckoutOptions
     public bool AllowPartialPayments { get; set; } = true;
     public bool AllowOverpayments { get; set; }
     public string PublicBaseUrl { get; set; } = string.Empty;
+    /// <summary>Most payment links that may be created for one patient account in an hour.</summary>
+    public int MaximumLinksPerAccountPerHour { get; set; } = 20;
 }
 
 public sealed record PatientBalanceCheckoutRequest(string TenantId, Guid PatientAccountId,
@@ -72,8 +74,10 @@ public sealed class PatientBalanceCheckoutService(CloudDentalDbContext db, IPaym
             throw new PaymentProcessorUnavailableException("The practice Stripe account is not ready to accept payments.");
 
         var baseUri = SafeBaseUri(settings.PublicBaseUrl);
-        var reference = $"pay_{Guid.NewGuid():N}";
         var now = clock.GetUtcNow().UtcDateTime;
+        await EnsureWithinLinkLimitAsync(request.TenantId, account.Id, settings, now, cancellationToken);
+        await SupersedeOpenLinksAsync(request.TenantId, account.Id, now, cancellationToken);
+        var reference = $"pay_{Guid.NewGuid():N}";
         var attempt = new PatientPaymentAttempt
         {
             Id = Guid.NewGuid(), TenantId = request.TenantId, PatientAccountId = account.Id,
@@ -105,6 +109,53 @@ public sealed class PatientBalanceCheckoutService(CloudDentalDbContext db, IPaym
             attempt.Status = PatientPaymentAttemptStatus.Failed; attempt.FailureCode = "checkout-session-failed";
             attempt.UpdatedAt = clock.GetUtcNow().UtcDateTime; await db.SaveChangesAsync(CancellationToken.None);
             throw;
+        }
+    }
+
+    private async Task EnsureWithinLinkLimitAsync(string tenantId, Guid accountId, PatientCheckoutOptions settings,
+        DateTime now, CancellationToken cancellationToken)
+    {
+        var since = now.AddHours(-1);
+        var recent = await db.PatientPaymentAttempts.IgnoreQueryFilters().CountAsync(x => x.TenantId == tenantId &&
+            x.PatientAccountId == accountId && x.CreatedAt > since, cancellationToken);
+        if (recent >= Math.Max(1, settings.MaximumLinksPerAccountPerHour))
+            throw new InvalidOperationException("Too many payment links were created for this account in the last hour. Try again later.");
+    }
+
+    /// <summary>
+    /// Each open link charges the amount it was created for, and the balance only counts payments
+    /// that have completed, so two open links could each collect the whole balance. A new link
+    /// therefore closes the account's earlier open links first. If one of them was already paid,
+    /// no new link is created until that payment posts. Every unresolved link is checked, however
+    /// old: Stripe decides when a session lapses, and one that already has is simply confirmed
+    /// expired and closed here once.
+    /// </summary>
+    private async Task SupersedeOpenLinksAsync(string tenantId, Guid accountId, DateTime now,
+        CancellationToken cancellationToken)
+    {
+        var open = await db.PatientPaymentAttempts.IgnoreQueryFilters().Where(x => x.TenantId == tenantId &&
+                x.PatientAccountId == accountId && x.Status == PatientPaymentAttemptStatus.SessionCreated &&
+                x.StripeCheckoutSessionId != null)
+            .ToListAsync(cancellationToken);
+        foreach (var attempt in open)
+        {
+            var closure = await checkout.ExpireAsync(tenantId, attempt.StripeCheckoutSessionId!, cancellationToken);
+            if (closure == PaymentSessionClosure.Completed)
+                throw new InvalidOperationException(
+                    "A payment from an earlier link for this account is being processed. Wait for it to post before creating a new link.");
+            attempt.Status = PatientPaymentAttemptStatus.Cancelled;
+            attempt.FailureCode = "superseded";
+            attempt.UpdatedAt = now;
+            var payment = attempt.PaymentId is { } paymentId
+                ? await db.PatientPayments.IgnoreQueryFilters().SingleOrDefaultAsync(x => x.TenantId == tenantId &&
+                    x.PaymentId == paymentId, cancellationToken)
+                : null;
+            if (payment is { Status: PaymentStatus.Pending })
+            {
+                payment.Status = PaymentStatus.Cancelled;
+                payment.UpdatedAt = now;
+            }
+            await db.SaveChangesAsync(cancellationToken);
         }
     }
 

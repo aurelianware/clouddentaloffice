@@ -150,5 +150,7 @@ public sealed class PatientBillingApiTests : IDisposable
             return Task.FromResult(new PaymentSession(request.InternalPaymentReference, "cs_test", null,
                 new Uri("https://checkout.stripe.test/session"), null, DateTime.UtcNow.AddMinutes(30), PaymentStatus.Pending));
         }
+        public Task<PaymentSessionClosure> ExpireAsync(string tenantId, string externalSessionId,
+            CancellationToken cancellationToken = default) => Task.FromResult(PaymentSessionClosure.Expired);
     }
 }

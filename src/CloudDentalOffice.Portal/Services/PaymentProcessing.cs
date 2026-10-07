@@ -13,6 +13,9 @@ public sealed record PaymentRequest(string TenantId, Guid PatientAccountId, Guid
 public sealed record PaymentSession(string InternalPaymentReference, string ExternalSessionId,
     string? ExternalPaymentId, Uri? CheckoutUrl, string? ClientToken, DateTime? ExpiresAt, PaymentStatus Status);
 
+/// <summary>How a processor session ended when it was closed: expired unpaid, or already completed by the payer.</summary>
+public enum PaymentSessionClosure { Expired, Completed }
+
 public sealed record PaymentRefundRequest(string TenantId, Guid PaymentId, Money Amount,
     string InternalRefundReference, string Reason = "requested_by_customer", string RequestedBy = "system");
 
@@ -36,6 +39,9 @@ public interface IPaymentProcessor
         CancellationToken cancellationToken = default);
     Task<PaymentRefundResult> RefundAsync(PaymentProcessorConfiguration configuration, PaymentRefundRequest request,
         string externalPaymentId, CancellationToken cancellationToken = default);
+    /// <summary>Closes an open checkout session so it can no longer be paid; reports Completed if the payer got there first.</summary>
+    Task<PaymentSessionClosure> ExpireSessionAsync(PaymentProcessorConfiguration configuration, string externalSessionId,
+        CancellationToken cancellationToken = default);
 }
 
 public interface IPaymentProcessorResolver
@@ -47,6 +53,8 @@ public interface IPaymentProcessorResolver
 public interface IPaymentCheckoutService
 {
     Task<PaymentSession> CreateAsync(PaymentRequest request, CancellationToken cancellationToken = default);
+    Task<PaymentSessionClosure> ExpireAsync(string tenantId, string externalSessionId,
+        CancellationToken cancellationToken = default);
 }
 
 public interface IPaymentRefundService
@@ -110,6 +118,14 @@ public sealed class PaymentProcessorResolver(CloudDentalDbContext db, IEnumerabl
 public sealed class PaymentCheckoutService(CloudDentalDbContext db, IPaymentProcessorResolver resolver,
     ITenantProvider tenantProvider, TimeProvider clock) : IPaymentCheckoutService
 {
+    public async Task<PaymentSessionClosure> ExpireAsync(string tenantId, string externalSessionId,
+        CancellationToken cancellationToken = default)
+    {
+        PaymentTenantGuard.Ensure(tenantProvider, tenantId);
+        var (processor, configuration) = await resolver.ResolveAsync(tenantId, cancellationToken);
+        return await processor.ExpireSessionAsync(configuration, externalSessionId, cancellationToken);
+    }
+
     public async Task<PaymentSession> CreateAsync(PaymentRequest request, CancellationToken cancellationToken = default)
     {
         PaymentTenantGuard.Ensure(tenantProvider, request.TenantId);
