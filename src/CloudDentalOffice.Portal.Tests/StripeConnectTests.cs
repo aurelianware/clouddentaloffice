@@ -201,7 +201,7 @@ public sealed class StripeConnectTests : IDisposable
     public async Task Disable_is_local_and_never_deletes_the_connected_account()
     {
         await _service.CreateOnboardingLinkAsync("tenant-a", "admin@example.test", Refresh, Return);
-        await _service.DisableAsync("tenant-a");
+        await _service.DisableAsync("tenant-a", "admin@example.test");
         var config = await _db.PaymentProcessorConfigurations.SingleAsync();
         Assert.False(config.Enabled); Assert.Equal("acct_test_practice", config.ConnectedMerchantReference);
         Assert.Equal(1, _api.CreateAccountCalls); Assert.Equal(1, _api.CreateLinkCalls);
@@ -220,7 +220,7 @@ public sealed class StripeConnectTests : IDisposable
         _api.SessionStatuses["cs_error"] = "error";
         _api.SessionStatuses["cs_timeout"] = "timeout";
 
-        await _service.DisableAsync("tenant-a");
+        await _service.DisableAsync("tenant-a", "admin@example.test");
 
         Assert.False((await _db.PaymentProcessorConfigurations.SingleAsync()).Enabled);
         Assert.Equal(["cs_error", "cs_open", "cs_paid", "cs_timeout"], _api.ExpiredSessions.Order());
@@ -243,10 +243,31 @@ public sealed class StripeConnectTests : IDisposable
         _api.OnExpire = () => enabledInDatabaseDuringExpire =
             _db.PaymentProcessorConfigurations.AsNoTracking().Single().Enabled;
 
-        await _service.DisableAsync("tenant-a");
+        await _service.DisableAsync("tenant-a", "admin@example.test");
 
         // A link created meanwhile then either is found by this scan or sees the practice disabled itself.
         Assert.False(enabledInDatabaseDuringExpire);
+    }
+
+    [Fact]
+    public async Task Connecting_and_disabling_Stripe_are_audited_with_the_administrator()
+    {
+        await _service.CreateOnboardingLinkAsync("tenant-a", "admin@example.test", Refresh, Return);
+        await _service.CreateOnboardingLinkAsync("tenant-a", "admin@example.test", Refresh, Return);
+        await _service.DisableAsync("tenant-a", "other-admin@example.test");
+
+        var audit = (await _db.FinancialAuditEvents.IgnoreQueryFilters().ToListAsync()).OrderBy(x => x.CreatedAt).ToList();
+        Assert.Equal([("StripeAccountCreated", "admin@example.test"), ("StripePaymentsDisabled", "other-admin@example.test")],
+            audit.Select(x => (x.Action, x.Actor)));
+        var configId = (await _db.PaymentProcessorConfigurations.SingleAsync()).Id.ToString("N");
+        Assert.All(audit, x => Assert.Equal((nameof(PaymentProcessorConfiguration), configId), (x.EntityType, x.EntityId)));
+    }
+
+    [Fact]
+    public async Task Disable_requires_an_actor_to_audit()
+    {
+        await Assert.ThrowsAsync<ArgumentException>(() => _service.DisableAsync("tenant-a", " "));
+        Assert.True((await _db.PaymentProcessorConfigurations.SingleAsync()).Enabled);
     }
 
     private Guid? _accountId;
