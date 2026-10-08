@@ -22,7 +22,7 @@
     {
         <MudPaper Class="pa-4 mt-4" Outlined="true">
             <MudStack Row="true" AlignItems="AlignItems.Center"><MudText Typo="Typo.h6">Stripe reconciliation</MudText><MudSpacer /><MudButton OnClick="ReconcileStripe" Disabled="_busy" Variant="Variant.Outlined">Run 30-day reconciliation</MudButton></MudStack>
-            <MudText Typo="Typo.caption">Diagnostics contain only sanitized processor references; discrepancies require staff review and never change ledger entries automatically.</MudText>
+            <MudText Typo="Typo.caption">Diagnostics contain only sanitized processor references and never change ledger entries. Open card disputes are listed here until Stripe closes them; refunds made in Stripe and lost disputes are posted from Stripe's own events.</MudText>
             @if (_reconciliation is not null){<MudTable Items="_reconciliation.Diagnostics" Dense="true"><HeaderContent><MudTh>Detected</MudTh><MudTh>Issue</MudTh><MudTh>Code</MudTh><MudTh>Safe reference</MudTh></HeaderContent><RowTemplate><MudTd>@context.DetectedAt.ToString("g")</MudTd><MudTd>@context.Type</MudTd><MudTd>@context.Code</MudTd><MudTd>@context.SafeExternalReference</MudTd></RowTemplate></MudTable>}
         </MudPaper>
     }

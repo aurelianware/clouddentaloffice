@@ -17,6 +17,7 @@ public sealed class StripeRefundWebhookTests : IDisposable
     private readonly Guid _paymentId = Guid.NewGuid();
     private readonly Guid _refundId = Guid.NewGuid();
     private readonly Guid _chargeId = Guid.NewGuid();
+    private readonly Guid _paymentEntryId = Guid.NewGuid();
 
     public StripeRefundWebhookTests()
     {
@@ -39,7 +40,7 @@ public sealed class StripeRefundWebhookTests : IDisposable
                 EntryType = PatientLedgerEntryType.Charge, Amount = 100m, Currency = "USD", EffectiveDate = now,
                 SourceType = PatientLedgerSourceType.Procedure, SourceId = "charge", DescriptionCode = "charge",
                 CreatedAt = now, CreatedBy = "test" },
-            new PatientLedgerEntry { LedgerEntryId = Guid.NewGuid(), TenantId = "tenant-a", PatientAccountId = accountId,
+            new PatientLedgerEntry { LedgerEntryId = _paymentEntryId, TenantId = "tenant-a", PatientAccountId = accountId,
                 EntryType = PatientLedgerEntryType.PatientPayment, Amount = 100m, Currency = "USD", EffectiveDate = now,
                 SourceType = PatientLedgerSourceType.PatientPayment, SourceId = _paymentId.ToString("N"),
                 DescriptionCode = "payment", CreatedAt = now, CreatedBy = "processor:Stripe" });
@@ -47,7 +48,7 @@ public sealed class StripeRefundWebhookTests : IDisposable
             PatientAccountId = accountId, Amount = 100m, Currency = "USD", PaymentDate = now,
             Method = PatientPaymentMethod.Card, Processor = PaymentProcessorProvider.Stripe,
             ExternalPaymentId = "pi_test", InternalPaymentReference = "pay_test", Status = PaymentStatus.Succeeded,
-            CreatedAt = now, UpdatedAt = now });
+            LedgerEntryId = _paymentEntryId, CreatedAt = now, UpdatedAt = now });
         _db.PatientPaymentAllocations.Add(new PatientPaymentAllocation { PaymentAllocationId = Guid.NewGuid(),
             TenantId = "tenant-a", PaymentId = _paymentId, LedgerEntryId = _chargeId, Amount = 100m,
             CreatedAt = now, CreatedBy = "processor:Stripe" });
@@ -168,6 +169,56 @@ public sealed class StripeRefundWebhookTests : IDisposable
         Assert.Equal(code, refund.FailureCode);
         Assert.Empty(await _db.PatientLedgerEntries.IgnoreQueryFilters()
             .Where(x => x.EntryType == PatientLedgerEntryType.Refund).ToListAsync());
+    }
+
+    [Fact]
+    public async Task Refund_made_in_the_Stripe_dashboard_is_recorded_and_posted_once()
+    {
+        var dashboard = Event() with { ExternalEventId = "evt_dashboard", ExternalRefundId = "re_dashboard",
+            RefundReference = null, AmountMinor = 2500 };
+        await Service().ProcessAsync(dashboard);
+        await Service().ProcessAsync(dashboard with { ExternalEventId = "evt_dashboard_again" });
+
+        var refund = await _db.PatientRefunds.IgnoreQueryFilters().SingleAsync(x => x.ExternalRefundId == "re_dashboard");
+        Assert.Equal(PatientRefundStatus.Succeeded, refund.Status);
+        Assert.Equal(25m, refund.Amount);
+        Assert.Equal("stripe-dashboard", refund.Reason);
+        Assert.Equal(_paymentId, refund.PaymentId);
+        Assert.Equal(25m, Assert.Single(await _db.PatientLedgerEntries.IgnoreQueryFilters()
+            .Where(x => x.EntryType == PatientLedgerEntryType.Refund).ToListAsync()).Amount);
+        Assert.Equal(75m, (await _db.PatientPaymentAllocations.IgnoreQueryFilters()
+            .Where(x => !x.UnappliedAt.HasValue).Select(x => x.Amount).ToListAsync()).Sum());
+        Assert.Contains(await _db.FinancialAuditEvents.IgnoreQueryFilters().ToListAsync(),
+            x => x.Action == "RefundRecordedFromStripe" && x.EntityId == refund.RefundId.ToString("N"));
+    }
+
+    [Fact]
+    public async Task Refund_of_a_payment_the_app_never_took_is_acknowledged_and_ignored()
+    {
+        await Service().ProcessAsync(Event() with { ExternalRefundId = "re_elsewhere", RefundReference = null,
+            PaymentIntentId = "pi_elsewhere" });
+
+        Assert.Single(await _db.PatientRefunds.IgnoreQueryFilters().ToListAsync());
+        Assert.Equal("not-an-app-payment", (await _db.PaymentProcessorEvents.IgnoreQueryFilters().SingleAsync()).FailureCode);
+    }
+
+    [Fact]
+    public async Task Dashboard_refund_that_arrives_before_its_payment_posts_is_retried()
+    {
+        await _db.PatientPayments.IgnoreQueryFilters().ExecuteUpdateAsync(x => x.SetProperty(p => p.Status, PaymentStatus.Pending));
+        _db.ChangeTracker.Clear();
+
+        // Exactly InvalidOperationException, not the permanent subclass: the broker retries it.
+        await Assert.ThrowsAsync<InvalidOperationException>(() => Service().ProcessAsync(Event() with
+            { ExternalRefundId = "re_dashboard", RefundReference = null }));
+        Assert.Single(await _db.PatientRefunds.IgnoreQueryFilters().ToListAsync());
+    }
+
+    [Fact]
+    public async Task Refund_with_an_unknown_reference_of_ours_is_still_rejected()
+    {
+        await Assert.ThrowsAsync<StripeWebhookPermanentException>(() => Service().ProcessAsync(Event() with
+            { ExternalRefundId = "re_unknown", RefundReference = "refund_missing" }));
     }
 
     [Fact]

@@ -418,6 +418,7 @@ builder.Services.AddScoped<IStripeProductionReadinessService, StripeProductionRe
 builder.Services.AddScoped<IPaymentAllocationService, PaymentAllocationService>();
 builder.Services.AddScoped<IStripePaymentWebhookProcessor, StripePaymentWebhookProcessor>();
 builder.Services.AddScoped<IStripeRefundWebhookProcessor, StripeRefundWebhookProcessor>();
+builder.Services.AddScoped<IStripeDisputeWebhookProcessor, StripeDisputeWebhookProcessor>();
 builder.Services.Configure<StripePaymentPostingOptions>(
     builder.Configuration.GetSection(StripePaymentPostingOptions.SectionName));
 builder.Services.AddSingleton<StripePaymentMetrics>();

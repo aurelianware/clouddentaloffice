@@ -56,6 +56,61 @@ public sealed class StripePaymentReconciliationTests : IDisposable
     }
 
     [Fact]
+    public async Task Reconciliation_flags_a_Stripe_refund_of_our_payment_that_we_never_recorded()
+    {
+        _stripe.Payments = [new("pi_local", 5000, "USD", "succeeded")];
+        _stripe.Refunds =
+        [
+            new("re_dashboard", "pi_local", null, 1000, "USD", "succeeded"),
+            new("re_not_ours", "pi_elsewhere", null, 1000, "USD", "succeeded")
+        ];
+
+        var result = await Service().ReconcileAsync("tenant-a", DateTime.UtcNow.AddDays(-1));
+
+        var issue = Assert.Single(result.Diagnostics);
+        Assert.Equal("unrecorded-stripe-refund", issue.Code);
+        Assert.Empty(_db.PatientRefunds.IgnoreQueryFilters());
+    }
+
+    [Fact]
+    public async Task Each_unrecorded_refund_of_a_payment_is_tracked_and_cleared_on_its_own()
+    {
+        _stripe.Payments = [new("pi_local", 5000, "USD", "succeeded")];
+        _stripe.Refunds =
+        [
+            new("re_first_refund", "pi_local", null, 1000, "USD", "succeeded"),
+            new("re_second_refund", "pi_local", null, 500, "USD", "succeeded")
+        ];
+        Assert.Equal(2, (await Service().ReconcileAsync("tenant-a", DateTime.UtcNow.AddDays(-1))).Diagnostics.Count);
+
+        var payment = await _db.PatientPayments.IgnoreQueryFilters().SingleAsync();
+        _db.PatientRefunds.Add(new PatientRefund { RefundId = Guid.NewGuid(), TenantId = "tenant-a",
+            PaymentId = payment.PaymentId, Amount = 10m, Currency = "USD", Reason = "stripe-dashboard",
+            Processor = PaymentProcessorProvider.Stripe, InternalRefundReference = "stripe-re_first_refund",
+            ExternalRefundId = "re_first_refund", Status = PatientRefundStatus.Succeeded, RequestedBy = "processor:Stripe",
+            RequestedAt = DateTime.UtcNow.AddDays(-2) });
+        await _db.SaveChangesAsync();
+
+        var issue = Assert.Single((await Service().ReconcileAsync("tenant-a", DateTime.UtcNow.AddDays(-1))).Diagnostics);
+        Assert.Equal("…d_refund", issue.SafeExternalReference);
+    }
+
+    [Fact]
+    public async Task Reconciliation_leaves_dispute_review_items_open()
+    {
+        var paymentId = (await _db.PatientPayments.IgnoreQueryFilters().SingleAsync()).PaymentId;
+        _db.PaymentReconciliationIssues.Add(new PaymentReconciliationIssue { Id = Guid.NewGuid(), TenantId = "tenant-a",
+            IssueType = PaymentReconciliationIssueType.Dispute, Status = PaymentReconciliationIssueStatus.ReviewRequired,
+            PaymentId = paymentId, DiagnosticCode = "payment-disputed", DetectedAt = DateTime.UtcNow });
+        await _db.SaveChangesAsync();
+        _stripe.Payments = [new("pi_local", 5000, "USD", "succeeded")];
+
+        var result = await Service().ReconcileAsync("tenant-a", DateTime.UtcNow.AddDays(-1));
+
+        Assert.Equal("payment-disputed", Assert.Single(result.Diagnostics).Code);
+    }
+
+    [Fact]
     public async Task Reconciliation_is_tenant_scoped()
     {
         await Assert.ThrowsAsync<UnauthorizedAccessException>(() =>

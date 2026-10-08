@@ -77,7 +77,9 @@ public static class StripeWebhookEndpoint
         "checkout.session.async_payment_failed",
         "refund.created",
         "refund.updated",
-        "refund.failed"
+        "refund.failed",
+        "charge.dispute.created",
+        "charge.dispute.closed"
     };
 
     public static void MapStripeWebhook(this WebApplication app) =>
@@ -132,7 +134,15 @@ public static class StripeWebhookEndpoint
             externalEventId = eventId;
             var created = DateTimeOffset.FromUnixTimeSeconds(root.GetProperty("created").GetInt64()).UtcDateTime;
             var data = root.GetProperty("data").GetProperty("object");
-            if (eventType.StartsWith("refund.", StringComparison.Ordinal))
+            if (eventType.StartsWith("charge.dispute.", StringComparison.Ordinal))
+            {
+                integrationEvent = new StripeDisputeWebhookEvent(account.TenantId, eventId, eventType, accountId,
+                    RequiredString(data, "id"), OptionalId(data, "payment_intent"),
+                    data.GetProperty("amount").GetInt64(), RequiredString(data, "currency").ToUpperInvariant(),
+                    RequiredString(data, "status"), liveMode) { OccurredAt = created };
+                subject = nameof(StripeDisputeWebhookEvent);
+            }
+            else if (eventType.StartsWith("refund.", StringComparison.Ordinal))
             {
                 var reference = OptionalMetadata(data, "refund_reference");
                 integrationEvent = new StripeRefundWebhookEvent(account.TenantId, eventId, eventType, accountId,

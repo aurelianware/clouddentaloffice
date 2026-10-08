@@ -74,7 +74,7 @@ POST https://<public-intake-host>/api/integrations/stripe/webhooks
 Subscribe only to `checkout.session.completed`,
 `checkout.session.async_payment_succeeded`, and
 `checkout.session.async_payment_failed`, plus `refund.created`, `refund.updated`,
-and `refund.failed`. A completed session is posted only when
+`refund.failed`, `charge.dispute.created`, and `charge.dispute.closed`. A completed session is posted only when
 `payment_status=paid`; delayed methods wait for the async success event.
 
 IntakeService verifies `Stripe-Signature` against the unmodified body using the
@@ -149,6 +149,36 @@ ledger entry. The original payment remains intact. Active allocations are
 unapplied or replaced with a reduced active allocation so their complete history
 is retained. Failed refunds create no refund ledger entry. Mismatches are marked
 `ReviewRequired`.
+
+### Refunds made in the Stripe Dashboard
+
+A refund issued from the practice's own Stripe Dashboard carries no CDO
+reference. When it refunds a payment CDO took (matched by PaymentIntent), CDO
+records a `PatientRefund` with reason `stripe-dashboard`, audits it as
+`RefundRecordedFromStripe`, and then posts it exactly like a staff refund.
+Refunds of payments CDO never took (for example a Dashboard Payment Link) are
+acknowledged and ignored (`not-an-app-payment`). If a refund event arrives
+before its payment has posted, it is retried. Reconciliation reports any Stripe
+refund of a CDO payment that has no CDO record as `unrecorded-stripe-refund`.
+
+### Disputes (chargebacks)
+
+`charge.dispute.created` on a CDO payment opens a `Dispute` review item
+(`payment-disputed`) and audits `PaymentDisputed`; the ledger is unchanged while
+the dispute is open. `charge.dispute.closed`:
+
+- **won** or **warning_closed**: closes the review item; the payment stands
+  (`PaymentDisputeClosed`).
+- **lost**: posts a `SystemReversal` of the disputed amount against the
+  patient payment (`dispute-lost`), unapplies that much of its allocations, and
+  audits `PaymentDisputeLost`. The patient owes the amount again. A disputed
+  amount that does not fit the payment is never posted; it stays as
+  `dispute-lost-amount-mismatch` for review.
+
+Dispute review items are not cleared by reconciliation runs, only by Stripe's
+dispute events. A closed dispute is remembered, so a `created` event delivered
+late cannot reopen it. Respond to disputes (evidence, deadlines) in the Stripe
+Dashboard.
 
 Use **Billing → Stripe reconciliation → Run 30-day reconciliation** to compare
 CDO payments/refunds with Stripe direct-charge objects. It reports missing or

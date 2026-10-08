@@ -568,6 +568,9 @@ internal static class StripeCurrency
         return decimal.ToInt64(scaled);
     }
 
+    /// <summary>The decimal amount for a Stripe minor-unit amount (4000 USD cents is 40.00).</summary>
+    public static decimal FromMinorUnits(long amount, string currency) => amount / Multiplier(currency);
+
     private static decimal Multiplier(string currency) =>
         ZeroDecimal.Contains(currency) ? 1m : ThreeDecimal.Contains(currency) ? 1_000m : 100m;
 }

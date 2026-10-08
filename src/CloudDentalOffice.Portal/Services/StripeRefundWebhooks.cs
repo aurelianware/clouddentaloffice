@@ -15,6 +15,7 @@ public sealed class StripeRefundWebhookProcessor(CloudDentalDbContext db, TimePr
     StripePaymentMetrics metrics, ILogger<StripeRefundWebhookProcessor> logger) : IStripeRefundWebhookProcessor
 {
     private const string SucceededAfterFailure = "refund-succeeded-after-failure";
+    private const string DashboardReason = "stripe-dashboard";
 
     public async Task ProcessAsync(StripeRefundWebhookEvent webhook, CancellationToken cancellationToken = default)
     {
@@ -32,11 +33,24 @@ public sealed class StripeRefundWebhookProcessor(CloudDentalDbContext db, TimePr
             (configuration.Environment == PaymentProcessorEnvironment.Production) != webhook.LiveMode)
             throw new StripeWebhookPermanentException("Connected Stripe account mapping is invalid.");
 
-        var refund = await FindRefundAsync(webhook, cancellationToken)
-            ?? throw new StripeWebhookPermanentException("Stripe refund reference is unknown.");
+        var now = clock.GetUtcNow().UtcDateTime;
+        var refund = await FindRefundAsync(webhook, cancellationToken);
+        if (refund is null)
+        {
+            if (!string.IsNullOrWhiteSpace(webhook.RefundReference))
+                throw new StripeWebhookPermanentException("Stripe refund reference is unknown.");
+            // No reference of ours: the refund was made in the Stripe dashboard. If it refunds one of our
+            // payments the patient's money still moved, so record it and post it like any other refund.
+            var refunded = await FindPaymentAsync(webhook, cancellationToken);
+            if (refunded is null)
+            {
+                await IgnoreAsync(webhook, now, transaction, cancellationToken);
+                return;
+            }
+            refund = RecordDashboardRefund(webhook, refunded, now);
+        }
         var payment = await db.PatientPayments.IgnoreQueryFilters().SingleAsync(x =>
             x.TenantId == webhook.TenantId && x.PaymentId == refund.PaymentId, cancellationToken);
-        var now = clock.GetUtcNow().UtcDateTime;
         var processorEvent = new PaymentProcessorEvent
         {
             Id = Guid.NewGuid(), TenantId = webhook.TenantId, Processor = PaymentProcessorProvider.Stripe,
@@ -128,7 +142,7 @@ public sealed class StripeRefundWebhookProcessor(CloudDentalDbContext db, TimePr
             };
             db.PatientLedgerEntries.Add(ledger);
             refund.LedgerEntryId = ledger.LedgerEntryId;
-            await ReverseAllocationsAsync(payment, refund.Amount, now, cancellationToken);
+            await PaymentAllocationUnwinder.UnapplyAsync(db, payment, refund.Amount, "refund", now, cancellationToken);
             db.FinancialAuditEvents.Add(new FinancialAuditEvent
             {
                 Id = Guid.NewGuid(), TenantId = refund.TenantId, Action = "RefundConfirmed",
@@ -158,6 +172,59 @@ public sealed class StripeRefundWebhookProcessor(CloudDentalDbContext db, TimePr
             x.InternalRefundReference == webhook.RefundReference, cancellationToken);
     }
 
+    private async Task<PatientPayment?> FindPaymentAsync(StripeRefundWebhookEvent webhook,
+        CancellationToken cancellationToken)
+    {
+        var payment = await db.PatientPayments.IgnoreQueryFilters().SingleOrDefaultAsync(x =>
+            x.TenantId == webhook.TenantId && x.Processor == PaymentProcessorProvider.Stripe &&
+            x.ExternalPaymentId == webhook.PaymentIntentId, cancellationToken);
+        // Stripe can only refund a captured charge, so a local payment not yet posted means its own
+        // event is still on the way. Fail transiently so this event is retried after it.
+        if (payment is not null && (payment.Status != PaymentStatus.Succeeded || !payment.LedgerEntryId.HasValue))
+            throw new InvalidOperationException("The refunded payment has not been posted yet.");
+        return payment;
+    }
+
+    private PatientRefund RecordDashboardRefund(StripeRefundWebhookEvent webhook, PatientPayment payment, DateTime now)
+    {
+        decimal amount;
+        try { amount = new Money(StripeCurrency.FromMinorUnits(webhook.AmountMinor, webhook.Currency), webhook.Currency).Amount; }
+        catch (ArgumentException) { throw new StripeWebhookPermanentException("Stripe refund amount is invalid."); }
+        var refund = new PatientRefund
+        {
+            RefundId = Guid.NewGuid(), TenantId = payment.TenantId, PaymentId = payment.PaymentId,
+            Amount = amount, Currency = webhook.Currency, Reason = DashboardReason,
+            Processor = PaymentProcessorProvider.Stripe, InternalRefundReference = $"stripe-{webhook.ExternalRefundId}",
+            ExternalRefundId = webhook.ExternalRefundId, Status = PatientRefundStatus.Requested,
+            RequestedBy = "processor:Stripe", RequestedAt = now
+        };
+        db.PatientRefunds.Add(refund);
+        db.FinancialAuditEvents.Add(new FinancialAuditEvent
+        {
+            Id = Guid.NewGuid(), TenantId = refund.TenantId, Action = "RefundRecordedFromStripe",
+            EntityType = nameof(PatientRefund), EntityId = refund.RefundId.ToString("N"),
+            Actor = "processor:Stripe", ReasonCode = DashboardReason, CreatedAt = now
+        });
+        logger.LogInformation("Recorded Stripe dashboard refund for payment {PaymentId}.", payment.PaymentId);
+        return refund;
+    }
+
+    private async Task IgnoreAsync(StripeRefundWebhookEvent webhook, DateTime now,
+        Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction transaction, CancellationToken cancellationToken)
+    {
+        // A refund of a payment this app never took (for example one from a dashboard Payment Link).
+        db.PaymentProcessorEvents.Add(new PaymentProcessorEvent
+        {
+            Id = Guid.NewGuid(), TenantId = webhook.TenantId, Processor = PaymentProcessorProvider.Stripe,
+            ExternalEventId = webhook.ExternalEventId, ExternalPaymentId = webhook.PaymentIntentId,
+            Status = PaymentProcessorEventStatus.Processed, FailureCode = "not-an-app-payment",
+            CreatedAt = now, ProcessedAt = now
+        });
+        await db.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        metrics.Ignored.Add(1);
+    }
+
     private async Task ReverseRefundEntryAsync(PatientRefund refund, Guid refundEntryId, DateTime now,
         CancellationToken cancellationToken)
     {
@@ -179,39 +246,14 @@ public sealed class StripeRefundWebhookProcessor(CloudDentalDbContext db, TimePr
         });
     }
 
-    private async Task ReverseAllocationsAsync(PatientPayment payment, decimal refundAmount, DateTime now,
-        CancellationToken cancellationToken)
-    {
-        var allocations = await db.PatientPaymentAllocations.IgnoreQueryFilters().Where(x =>
-                x.TenantId == payment.TenantId && x.PaymentId == payment.PaymentId && !x.UnappliedAt.HasValue)
-            .OrderByDescending(x => x.CreatedAt).ThenByDescending(x => x.PaymentAllocationId)
-            .ToListAsync(cancellationToken);
-        var remaining = refundAmount;
-        foreach (var allocation in allocations)
-        {
-            if (remaining <= 0) break;
-            var removed = Math.Min(remaining, allocation.Amount);
-            allocation.UnappliedAt = now;
-            allocation.UnappliedBy = "processor:Stripe";
-            allocation.UnapplyReasonCode = "refund";
-            if (removed < allocation.Amount)
-                db.PatientPaymentAllocations.Add(new PatientPaymentAllocation
-                {
-                    PaymentAllocationId = Guid.NewGuid(), TenantId = allocation.TenantId,
-                    PaymentId = allocation.PaymentId, LedgerEntryId = allocation.LedgerEntryId,
-                    Amount = allocation.Amount - removed, CreatedAt = now, CreatedBy = "processor:Stripe"
-                });
-            remaining -= removed;
-        }
-    }
-
     private static string? ConflictCode(StripeRefundWebhookEvent webhook, PatientRefund refund,
         PatientPayment payment)
     {
         if (!string.IsNullOrWhiteSpace(refund.ExternalRefundId) && refund.ExternalRefundId != webhook.ExternalRefundId)
             return "refund-id-mismatch";
         if (payment.ExternalPaymentId != webhook.PaymentIntentId) return "payment-intent-mismatch";
-        if (!string.Equals(refund.Currency, webhook.Currency, StringComparison.OrdinalIgnoreCase)) return "currency-mismatch";
+        if (!string.Equals(refund.Currency, webhook.Currency, StringComparison.OrdinalIgnoreCase) ||
+            !string.Equals(refund.Currency, payment.Currency, StringComparison.OrdinalIgnoreCase)) return "currency-mismatch";
         return StripeCurrency.ToMinorUnits(new Money(refund.Amount, refund.Currency)) == webhook.AmountMinor
             ? null : "amount-mismatch";
     }
@@ -223,5 +265,35 @@ public sealed class StripeRefundWebhookProcessor(CloudDentalDbContext db, TimePr
             string.IsNullOrWhiteSpace(webhook.PaymentIntentId) || webhook.AmountMinor <= 0 || webhook.Currency.Length != 3 ||
             webhook.EventType is not ("refund.created" or "refund.updated" or "refund.failed"))
             throw new StripeWebhookPermanentException("Stripe refund event is invalid.");
+    }
+}
+
+/// <summary>Takes money that left the practice back off the charges a payment was applied to, newest first.</summary>
+internal static class PaymentAllocationUnwinder
+{
+    public static async Task UnapplyAsync(CloudDentalDbContext db, PatientPayment payment, decimal amount,
+        string reasonCode, DateTime now, CancellationToken cancellationToken)
+    {
+        var allocations = await db.PatientPaymentAllocations.IgnoreQueryFilters().Where(x =>
+                x.TenantId == payment.TenantId && x.PaymentId == payment.PaymentId && !x.UnappliedAt.HasValue)
+            .OrderByDescending(x => x.CreatedAt).ThenByDescending(x => x.PaymentAllocationId)
+            .ToListAsync(cancellationToken);
+        var remaining = amount;
+        foreach (var allocation in allocations)
+        {
+            if (remaining <= 0) break;
+            var removed = Math.Min(remaining, allocation.Amount);
+            allocation.UnappliedAt = now;
+            allocation.UnappliedBy = "processor:Stripe";
+            allocation.UnapplyReasonCode = reasonCode;
+            if (removed < allocation.Amount)
+                db.PatientPaymentAllocations.Add(new PatientPaymentAllocation
+                {
+                    PaymentAllocationId = Guid.NewGuid(), TenantId = allocation.TenantId,
+                    PaymentId = allocation.PaymentId, LedgerEntryId = allocation.LedgerEntryId,
+                    Amount = allocation.Amount - removed, CreatedAt = now, CreatedBy = "processor:Stripe"
+                });
+            remaining -= removed;
+        }
     }
 }

@@ -116,6 +116,19 @@ public record StripeRefundWebhookEvent(
     string RefundStatus,
     bool LiveMode) : IntegrationEvent;
 
+/// <summary>Verified, PHI-free Stripe Connect dispute (chargeback) event accepted by IntakeService.</summary>
+public record StripeDisputeWebhookEvent(
+    string TenantId,
+    string ExternalEventId,
+    string EventType,
+    string ConnectedAccountId,
+    string ExternalDisputeId,
+    string? PaymentIntentId,
+    long AmountMinor,
+    string Currency,
+    string DisputeStatus,
+    bool LiveMode) : IntegrationEvent;
+
 /// <summary>
 /// A patient's answer from a coverage intake link, relayed by the public
 /// IntakeService to the portal. Carries the signed token so the portal verifies
