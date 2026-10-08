@@ -8,12 +8,10 @@ namespace CloudDentalOffice.Portal.Services;
 public static class BillingAudit
 {
     /// <summary>The authenticated actor recorded on audit entries, or null when the caller has no bounded identity.</summary>
-    public static string? Actor(ClaimsPrincipal user)
-    {
-        var actor = user.FindFirst(ClaimTypes.Email)?.Value ?? user.FindFirst(ClaimTypes.NameIdentifier)?.Value ??
-            user.FindFirst("oid")?.Value ?? user.Identity?.Name;
-        return string.IsNullOrWhiteSpace(actor) || actor.Trim().Length > 100 ? null : actor.Trim();
-    }
+    public static string? Actor(ClaimsPrincipal user) =>
+        new[] { user.FindFirst(ClaimTypes.Email)?.Value, user.FindFirst(ClaimTypes.NameIdentifier)?.Value,
+                user.FindFirst("oid")?.Value, user.Identity?.Name }
+            .Select(x => x?.Trim()).FirstOrDefault(x => x is { Length: > 0 and <= 100 });
 
     public static void Add(CloudDentalDbContext db, string tenantId, string actor, string action, string entityType,
         string entityId, string? reasonCode, DateTime now) =>

@@ -78,6 +78,15 @@ public sealed class BillingAuditApiTests : IAsyncDisposable
     }
 
     [Fact]
+    public void Actor_falls_back_past_an_unusable_claim_to_a_bounded_one()
+    {
+        var user = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.Email, new string('a', 120) + "@example.test"),
+            new Claim(ClaimTypes.NameIdentifier, "  "), new Claim("oid", "00000000-0000-0000-0000-000000000001")], "Test"));
+
+        Assert.Equal("00000000-0000-0000-0000-000000000001", BillingAudit.Actor(user));
+    }
+
+    [Fact]
     public async Task Failed_statement_change_writes_no_audit_entry()
     {
         var client = await Client(BillingPermissions.Adjust);

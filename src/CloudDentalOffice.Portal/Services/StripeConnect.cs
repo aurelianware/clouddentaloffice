@@ -391,15 +391,14 @@ public sealed class StripeConnectService(CloudDentalDbContext db, IStripeApiClie
         Uri refreshUrl, Uri returnUrl, CancellationToken cancellationToken = default)
     {
         EnsureTenant(tenantId);
-        if (string.IsNullOrWhiteSpace(adminEmail) || !adminEmail.Contains('@'))
+        if (string.IsNullOrWhiteSpace(adminEmail) || !adminEmail.Contains('@') || adminEmail.Trim().Length > 100)
             throw new ArgumentException("An authenticated administrator email is required.", nameof(adminEmail));
         var config = await Configuration(tenantId, cancellationToken);
         if (string.IsNullOrWhiteSpace(config.ConnectedMerchantReference))
         {
             var account = await api.CreateConnectedAccountAsync(config, adminEmail.Trim(), cancellationToken);
             Apply(config, account); config.CreatedAt = config.CreatedAt == default ? clock.GetUtcNow().UtcDateTime : config.CreatedAt;
-            var admin = adminEmail.Trim();
-            BillingAudit.Add(db, tenantId, admin[..Math.Min(admin.Length, 100)], "StripeAccountCreated", nameof(PaymentProcessorConfiguration),
+            BillingAudit.Add(db, tenantId, adminEmail.Trim(), "StripeAccountCreated", nameof(PaymentProcessorConfiguration),
                 config.Id.ToString("N"), null, clock.GetUtcNow().UtcDateTime);
             await db.SaveChangesAsync(cancellationToken);
         }

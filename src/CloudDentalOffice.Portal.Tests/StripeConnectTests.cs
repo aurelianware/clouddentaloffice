@@ -264,6 +264,14 @@ public sealed class StripeConnectTests : IDisposable
     }
 
     [Fact]
+    public async Task Overlong_administrator_email_is_refused_before_Stripe_is_called()
+    {
+        await Assert.ThrowsAsync<ArgumentException>(() => _service.CreateOnboardingLinkAsync("tenant-a",
+            new string('a', 100) + "@example.test", Refresh, Return));
+        Assert.Equal(0, _api.CreateAccountCalls);
+    }
+
+    [Fact]
     public async Task Disable_requires_an_actor_to_audit()
     {
         await Assert.ThrowsAsync<ArgumentException>(() => _service.DisableAsync("tenant-a", " "));
