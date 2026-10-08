@@ -151,6 +151,7 @@ public sealed class BillingAuthorizationTests
         builder.Services.AddSingleton(Moq.Mock.Of<IPatientBalanceCheckoutService>());
         builder.Services.AddSingleton(Moq.Mock.Of<IPatientBillingPortalService>());
         builder.Services.AddSingleton(TimeProvider.System);
+        builder.Services.AddDbContext<CloudDentalOffice.Portal.Data.CloudDentalDbContext>();
         var app = builder.Build();
         app.MapPatientAccountApi();
         app.MapPatientStatementApi();
