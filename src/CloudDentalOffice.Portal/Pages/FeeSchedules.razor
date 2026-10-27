@@ -1,0 +1,102 @@
+@page "/fee-schedules"
+@attribute [Authorize(Roles = CloudDentalOffice.Portal.Services.Auth.StaffRoles.PayerManagers)]
+@using System.Text.Json
+@using CloudDentalOffice.Portal.Models
+@inject FeeScheduleService Schedules
+@inject ILogger<FeeSchedules> Logger
+
+<PageTitle>Fee schedules - Cloud Dental Office</PageTitle>
+<MudContainer MaxWidth="MaxWidth.Large" Class="mt-4">
+    <MudText Typo="Typo.h4">Fee schedules</MudText>
+    <MudText Class="my-3">Import Dentrix CSV exports. Each schedule keeps its own fees, descriptions and flags.
+        Custom billing codes are retained in the schedule; only D plus four digits appear in the CDT picker.
+        Select your standard practice schedule as the default for new procedure lines. Existing treatment plans keep their saved fees.</MudText>
+    <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Class="mb-3">
+        Payer schedules are stored separately. Importing does not assign a schedule to an insurance plan or change insurance allowances.
+        Schedule names are preserved; effective dates are not inferred from filenames.
+    </MudAlert>
+    <MudPaper Class="pa-4 mb-4">
+        <label for="fee-files">Dentrix fee schedule CSV files (up to 20)</label>
+        <InputFile id="fee-files" OnChange="ReadFiles" multiple accept=".csv" disabled="@_busy" />
+        @if (_preview.Count > 0)
+        {
+            <MudSelect T="string" Label="Standard practice schedule (optional)" @bind-Value="_default" Clearable="true" Class="my-3">
+                @foreach (var item in _preview)
+                {
+                    <MudSelectItem T="string" Value="@item.Name">@item.Name</MudSelectItem>
+                }
+            </MudSelect>
+            <MudText Class="mb-2">A matching schedule name replaces that schedule's imported version. Other schedules remain unchanged.</MudText>
+            <MudSimpleTable Dense="true">
+                <thead><tr><th>Schedule</th><th>Codes</th><th>D7220 fee</th></tr></thead>
+                <tbody>@foreach (var item in _preview)
+                { <tr><td>@item.Name</td><td>@item.Entries.Count</td><td>@Fee(item.Entries)</td></tr> }</tbody>
+            </MudSimpleTable>
+            <MudButton OnClick="Import" Disabled="@_busy" Variant="Variant.Filled" Color="Color.Primary" Class="mt-3">Import selected schedules</MudButton>
+        }
+    </MudPaper>
+    @if (_message is not null) { <MudAlert Severity="@_severity" Variant="Variant.Outlined" Class="my-3">@_message</MudAlert> }
+    <MudText Typo="Typo.h6">Saved schedules</MudText>
+    <MudSimpleTable Dense="true">
+        <thead><tr><th>Schedule</th><th>Use</th><th>Codes</th><th>D7220 fee</th><th>Imported (UTC)</th></tr></thead>
+        <tbody>@foreach (var item in _stored)
+        {
+            var entries = JsonSerializer.Deserialize<List<FeeScheduleEntry>>(item.EntriesJson) ?? [];
+            <tr><td>@item.Name</td><td>@(item.IsPracticeDefault ? "Practice default" : "Separate schedule")</td><td>@entries.Count</td><td>@Fee(entries)</td><td>@item.ImportedAt.ToString("yyyy-MM-dd HH:mm")</td></tr>
+        }</tbody>
+    </MudSimpleTable>
+</MudContainer>
+
+@code {
+    private List<FeeSchedulePreview> _preview = [];
+    private List<PracticeFeeSchedule> _stored = [];
+    private string? _default;
+    private string? _message;
+    private Severity _severity = Severity.Info;
+    private bool _busy;
+    protected override async Task OnInitializedAsync()
+    {
+        try { _stored = await Schedules.ListAsync(); }
+        catch (Exception ex) { Fail(ex); }
+    }
+    private static string Fee(IEnumerable<FeeScheduleEntry> entries) =>
+        entries.FirstOrDefault(x => x.Code == "D7220")?.Fee.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture) is { } fee ? $"${fee}" : "Not included";
+    private async Task ReadFiles(InputFileChangeEventArgs args)
+    {
+        _busy = true; _preview = []; _default = null; _message = null;
+        try
+        {
+            var parsed = new List<FeeSchedulePreview>();
+            foreach (var file in args.GetMultipleFiles(20))
+            {
+                await using var stream = file.OpenReadStream(2 * 1024 * 1024);
+                using var reader = new StreamReader(stream);
+                parsed.Add(DentrixFeeScheduleCsv.Parse(await reader.ReadToEndAsync()));
+            }
+            if (parsed.Select(x => x.Name).Distinct(StringComparer.OrdinalIgnoreCase).Count() != parsed.Count)
+                throw new FormatException("Selected files contain duplicate schedule names.");
+            _preview = parsed;
+        }
+        catch (Exception ex) { Fail(ex); }
+        finally { _busy = false; }
+    }
+    private async Task Import()
+    {
+        _busy = true;
+        try
+        {
+            await Schedules.ImportAsync(_preview, string.IsNullOrWhiteSpace(_default) ? null : _default);
+            _stored = await Schedules.ListAsync();
+            _message = $"Imported {_preview.Count} schedules. The practice default applies to newly selected procedure lines.";
+            _severity = Severity.Success; _preview = []; _default = null;
+        }
+        catch (Exception ex) { Fail(ex); }
+        finally { _busy = false; }
+    }
+    private void Fail(Exception ex)
+    {
+        Logger.LogWarning("Fee schedule operation failed ({ErrorType})", ex.GetType().Name);
+        _message = ex is FormatException ? ex.Message : "Could not complete the fee schedule operation. Please retry or contact support.";
+        _severity = Severity.Error;
+    }
+}
