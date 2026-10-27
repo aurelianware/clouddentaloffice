@@ -123,18 +123,22 @@
                                 </HeaderContent>
                                 <RowTemplate>
                                     <MudTd DataLabel="Code">
-                                        <MudAutocomplete @key="context" T="ProcedureCode" 
-                                                         Value="@GetProcedureCodeForRow(context)"
+                                        <MudAutocomplete @key="context" T="string"
+                                                         Value="@context.CDTCode"
                                                          ValueChanged="@(code => OnProcedureCodeSelected(context, code))"
                                                          SearchFunc="@SearchProcedureCodes"
-                                                         ToStringFunc="@(pc => pc?.DisplayName ?? "")"
+                                                         ToStringFunc="@(code => code ?? "")"
                                                          Variant="Variant.Text"
                                                          Margin="Margin.Dense"
                                                          Placeholder="Type to search..."
                                                          Clearable="true"
                                                          DebounceInterval="300"
                                                          MinCharacters="0"
-                                                         AdornmentIcon="@Icons.Material.Filled.Search" />
+                                                         AdornmentIcon="@Icons.Material.Filled.Search">
+                                            <ItemTemplate Context="code">
+                                                @(code) — @(_procedureSuggestions.GetValueOrDefault(code)?.Description ?? "")
+                                            </ItemTemplate>
+                                        </MudAutocomplete>
                                     </MudTd>
                                     <MudTd DataLabel="Description">
                                         <MudTextField @bind-Value="context.Description" Variant="Variant.Text" 
@@ -227,7 +231,7 @@
     private TreatmentPlan _treatmentPlan = new();
     private List<PlannedProcedure> _procedures = new();
     private List<Provider> _providers = new();
-    private Dictionary<PlannedProcedure, ProcedureCode?> _procedureCodeCache = new();
+    private readonly Dictionary<string, ProcedureCode> _procedureSuggestions = new(StringComparer.OrdinalIgnoreCase);
     private int? _selectedProviderId;
     private DateTime? _presentedDate;
     private DateTime? _acceptedDate;
@@ -291,52 +295,29 @@
         }
     }
 
-    private async Task<IEnumerable<ProcedureCode>> SearchProcedureCodes(string searchTerm, CancellationToken token)
+    private async Task<IEnumerable<string>> SearchProcedureCodes(string searchTerm, CancellationToken token)
     {
-        try
-        {
-            // Allow search with any input, including empty (shows top codes)
-            return await ProcedureCodeService.SearchProcedureCodesAsync(searchTerm ?? "");
-        }
-        catch (Exception ex)
-        {
-            Snackbar.Add($"Error searching procedure codes: {ex.Message}", Severity.Error);
-            return new List<ProcedureCode>();
-        }
+        var suggestions = await ProcedureCodeService.SearchProcedureCodesAsync(searchTerm ?? "");
+        foreach (var code in suggestions) _procedureSuggestions[code.Code] = code;
+        return suggestions.Select(code => code.Code);
     }
 
-    private ProcedureCode? GetProcedureCodeForRow(PlannedProcedure procedure)
+    private async Task OnProcedureCodeSelected(PlannedProcedure procedure, string? code)
     {
-        if (_procedureCodeCache.TryGetValue(procedure, out var cachedCode))
-            return cachedCode;
-        if (string.IsNullOrWhiteSpace(procedure.CDTCode)) return null;
-
-        // Editing a saved plan must show its stored code, even if the catalog
-        // changed or the code is inactive. Do not reprice historical procedures.
-        var savedSelection = new ProcedureCode
+        // Opening an existing row (including an inactive or historical code) must
+        // neither clear its code nor replace its recorded description and fee.
+        if (string.Equals(procedure.CDTCode, code, StringComparison.OrdinalIgnoreCase)) return;
+        if (string.IsNullOrWhiteSpace(code))
         {
-            Code = procedure.CDTCode,
-            Description = procedure.Description,
-            DefaultFee = procedure.EstimatedFee
-        };
-        _procedureCodeCache[procedure] = savedSelection;
-        return savedSelection;
-    }
-
-    private void OnProcedureCodeSelected(PlannedProcedure procedure, ProcedureCode? selectedCode)
-    {
-        if (selectedCode != null)
-        {
-            procedure.CDTCode = selectedCode.Code;
-            procedure.Description = selectedCode.Description;
-            procedure.EstimatedFee = selectedCode.DefaultFee;
-            _procedureCodeCache[procedure] = selectedCode;
+            procedure.CDTCode = "";
+            return;
         }
-        else
-        {
-            // Clear the cache when autocomplete is cleared
-            _procedureCodeCache.Remove(procedure);
-        }
+        var selected = _procedureSuggestions.GetValueOrDefault(code)
+            ?? await ProcedureCodeService.GetProcedureCodeByCodeAsync(code);
+        if (selected is null) return;
+        procedure.CDTCode = selected.Code;
+        procedure.Description = selected.Description;
+        procedure.EstimatedFee = selected.DefaultFee;
     }
 
     private void AddProcedure()
@@ -380,6 +361,12 @@
         if (_procedures.Count == 0)
         {
             _validationMessage = "Please add at least one procedure to the treatment plan.";
+            return;
+        }
+
+        if (_procedures.Any(p => string.IsNullOrWhiteSpace(p.CDTCode)))
+        {
+            _validationMessage = "Select a procedure code for every planned procedure before saving.";
             return;
         }
 
