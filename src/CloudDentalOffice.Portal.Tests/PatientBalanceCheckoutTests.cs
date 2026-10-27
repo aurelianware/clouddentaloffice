@@ -142,6 +142,33 @@ public sealed class PatientBalanceCheckoutTests : IDisposable
     }
 
     [Fact]
+    public async Task Link_created_while_payments_are_turned_off_is_closed_and_never_handed_out()
+    {
+        await SeedBalance(100m); _checkout.DisableDuringCreate = true;
+
+        await Assert.ThrowsAsync<PaymentProcessorUnavailableException>(() => Service().CreateAsync(
+            Request(PatientPaymentSelection.FullBalance)));
+
+        Assert.Equal(["cs_1"], _checkout.Expired);
+        var attempt = await _db.PatientPaymentAttempts.SingleAsync();
+        Assert.Equal(PatientPaymentAttemptStatus.Cancelled, attempt.Status);
+        Assert.Equal("processor-disabled", attempt.FailureCode);
+        Assert.Equal(PaymentStatus.Cancelled, (await _db.PatientPayments.SingleAsync()).Status);
+    }
+
+    [Fact]
+    public async Task Link_created_while_payments_are_turned_off_is_withheld_even_if_Stripe_expire_fails()
+    {
+        await SeedBalance(100m); _checkout.DisableDuringCreate = true;
+        _checkout.ExpireFailure = new StripeConnectException("remote failed");
+
+        await Assert.ThrowsAsync<PaymentProcessorUnavailableException>(() => Service().CreateAsync(
+            Request(PatientPaymentSelection.FullBalance)));
+
+        Assert.Equal(["cs_1"], _checkout.Expired);
+    }
+
+    [Fact]
     public async Task Multiple_sessions_have_distinct_opaque_references()
     {
         await SeedBalance(100m); var service = Service();
@@ -171,6 +198,111 @@ public sealed class PatientBalanceCheckoutTests : IDisposable
     }
 
     [Fact]
+    public async Task New_link_closes_the_accounts_earlier_open_link_first()
+    {
+        await SeedBalance(500m);
+        var first = await Service().CreateAsync(Request(PatientPaymentSelection.FullBalance));
+        var second = await Service().CreateAsync(Request(PatientPaymentSelection.FullBalance));
+
+        Assert.Equal(["cs_1"], _checkout.Expired);
+        var attempts = await _db.PatientPaymentAttempts.ToDictionaryAsync(x => x.Id);
+        Assert.Equal(PatientPaymentAttemptStatus.Cancelled, attempts[first.AttemptId].Status);
+        Assert.Equal("superseded", attempts[first.AttemptId].FailureCode);
+        Assert.Equal(PatientPaymentAttemptStatus.SessionCreated, attempts[second.AttemptId].Status);
+        Assert.Equal(PaymentStatus.Cancelled, (await _db.PatientPayments.SingleAsync(x => x.PaymentId == first.PaymentId)).Status);
+    }
+
+    [Fact]
+    public async Task No_new_link_while_an_earlier_link_has_already_been_paid()
+    {
+        await SeedBalance(500m);
+        var first = await Service().CreateAsync(Request(PatientPaymentSelection.FullBalance));
+        _checkout.Closure = PaymentSessionClosure.Completed;
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => Service().CreateAsync(Request(PatientPaymentSelection.FullBalance)));
+
+        Assert.Equal(1, _checkout.Calls);
+        Assert.Equal(PatientPaymentAttemptStatus.SessionCreated,
+            (await _db.PatientPaymentAttempts.SingleAsync(x => x.Id == first.AttemptId)).Status);
+    }
+
+    [Fact]
+    public async Task Unresolved_links_are_closed_however_old_they_are_and_only_once()
+    {
+        await SeedBalance(500m);
+        await Service().CreateAsync(Request(PatientPaymentSelection.FullBalance));
+        // Our clock is not Stripe's: a link created "25 hours ago" here may still be open there.
+        await _db.PatientPaymentAttempts.ExecuteUpdateAsync(x => x.SetProperty(a => a.CreatedAt, DateTime.UtcNow.AddHours(-25)));
+        _db.ChangeTracker.Clear();
+
+        await Service().CreateAsync(Request(PatientPaymentSelection.FullBalance));
+        await Service().CreateAsync(Request(PatientPaymentSelection.FullBalance));
+
+        Assert.Equal(["cs_1", "cs_2"], _checkout.Expired);
+    }
+
+    [Fact]
+    public async Task Link_creation_is_limited_per_account_per_hour()
+    {
+        await SeedBalance(500m);
+        var service = Service(linksPerHour: 3);
+        for (var i = 0; i < 3; i++) await service.CreateAsync(Request(PatientPaymentSelection.FullBalance));
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => service.CreateAsync(Request(PatientPaymentSelection.FullBalance)));
+        Assert.Equal(3, _checkout.Calls);
+    }
+
+    [Fact]
+    public async Task Stripe_expire_reports_a_session_that_was_already_paid()
+    {
+        var handler = new SessionStatusHandler();
+        var values = new Dictionary<string, string?> { ["Secrets:StripeTest"] = "sk_test_not-a-real-secret" };
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(values).Build();
+        var api = new StripeApiClient(new HttpClient(handler) { BaseAddress = new Uri("https://api.stripe.com") },
+            new ConfigurationStripeCredentialProvider(configuration), configuration);
+
+        Assert.Equal("expired", await api.ExpireCheckoutSessionAsync(Configuration(), "acct_practice", "cs_open"));
+        Assert.Equal("complete", await api.ExpireCheckoutSessionAsync(Configuration(), "acct_practice", "cs_paid"));
+        Assert.Equal(["POST /v1/checkout/sessions/cs_open/expire", "POST /v1/checkout/sessions/cs_paid/expire",
+            "GET /v1/checkout/sessions/cs_paid"], handler.Requests);
+        Assert.All(handler.Accounts, account => Assert.Equal("acct_practice", account));
+    }
+
+    [Theory]
+    [InlineData("USD", 50, "5000")]
+    [InlineData("JPY", 5000, "5000")]
+    [InlineData("KWD", 5, "5000")]
+    public async Task Stripe_checkout_amount_uses_the_currency_exponent(string currency, int amount, string unitAmount)
+    {
+        var handler = new RecordingHandler("""
+            {"id":"cs_test_opaque","payment_intent":null,"url":"https://checkout.stripe.test/session","expires_at":1787171400}
+            """);
+        var values = new Dictionary<string, string?> { ["Secrets:StripeTest"] = "sk_test_not-a-real-secret" };
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(values).Build();
+        var api = new StripeApiClient(new HttpClient(handler) { BaseAddress = new Uri("https://api.stripe.com") },
+            new ConfigurationStripeCredentialProvider(configuration), configuration);
+        await api.CreateCheckoutSessionAsync(Configuration(), "acct_practice",
+            new PaymentRequest("tenant-a", Guid.NewGuid(), null, new Money(amount, currency), $"pay_{new string('b', 32)}",
+                PatientPaymentMethod.Card, "https://portal.example.test/payments/success", "https://portal.example.test/payments/cancel"));
+        Assert.Contains($"unit_amount%5D={unitAmount}&", handler.Body);
+    }
+
+    [Fact]
+    public async Task Stripe_checkout_refuses_an_amount_the_currency_cannot_express()
+    {
+        var handler = new RecordingHandler("{}");
+        var values = new Dictionary<string, string?> { ["Secrets:StripeTest"] = "sk_test_not-a-real-secret" };
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(values).Build();
+        var api = new StripeApiClient(new HttpClient(handler) { BaseAddress = new Uri("https://api.stripe.com") },
+            new ConfigurationStripeCredentialProvider(configuration), configuration);
+
+        await Assert.ThrowsAsync<ArgumentException>(() => api.CreateCheckoutSessionAsync(Configuration(), "acct_practice",
+            new PaymentRequest("tenant-a", Guid.NewGuid(), null, new Money(50.50m, "JPY"), $"pay_{new string('c', 32)}",
+                PatientPaymentMethod.Card, "https://portal.example.test/payments/success", "https://portal.example.test/payments/cancel")));
+        Assert.Equal(string.Empty, handler.Body);
+    }
+
+    [Fact]
     public async Task Stripe_request_contains_only_generic_presentation_and_opaque_reference()
     {
         var handler = new RecordingHandler("""
@@ -191,8 +323,9 @@ public sealed class PatientBalanceCheckoutTests : IDisposable
             Assert.DoesNotContain(prohibited, handler.Body, StringComparison.OrdinalIgnoreCase);
     }
 
-    private PatientBalanceCheckoutService Service(decimal maximum = 50_000m) => new(_db, _checkout, _tenant,
-        Options.Create(new PatientCheckoutOptions { MaximumAmount = maximum, PublicBaseUrl = "https://portal.example.test" }),
+    private PatientBalanceCheckoutService Service(decimal maximum = 50_000m, int linksPerHour = 20) => new(_db, _checkout, _tenant,
+        Options.Create(new PatientCheckoutOptions { MaximumAmount = maximum, PublicBaseUrl = "https://portal.example.test",
+            MaximumLinksPerAccountPerHour = linksPerHour }),
         TimeProvider.System);
     private PatientBalanceCheckoutRequest Request(PatientPaymentSelection selection, Guid? statement = null, Money? custom = null) =>
         new("tenant-a", _accountId, selection, statement, custom);
@@ -216,6 +349,14 @@ public sealed class PatientBalanceCheckoutTests : IDisposable
     private sealed class FakeCheckout(CloudDentalDbContext db) : IPaymentCheckoutService
     {
         public int Calls; public PaymentRequest? Last; public Exception? Failure;
+        public List<string> Expired = []; public PaymentSessionClosure Closure = PaymentSessionClosure.Expired;
+        public bool DisableDuringCreate; public Exception? ExpireFailure;
+        public Task<PaymentSessionClosure> ExpireAsync(string tenantId, string externalSessionId,
+            CancellationToken cancellationToken = default)
+        {
+            Expired.Add(externalSessionId); if (ExpireFailure is not null) throw ExpireFailure;
+            return Task.FromResult(Closure);
+        }
         public Task<PaymentSession> CreateAsync(PaymentRequest request, CancellationToken cancellationToken = default)
         {
             Calls++; Last = request; if (Failure is not null) throw Failure;
@@ -225,8 +366,29 @@ public sealed class PatientBalanceCheckoutTests : IDisposable
                 Processor = PaymentProcessorProvider.Stripe, InternalPaymentReference = request.InternalPaymentReference,
                 Status = PaymentStatus.Pending, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow });
             db.SaveChanges();
+            // Another request turns online payments off while Stripe is creating this session.
+            if (DisableDuringCreate) db.PaymentProcessorConfigurations.IgnoreQueryFilters()
+                .ExecuteUpdate(x => x.SetProperty(c => c.Enabled, false));
             return Task.FromResult(new PaymentSession(request.InternalPaymentReference, $"cs_{Calls}", null,
                 new Uri($"https://checkout.stripe.test/{Calls}"), null, DateTime.UtcNow.AddMinutes(30), PaymentStatus.Pending));
+        }
+    }
+    // Stripe answers "expire" for an open session, and refuses it for a paid one.
+    private sealed class SessionStatusHandler : HttpMessageHandler
+    {
+        public List<string> Requests = []; public List<string> Accounts = [];
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            Requests.Add($"{request.Method} {request.RequestUri!.AbsolutePath}");
+            Accounts.Add(request.Headers.GetValues("Stripe-Account").Single());
+            var path = request.RequestUri.AbsolutePath;
+            var (code, status) = path.Contains("cs_open") ? (HttpStatusCode.OK, "expired")
+                : path.EndsWith("/expire") ? (HttpStatusCode.BadRequest, null) : (HttpStatusCode.OK, "complete");
+            return Task.FromResult(new HttpResponseMessage(code)
+            {
+                Content = new StringContent(status is null ? """{"error":{"message":"not open"}}""" : $$"""{"status":"{{status}}"}""",
+                    Encoding.UTF8, "application/json")
+            });
         }
     }
     private sealed class RecordingHandler(string response) : HttpMessageHandler

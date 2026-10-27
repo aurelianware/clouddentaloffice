@@ -53,13 +53,17 @@ public interface IStaffPatientBillingService
         string reason, CancellationToken cancellationToken = default);
     Task<StripeReconciliationSummary> ReconcileStripeAsync(ClaimsPrincipal user, DateTime since,
         CancellationToken cancellationToken = default);
+    Task<PatientBalanceCheckoutResult> CreatePaymentLinkAsync(ClaimsPrincipal user, int patientId,
+        PatientPaymentSelection selection, Guid? statementId = null, Money? customAmount = null,
+        CancellationToken cancellationToken = default);
 }
 
 public sealed class StaffPatientBillingService(CloudDentalDbContext db, IPatientAccountService accounts,
     IPatientStatementService statements, IPaymentAllocationService allocations, ITenantProvider tenantProvider,
     TimeProvider clock, IPaymentRefundService? refunds = null,
     IStripePaymentReconciliationService? stripeReconciliation = null,
-    IPatientBillingNotificationService? billingNotifications = null) : IStaffPatientBillingService
+    IPatientBillingNotificationService? billingNotifications = null,
+    IPatientBalanceCheckoutService? balanceCheckout = null) : IStaffPatientBillingService
 {
     public async Task<StaffBillingDashboard> GetDashboardAsync(ClaimsPrincipal user, DateTime date,
         CancellationToken cancellationToken = default)
@@ -288,6 +292,27 @@ public sealed class StaffPatientBillingService(CloudDentalDbContext db, IPatient
         var context = Context(user, BillingPermissions.ConfigurePayments);
         return (stripeReconciliation ?? throw new InvalidOperationException("Stripe reconciliation is unavailable."))
             .ReconcileAsync(context.Tenant, since, cancellationToken);
+    }
+
+    /// <summary>
+    /// Creates a Stripe-hosted payment link for a patient's account so staff can send it by
+    /// email or text before the patient portal is available to them. The account is resolved
+    /// from the caller's tenant; the amount is derived from the ledger by the checkout service,
+    /// and the payment posts only when Stripe's signed webhook confirms it.
+    /// </summary>
+    public async Task<PatientBalanceCheckoutResult> CreatePaymentLinkAsync(ClaimsPrincipal user, int patientId,
+        PatientPaymentSelection selection, Guid? statementId = null, Money? customAmount = null,
+        CancellationToken cancellationToken = default)
+    {
+        var context = Context(user, BillingPermissions.PostPayment);
+        var checkout = balanceCheckout ?? throw new InvalidOperationException("Online payments are unavailable.");
+        var summary = await accounts.GetSummaryAsync(context.Tenant, patientId, cancellationToken)
+            ?? throw new KeyNotFoundException("Patient account was not found for the tenant.");
+        var result = await checkout.CreateAsync(new PatientBalanceCheckoutRequest(context.Tenant, summary.AccountId,
+            selection, statementId, customAmount), cancellationToken);
+        Audit(context, "PaymentLinkCreated", nameof(PatientPaymentAttempt), result.AttemptId.ToString());
+        await db.SaveChangesAsync(cancellationToken);
+        return result;
     }
 
     private BillingContext Context(ClaimsPrincipal user, string permission)

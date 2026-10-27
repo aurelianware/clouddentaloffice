@@ -114,6 +114,36 @@ public sealed class StripePaymentWebhookTests : IDisposable
     }
 
     [Fact]
+    public async Task Payment_still_posts_after_the_practice_disables_online_payments()
+    {
+        await _db.PaymentProcessorConfigurations.IgnoreQueryFilters().ExecuteUpdateAsync(x => x
+            .SetProperty(c => c.Enabled, false).SetProperty(c => c.OnboardingStatus, PaymentProcessorOnboardingStatus.Disabled));
+        _db.ChangeTracker.Clear();
+
+        await Service().ProcessAsync(Event());
+
+        Assert.Equal(PaymentStatus.Succeeded, (await _db.PatientPayments.IgnoreQueryFilters().SingleAsync()).Status);
+        Assert.Single(await _db.PatientLedgerEntries.IgnoreQueryFilters().ToListAsync());
+    }
+
+    [Fact]
+    public async Task Async_failure_after_success_leaves_the_posted_payment_alone()
+    {
+        await Service().ProcessAsync(Event());
+        await Service().ProcessAsync(Event("evt_failed") with
+        {
+            EventType = "checkout.session.async_payment_failed", PaymentStatus = "unpaid"
+        });
+
+        Assert.Equal(PaymentStatus.Succeeded, (await _db.PatientPayments.IgnoreQueryFilters().SingleAsync()).Status);
+        Assert.Equal(PatientPaymentAttemptStatus.Completed,
+            (await _db.PatientPaymentAttempts.IgnoreQueryFilters().SingleAsync()).Status);
+        Assert.Single(await _db.PatientLedgerEntries.IgnoreQueryFilters().ToListAsync());
+        Assert.Equal("failed-after-succeeded", (await _db.PaymentProcessorEvents.IgnoreQueryFilters()
+            .SingleAsync(x => x.ExternalEventId == "evt_failed")).FailureCode);
+    }
+
+    [Fact]
     public async Task Completed_but_unpaid_waits_for_async_success()
     {
         await Service().ProcessAsync(Event() with { PaymentStatus = "unpaid" });

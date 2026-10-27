@@ -13,6 +13,9 @@ public sealed record PaymentRequest(string TenantId, Guid PatientAccountId, Guid
 public sealed record PaymentSession(string InternalPaymentReference, string ExternalSessionId,
     string? ExternalPaymentId, Uri? CheckoutUrl, string? ClientToken, DateTime? ExpiresAt, PaymentStatus Status);
 
+/// <summary>How a processor session ended when it was closed: expired unpaid, or already completed by the payer.</summary>
+public enum PaymentSessionClosure { Expired, Completed }
+
 public sealed record PaymentRefundRequest(string TenantId, Guid PaymentId, Money Amount,
     string InternalRefundReference, string Reason = "requested_by_customer", string RequestedBy = "system");
 
@@ -36,17 +39,28 @@ public interface IPaymentProcessor
         CancellationToken cancellationToken = default);
     Task<PaymentRefundResult> RefundAsync(PaymentProcessorConfiguration configuration, PaymentRefundRequest request,
         string externalPaymentId, CancellationToken cancellationToken = default);
+    /// <summary>Closes an open checkout session so it can no longer be paid; reports Completed if the payer got there first.</summary>
+    Task<PaymentSessionClosure> ExpireSessionAsync(PaymentProcessorConfiguration configuration, string externalSessionId,
+        CancellationToken cancellationToken = default);
 }
 
 public interface IPaymentProcessorResolver
 {
     Task<(IPaymentProcessor Processor, PaymentProcessorConfiguration Configuration)> ResolveAsync(
         string tenantId, CancellationToken cancellationToken = default);
+    /// <summary>
+    /// The tenant's processor for winding down sessions it already created. Unlike ResolveAsync it
+    /// also returns a disabled configuration, because closing open sessions is part of turning it off.
+    /// </summary>
+    Task<(IPaymentProcessor Processor, PaymentProcessorConfiguration Configuration)> ResolveForExistingSessionsAsync(
+        string tenantId, PaymentProcessorProvider provider, CancellationToken cancellationToken = default);
 }
 
 public interface IPaymentCheckoutService
 {
     Task<PaymentSession> CreateAsync(PaymentRequest request, CancellationToken cancellationToken = default);
+    Task<PaymentSessionClosure> ExpireAsync(string tenantId, string externalSessionId,
+        CancellationToken cancellationToken = default);
 }
 
 public interface IPaymentRefundService
@@ -96,6 +110,20 @@ public sealed class PaymentProcessorResolver(CloudDentalDbContext db, IEnumerabl
         return (processor, configuration);
     }
 
+    public async Task<(IPaymentProcessor Processor, PaymentProcessorConfiguration Configuration)> ResolveForExistingSessionsAsync(
+        string tenantId, PaymentProcessorProvider provider, CancellationToken cancellationToken = default)
+    {
+        PaymentTenantGuard.Ensure(tenantProvider, tenantId);
+        var configuration = await db.PaymentProcessorConfigurations.IgnoreQueryFilters().AsNoTracking()
+            .SingleOrDefaultAsync(x => x.TenantId == tenantId && x.Provider == provider, cancellationToken)
+            ?? throw new PaymentProcessorUnavailableException("The payment processor is not configured for the tenant.");
+        if (string.IsNullOrWhiteSpace(configuration.CredentialReference))
+            throw new PaymentProcessorUnavailableException("The payment processor has no credential reference.");
+        if (!_processors.TryGetValue(provider, out var processor))
+            throw new PaymentProcessorUnavailableException("The configured payment processor adapter is not installed.");
+        return (processor, configuration);
+    }
+
     private static IReadOnlyDictionary<PaymentProcessorProvider, IPaymentProcessor> BuildProcessorMap(
         IEnumerable<IPaymentProcessor> processors)
     {
@@ -110,6 +138,16 @@ public sealed class PaymentProcessorResolver(CloudDentalDbContext db, IEnumerabl
 public sealed class PaymentCheckoutService(CloudDentalDbContext db, IPaymentProcessorResolver resolver,
     ITenantProvider tenantProvider, TimeProvider clock) : IPaymentCheckoutService
 {
+    public async Task<PaymentSessionClosure> ExpireAsync(string tenantId, string externalSessionId,
+        CancellationToken cancellationToken = default)
+    {
+        PaymentTenantGuard.Ensure(tenantProvider, tenantId);
+        // Checkout sessions are Stripe's; closing one must still work after online payments are turned off.
+        var (processor, configuration) = await resolver.ResolveForExistingSessionsAsync(tenantId,
+            PaymentProcessorProvider.Stripe, cancellationToken);
+        return await processor.ExpireSessionAsync(configuration, externalSessionId, cancellationToken);
+    }
+
     public async Task<PaymentSession> CreateAsync(PaymentRequest request, CancellationToken cancellationToken = default)
     {
         PaymentTenantGuard.Ensure(tenantProvider, request.TenantId);
@@ -212,7 +250,8 @@ public sealed class PaymentRefundService(CloudDentalDbContext db, IPaymentProces
             throw new ArgumentOutOfRangeException(nameof(request.Amount));
         await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
         var reserved = await db.PatientRefunds.IgnoreQueryFilters().Where(x => x.TenantId == request.TenantId &&
-                x.PaymentId == request.PaymentId && x.Status != PatientRefundStatus.Failed)
+                x.PaymentId == request.PaymentId && x.Status != PatientRefundStatus.Failed &&
+                x.Status != PatientRefundStatus.Reversed)
             .Select(x => x.Amount).ToListAsync(cancellationToken);
         if (reserved.Sum() + request.Amount.Amount > payment.Amount)
             throw new InvalidOperationException("Cumulative refunds cannot exceed the settled payment amount.");

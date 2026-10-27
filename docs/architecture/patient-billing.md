@@ -240,7 +240,15 @@ reversal.
 
 Every staff mutation records the authenticated actor on the financial record and
 adds a tenant-scoped `FinancialAuditEvent` for statement generation/sending,
-payment posting/reversal, adjustments, allocation, and unapplication. Audit rows
+payment posting/reversal, adjustments, allocation, and unapplication. The staff
+HTTP APIs audit the same way: `/api/patient-statements` writes
+`StatementGenerated`, `StatementFinalized`, `StatementStatusChanged`,
+`StatementVoided`, and `StatementSuperseded` in the same transaction as the
+change, and `/api/patient-accounts/{id}/checkout` writes `PaymentLinkCreated`.
+A caller with no bounded identity (email, name identifier, `oid`, or name) is
+refused before anything changes. Connecting a Stripe account
+(`StripeAccountCreated`) and turning online payments off
+(`StripePaymentsDisabled`) are audited with the administrator. Audit rows
 contain bounded operational identifiers and reason codes, not card credentials or
 clinical narratives.
 

@@ -20,6 +20,8 @@ public sealed class StripePaymentMetrics : IDisposable
     public Counter<long> Failed { get; }
     public Counter<long> Conflicts { get; }
     public Counter<long> DeadLetters { get; }
+    public Counter<long> Ignored { get; }
+    public Counter<long> Disputes { get; }
     public Histogram<double> PostingLatency { get; }
 
     public StripePaymentMetrics()
@@ -28,6 +30,8 @@ public sealed class StripePaymentMetrics : IDisposable
         Failed = _meter.CreateCounter<long>("stripe.payments.failed");
         Conflicts = _meter.CreateCounter<long>("stripe.payments.conflicts");
         DeadLetters = _meter.CreateCounter<long>("stripe.events.dead_lettered");
+        Ignored = _meter.CreateCounter<long>("stripe.events.ignored");
+        Disputes = _meter.CreateCounter<long>("stripe.disputes");
         PostingLatency = _meter.CreateHistogram<double>("stripe.payment.posting_latency", "s");
     }
 
@@ -77,12 +81,13 @@ public sealed class StripePaymentWebhookProcessor(CloudDentalDbContext db, TimeP
     private async Task ProcessNewAsync(StripePaymentWebhookEvent webhook, CancellationToken cancellationToken)
     {
         await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
+        // A disabled configuration stops new payments, not the posting of money Stripe already took
+        // for a session this app created; the account, environment and attempt bindings still apply.
         var configuration = await db.PaymentProcessorConfigurations.IgnoreQueryFilters().AsNoTracking().SingleOrDefaultAsync(x =>
-            x.TenantId == webhook.TenantId && x.Provider == PaymentProcessorProvider.Stripe && x.Enabled,
-            cancellationToken);
+            x.TenantId == webhook.TenantId && x.Provider == PaymentProcessorProvider.Stripe, cancellationToken);
         if (configuration is null || configuration.ConnectedMerchantReference != webhook.ConnectedAccountId ||
             (configuration.Environment == PaymentProcessorEnvironment.Production) != webhook.LiveMode)
-            throw new StripeWebhookPermanentException("Connected Stripe account mapping is invalid or disabled.");
+            throw new StripeWebhookPermanentException("Connected Stripe account mapping is invalid.");
         if (!webhook.LiveMode && !options.Value.AllowedSandboxTenantIds.Contains(webhook.TenantId,
                 StringComparer.Ordinal))
             throw new StripeWebhookPermanentException("Sandbox ledger posting is not enabled for this tenant.");
@@ -118,6 +123,20 @@ public sealed class StripePaymentWebhookProcessor(CloudDentalDbContext db, TimeP
             metrics.Conflicts.Add(1);
             logger.LogWarning("Stripe payment event {ExternalEventId} requires review ({ConflictCode}).",
                 webhook.ExternalEventId, conflict);
+            return;
+        }
+
+        if (webhook.EventType == "checkout.session.async_payment_failed" && payment.Status == PaymentStatus.Succeeded)
+        {
+            // Stripe should never fail a payment it reported paid; never undo a posted payment on it.
+            processorEvent.Status = PaymentProcessorEventStatus.Conflict;
+            processorEvent.FailureCode = "failed-after-succeeded";
+            processorEvent.ProcessedAt = now;
+            await db.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+            metrics.Conflicts.Add(1);
+            logger.LogWarning("Stripe payment event {ExternalEventId} reported a failure for a succeeded payment.",
+                webhook.ExternalEventId);
             return;
         }
 
@@ -320,7 +339,8 @@ public sealed class StripePaymentWebhookConsumer(IServiceProvider services, Serv
 
     private async Task ProcessAsync(ProcessMessageEventArgs args)
     {
-        if (args.Message.Subject is not (nameof(StripePaymentWebhookEvent) or nameof(StripeRefundWebhookEvent)))
+        if (args.Message.Subject is not (nameof(StripePaymentWebhookEvent) or nameof(StripeRefundWebhookEvent) or
+                nameof(StripeDisputeWebhookEvent)))
         {
             metrics.DeadLetters.Add(1);
             await args.DeadLetterMessageAsync(args.Message, "UnexpectedSubject");
@@ -329,9 +349,12 @@ public sealed class StripePaymentWebhookConsumer(IServiceProvider services, Serv
         object? webhook;
         try
         {
-            webhook = args.Message.Subject == nameof(StripeRefundWebhookEvent)
-                ? JsonSerializer.Deserialize<StripeRefundWebhookEvent>(args.Message.Body.ToString())
-                : JsonSerializer.Deserialize<StripePaymentWebhookEvent>(args.Message.Body.ToString());
+            webhook = args.Message.Subject switch
+            {
+                nameof(StripeRefundWebhookEvent) => JsonSerializer.Deserialize<StripeRefundWebhookEvent>(args.Message.Body.ToString()),
+                nameof(StripeDisputeWebhookEvent) => JsonSerializer.Deserialize<StripeDisputeWebhookEvent>(args.Message.Body.ToString()),
+                _ => JsonSerializer.Deserialize<StripePaymentWebhookEvent>(args.Message.Body.ToString())
+            };
         }
         catch (JsonException) { webhook = null; }
         if (webhook is null)
@@ -346,6 +369,9 @@ public sealed class StripePaymentWebhookConsumer(IServiceProvider services, Serv
             if (webhook is StripeRefundWebhookEvent refund)
                 await scope.ServiceProvider.GetRequiredService<IStripeRefundWebhookProcessor>()
                     .ProcessAsync(refund, args.CancellationToken);
+            else if (webhook is StripeDisputeWebhookEvent dispute)
+                await scope.ServiceProvider.GetRequiredService<IStripeDisputeWebhookProcessor>()
+                    .ProcessAsync(dispute, args.CancellationToken);
             else
                 await scope.ServiceProvider.GetRequiredService<IStripePaymentWebhookProcessor>()
                     .ProcessAsync((StripePaymentWebhookEvent)webhook, args.CancellationToken);
@@ -371,6 +397,7 @@ public sealed class StripePaymentWebhookConsumer(IServiceProvider services, Serv
     {
         StripePaymentWebhookEvent payment => payment.ExternalEventId,
         StripeRefundWebhookEvent refund => refund.ExternalEventId,
+        StripeDisputeWebhookEvent dispute => dispute.ExternalEventId,
         _ => "unknown"
     };
 

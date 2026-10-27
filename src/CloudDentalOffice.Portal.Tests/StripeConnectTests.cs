@@ -201,10 +201,108 @@ public sealed class StripeConnectTests : IDisposable
     public async Task Disable_is_local_and_never_deletes_the_connected_account()
     {
         await _service.CreateOnboardingLinkAsync("tenant-a", "admin@example.test", Refresh, Return);
-        await _service.DisableAsync("tenant-a");
+        await _service.DisableAsync("tenant-a", "admin@example.test");
         var config = await _db.PaymentProcessorConfigurations.SingleAsync();
         Assert.False(config.Enabled); Assert.Equal("acct_test_practice", config.ConnectedMerchantReference);
         Assert.Equal(1, _api.CreateAccountCalls); Assert.Equal(1, _api.CreateLinkCalls);
+    }
+
+    [Fact]
+    public async Task Disable_closes_open_payment_links_and_still_disables_if_Stripe_fails()
+    {
+        await _service.CreateOnboardingLinkAsync("tenant-a", "admin@example.test", Refresh, Return);
+        var open = AddOpenAttempt("cs_open");
+        var paid = AddOpenAttempt("cs_paid");
+        var unreachable = AddOpenAttempt("cs_error");
+        var timedOut = AddOpenAttempt("cs_timeout");
+        await _db.SaveChangesAsync();
+        _api.SessionStatuses["cs_paid"] = "complete";
+        _api.SessionStatuses["cs_error"] = "error";
+        _api.SessionStatuses["cs_timeout"] = "timeout";
+
+        await _service.DisableAsync("tenant-a", "admin@example.test");
+
+        Assert.False((await _db.PaymentProcessorConfigurations.SingleAsync()).Enabled);
+        Assert.Equal(["cs_error", "cs_open", "cs_paid", "cs_timeout"], _api.ExpiredSessions.Order());
+        var attempts = await _db.PatientPaymentAttempts.ToDictionaryAsync(x => x.Id);
+        Assert.Equal(PatientPaymentAttemptStatus.Cancelled, attempts[open.Id].Status);
+        Assert.Equal("processor-disabled", attempts[open.Id].FailureCode);
+        Assert.Equal(PaymentStatus.Cancelled, (await _db.PatientPayments.SingleAsync(x => x.PaymentId == open.PaymentId)).Status);
+        // Paid or unreachable sessions are left for their webhook to settle.
+        Assert.Equal(PatientPaymentAttemptStatus.SessionCreated, attempts[paid.Id].Status);
+        Assert.Equal(PatientPaymentAttemptStatus.SessionCreated, attempts[unreachable.Id].Status);
+        Assert.Equal(PatientPaymentAttemptStatus.SessionCreated, attempts[timedOut.Id].Status);
+    }
+
+    [Fact]
+    public async Task Disable_saves_the_disabled_state_before_closing_payment_links()
+    {
+        await _service.CreateOnboardingLinkAsync("tenant-a", "admin@example.test", Refresh, Return);
+        AddOpenAttempt("cs_open"); await _db.SaveChangesAsync();
+        bool? enabledInDatabaseDuringExpire = null;
+        _api.OnExpire = () => enabledInDatabaseDuringExpire =
+            _db.PaymentProcessorConfigurations.AsNoTracking().Single().Enabled;
+
+        await _service.DisableAsync("tenant-a", "admin@example.test");
+
+        // A link created meanwhile then either is found by this scan or sees the practice disabled itself.
+        Assert.False(enabledInDatabaseDuringExpire);
+    }
+
+    [Fact]
+    public async Task Connecting_and_disabling_Stripe_are_audited_with_the_administrator()
+    {
+        await _service.CreateOnboardingLinkAsync("tenant-a", "admin@example.test", Refresh, Return);
+        await _service.CreateOnboardingLinkAsync("tenant-a", "admin@example.test", Refresh, Return);
+        await _service.DisableAsync("tenant-a", "other-admin@example.test");
+
+        var audit = (await _db.FinancialAuditEvents.IgnoreQueryFilters().ToListAsync()).OrderBy(x => x.CreatedAt).ToList();
+        Assert.Equal([("StripeAccountCreated", "admin@example.test"), ("StripePaymentsDisabled", "other-admin@example.test")],
+            audit.Select(x => (x.Action, x.Actor)));
+        var configId = (await _db.PaymentProcessorConfigurations.SingleAsync()).Id.ToString("N");
+        Assert.All(audit, x => Assert.Equal((nameof(PaymentProcessorConfiguration), configId), (x.EntityType, x.EntityId)));
+    }
+
+    [Fact]
+    public async Task Overlong_administrator_email_is_refused_before_Stripe_is_called()
+    {
+        await Assert.ThrowsAsync<ArgumentException>(() => _service.CreateOnboardingLinkAsync("tenant-a",
+            new string('a', 100) + "@example.test", Refresh, Return));
+        Assert.Equal(0, _api.CreateAccountCalls);
+    }
+
+    [Fact]
+    public async Task Disable_requires_an_actor_to_audit()
+    {
+        await Assert.ThrowsAsync<ArgumentException>(() => _service.DisableAsync("tenant-a", " "));
+        Assert.True((await _db.PaymentProcessorConfigurations.SingleAsync()).Enabled);
+    }
+
+    private Guid? _accountId;
+
+    private PatientPaymentAttempt AddOpenAttempt(string sessionId)
+    {
+        var now = DateTime.UtcNow;
+        if (_accountId is null)
+        {
+            _accountId = Guid.NewGuid();
+            _db.Patients.Add(new Patient { PatientId = 101, TenantId = "tenant-a", FirstName = "Test", LastName = "Patient",
+                DateOfBirth = new(1980, 1, 1), Gender = "U", Status = "Active" });
+            _db.PatientAccounts.Add(new PatientAccount { Id = _accountId.Value, TenantId = "tenant-a", PatientId = 101,
+                CreatedAt = now, UpdatedAt = now });
+        }
+        var accountId = _accountId.Value;
+        var paymentId = Guid.NewGuid();
+        _db.PatientPayments.Add(new PatientPayment { PaymentId = paymentId, TenantId = "tenant-a",
+            PatientAccountId = accountId, Amount = 10m, Currency = "USD", PaymentDate = now,
+            Method = PatientPaymentMethod.Card, Processor = PaymentProcessorProvider.Stripe,
+            InternalPaymentReference = $"pay_{sessionId}", Status = PaymentStatus.Pending, CreatedAt = now, UpdatedAt = now });
+        var attempt = new PatientPaymentAttempt { Id = Guid.NewGuid(), TenantId = "tenant-a", PatientAccountId = accountId,
+            PaymentId = paymentId, Selection = PatientPaymentSelection.FullBalance, Amount = 10m, Currency = "USD",
+            PaymentReference = $"pay_{sessionId}", Status = PatientPaymentAttemptStatus.SessionCreated,
+            StripeCheckoutSessionId = sessionId, ConnectedAccountId = "acct_test_practice", CreatedAt = now, UpdatedAt = now };
+        _db.PatientPaymentAttempts.Add(attempt);
+        return attempt;
     }
 
     private static readonly Uri Refresh = new("https://portal.example.test/settings/payments/stripe?flow=refresh");
@@ -242,6 +340,18 @@ public sealed class StripeConnectTests : IDisposable
         public Task<StripeCheckoutSessionSnapshot> CreateCheckoutSessionAsync(PaymentProcessorConfiguration configuration,
             string connectedAccountId, PaymentRequest request, CancellationToken cancellationToken = default) =>
             throw new NotSupportedException();
+        public Dictionary<string, string> SessionStatuses { get; } = [];
+        public List<string> ExpiredSessions { get; } = [];
+        public Action? OnExpire { get; set; }
+        public Task<string> ExpireCheckoutSessionAsync(PaymentProcessorConfiguration configuration,
+            string connectedAccountId, string checkoutSessionId, CancellationToken cancellationToken = default)
+        {
+            ExpiredSessions.Add(checkoutSessionId); OnExpire?.Invoke();
+            return SessionStatuses.TryGetValue(checkoutSessionId, out var status)
+                ? status == "error" ? throw new StripeConnectException("Stripe unavailable.")
+                : status == "timeout" ? throw new TaskCanceledException("HTTP timeout.") : Task.FromResult(status)
+                : Task.FromResult("expired");
+        }
         public Task<StripeRefundSnapshot> CreateRefundAsync(PaymentProcessorConfiguration configuration,
             string connectedAccountId, PaymentRefundRequest request, string externalPaymentId,
             CancellationToken cancellationToken = default) => throw new NotSupportedException();

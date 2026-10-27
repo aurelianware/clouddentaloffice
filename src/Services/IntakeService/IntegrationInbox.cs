@@ -242,6 +242,9 @@ public sealed class IntegrationInboxDispatcher(
         nameof(StripeRefundWebhookEvent) =>
             JsonSerializer.Deserialize<StripeRefundWebhookEvent>(message.Payload, JsonOptions)
             ?? throw new JsonException("Inbox payload is invalid."),
+        nameof(StripeDisputeWebhookEvent) =>
+            JsonSerializer.Deserialize<StripeDisputeWebhookEvent>(message.Payload, JsonOptions)
+            ?? throw new JsonException("Inbox payload is invalid."),
         _ => throw new JsonException("Inbox event type is unsupported.")
     };
 }

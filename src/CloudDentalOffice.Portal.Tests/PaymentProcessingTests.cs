@@ -54,6 +54,17 @@ public sealed class PaymentProcessingTests : IDisposable
     }
 
     [Fact]
+    public async Task Open_sessions_can_still_be_closed_after_payments_are_turned_off()
+    {
+        _db.PaymentProcessorConfigurations.Single().Enabled = false;
+        await _db.SaveChangesAsync();
+
+        Assert.Equal(PaymentSessionClosure.Expired, await Checkout().ExpireAsync("tenant-a", "cs_open"));
+        Assert.Equal(["cs_open"], _processor.ExpiredSessions);
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => Checkout().ExpireAsync("tenant-b", "cs_open"));
+    }
+
+    [Fact]
     public async Task Checkout_persists_canonical_payment_and_calls_only_neutral_adapter()
     {
         await SeedAccount();
@@ -178,6 +189,24 @@ public sealed class PaymentProcessingTests : IDisposable
     }
 
     [Fact]
+    public async Task Reversed_refund_no_longer_counts_toward_the_refund_cap()
+    {
+        await SeedAccount();
+        await Checkout().CreateAsync(Request(50m, "payment-1"));
+        var payment = await Reconciliation().ReconcileAsync(Event("event-1", "external-payment-1", "payment-1", 50m));
+        var refunds = new PaymentRefundService(_db, _resolver, _tenant);
+        await refunds.RefundAsync(new PaymentRefundRequest("tenant-a", payment.PaymentId, new Money(50m), "refund-1"));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => refunds.RefundAsync(new PaymentRefundRequest(
+            "tenant-a", payment.PaymentId, new Money(50m), "refund-2")));
+
+        await _db.PatientRefunds.IgnoreQueryFilters().ExecuteUpdateAsync(x => x
+            .SetProperty(r => r.Status, PatientRefundStatus.Reversed).SetProperty(r => r.ExternalRefundId, "refund-old"));
+        _db.ChangeTracker.Clear();
+        var again = await refunds.RefundAsync(new PaymentRefundRequest("tenant-a", payment.PaymentId, new Money(50m), "refund-3"));
+        Assert.Equal(PaymentStatus.Pending, again.Status);
+    }
+
+    [Fact]
     public async Task Transient_refund_transport_failure_is_durable_and_retryable()
     {
         await SeedAccount();
@@ -266,6 +295,7 @@ public sealed class PaymentProcessingTests : IDisposable
         public int SessionCalls { get; private set; }
         public int RefundCalls { get; private set; }
         public Exception? RefundFailure { get; set; }
+        public List<string> ExpiredSessions { get; } = [];
         public Task<PaymentSession> CreateSessionAsync(PaymentProcessorConfiguration configuration, PaymentRequest request,
             CancellationToken cancellationToken = default)
         {
@@ -280,6 +310,12 @@ public sealed class PaymentProcessingTests : IDisposable
             RefundCalls++;
             if (RefundFailure is not null) throw RefundFailure;
             return Task.FromResult(new PaymentRefundResult(request.InternalRefundReference, "refund-1", PaymentStatus.Pending));
+        }
+        public Task<PaymentSessionClosure> ExpireSessionAsync(PaymentProcessorConfiguration configuration,
+            string externalSessionId, CancellationToken cancellationToken = default)
+        {
+            ExpiredSessions.Add(externalSessionId);
+            return Task.FromResult(PaymentSessionClosure.Expired);
         }
     }
 }

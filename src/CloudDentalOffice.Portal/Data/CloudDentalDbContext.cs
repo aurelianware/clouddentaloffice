@@ -25,6 +25,8 @@ public class CloudDentalDbContext : DbContext
         _tenantProvider = tenantProvider ?? new DefaultTenantProvider();
     }
 
+    public DbSet<PracticeFeeSchedule> PracticeFeeSchedules => Set<PracticeFeeSchedule>();
+
     // DbSets
     public DbSet<TenantRegistry> Tenants => Set<TenantRegistry>();
     public DbSet<Organization> Organizations => Set<Organization>();
@@ -66,6 +68,13 @@ public class CloudDentalDbContext : DbContext
     {
         base.OnModelCreating(modelBuilder);
 
+        ConfigureTenantEntity<PracticeFeeSchedule>(modelBuilder);
+        modelBuilder.Entity<PracticeFeeSchedule>(entity =>
+        {
+            entity.HasIndex(x => x.TenantId).IsUnique().HasFilter("\"IsPracticeDefault\"");
+            entity.HasIndex(x => new { x.TenantId, x.Name }).IsUnique();
+            entity.HasQueryFilter(x => x.TenantId == CurrentTenantId);
+        });
         ConfigureTenantEntity<Patient>(modelBuilder);
         ConfigureTenantEntity<PatientInsurance>(modelBuilder);
         ConfigureTenantEntity<InsurancePlan>(modelBuilder);
