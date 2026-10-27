@@ -2,7 +2,9 @@
 @page "/chart/{PatientId:int}"
 @using CloudDentalOffice.Portal.Models
 @using CloudDentalOffice.Portal.Services
+@using CloudDentalOffice.Portal.Components
 @inject IPatientService PatientService
+@inject IEligibilityVerificationService Verification
 @inject PatientContextService PatientContext
 @inject IClinicalChartService ClinicalChartService
 @inject NavigationManager Navigation
@@ -59,6 +61,7 @@
                             <MudText Typo="Typo.body2" Style="color: #b0b0b0;">
                                 DOB: @_selectedPatient.DateOfBirth.ToLocalTime().ToString("MM/dd/yyyy") | Age: @_selectedPatient.Age
                             </MudText>
+                            <CoverageSnapshotView Snapshot="@_coverage" />
                         </MudStack>
                         <MudButton Variant="Variant.Text" Color="Color.Default" OnClick="ClearPatientSelection"
                                    StartIcon="@Icons.Material.Filled.Clear">
@@ -320,6 +323,7 @@
     private Dictionary<string, List<ToothProcedureDto>> _toothChartData = new();
     
     private bool _showPlannedProcedures = true;
+    private CoverageSnapshot? _coverage;
 
     protected override async Task OnInitializedAsync()
     {
@@ -374,6 +378,17 @@
             _errorMessage = $"Error loading chart data: {ex.Message}";
             Snackbar.Add(_errorMessage, Severity.Error);
         }
+
+        // Coverage is context for the visit; a failure to load it never hides the chart.
+        try
+        {
+            _coverage = (await Verification.GetCoverageSnapshotsAsync([patientId])).GetValueOrDefault(patientId);
+        }
+        catch (Exception ex)
+        {
+            _coverage = null;
+            Snackbar.Add($"Error loading coverage: {ex.Message}", Severity.Warning);
+        }
     }
 
     private async Task<IEnumerable<Patient>> SearchPatients(string searchString, CancellationToken token)
@@ -410,6 +425,7 @@
         _plannedProcedures.Clear();
         _clinicalNotes.Clear();
         _medicalInfo = null;
+        _coverage = null;
         _toothChartData.Clear();
     }
 
