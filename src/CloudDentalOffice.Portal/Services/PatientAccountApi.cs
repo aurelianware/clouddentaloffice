@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using CloudDentalOffice.Portal.Data;
 using CloudDentalOffice.Portal.Models;
 
 namespace CloudDentalOffice.Portal.Services;
@@ -50,15 +51,20 @@ public static class PatientAccountApi
         // their authenticated identity rather than the route.
         group.MapPost("/{patientAccountId:guid}/checkout", async (Guid patientAccountId,
             PatientCheckoutApiRequest request, ClaimsPrincipal user, IPatientBalanceCheckoutService checkout,
-            CancellationToken cancellationToken) =>
+            CloudDentalDbContext db, TimeProvider clock, CancellationToken cancellationToken) =>
         {
             var tenantId = TrustedTenantId(user);
-            if (tenantId is null) return Results.Forbid();
+            var actor = BillingAudit.Actor(user);
+            if (tenantId is null || actor is null) return Results.Forbid();
             Money? customAmount = request.CustomAmount.HasValue
                 ? new Money(request.CustomAmount.Value, request.Currency)
                 : null;
             var result = await checkout.CreateAsync(new PatientBalanceCheckoutRequest(tenantId, patientAccountId,
                 request.Selection, request.StatementId, customAmount), cancellationToken);
+            // Same audit entry as the Billing screen's "Create payment link" (StaffPatientBillingService).
+            BillingAudit.Add(db, tenantId, actor, "PaymentLinkCreated", nameof(PatientPaymentAttempt),
+                result.AttemptId.ToString(), null, clock.GetUtcNow().UtcDateTime);
+            await db.SaveChangesAsync(cancellationToken);
             return Results.Ok(new
             {
                 result.AttemptId, result.PaymentReference, Amount = result.Amount.Amount,

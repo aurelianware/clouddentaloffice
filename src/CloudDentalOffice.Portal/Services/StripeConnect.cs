@@ -20,7 +20,7 @@ public interface IStripeConnectService
     Task<StripeOnboardingLink> RefreshOnboardingLinkAsync(string tenantId, Uri refreshUrl, Uri returnUrl,
         CancellationToken cancellationToken = default);
     Task<StripeConnectStatus> RefreshStatusAsync(string tenantId, CancellationToken cancellationToken = default);
-    Task DisableAsync(string tenantId, CancellationToken cancellationToken = default);
+    Task DisableAsync(string tenantId, string actor, CancellationToken cancellationToken = default);
 }
 
 public interface IStripeApiClient
@@ -391,13 +391,15 @@ public sealed class StripeConnectService(CloudDentalDbContext db, IStripeApiClie
         Uri refreshUrl, Uri returnUrl, CancellationToken cancellationToken = default)
     {
         EnsureTenant(tenantId);
-        if (string.IsNullOrWhiteSpace(adminEmail) || !adminEmail.Contains('@'))
+        if (string.IsNullOrWhiteSpace(adminEmail) || !adminEmail.Contains('@') || adminEmail.Trim().Length > 100)
             throw new ArgumentException("An authenticated administrator email is required.", nameof(adminEmail));
         var config = await Configuration(tenantId, cancellationToken);
         if (string.IsNullOrWhiteSpace(config.ConnectedMerchantReference))
         {
             var account = await api.CreateConnectedAccountAsync(config, adminEmail.Trim(), cancellationToken);
             Apply(config, account); config.CreatedAt = config.CreatedAt == default ? clock.GetUtcNow().UtcDateTime : config.CreatedAt;
+            BillingAudit.Add(db, tenantId, adminEmail.Trim(), "StripeAccountCreated", nameof(PaymentProcessorConfiguration),
+                config.Id.ToString("N"), null, clock.GetUtcNow().UtcDateTime);
             await db.SaveChangesAsync(cancellationToken);
         }
         return await api.CreateAccountLinkAsync(config, config.ConnectedMerchantReference!, refreshUrl, returnUrl, cancellationToken);
@@ -421,13 +423,20 @@ public sealed class StripeConnectService(CloudDentalDbContext db, IStripeApiClie
         await db.SaveChangesAsync(cancellationToken); return Status(config);
     }
 
-    public async Task DisableAsync(string tenantId, CancellationToken cancellationToken = default)
+    public async Task DisableAsync(string tenantId, string actor, CancellationToken cancellationToken = default)
     {
-        EnsureTenant(tenantId); var config = await Configuration(tenantId, cancellationToken);
+        EnsureTenant(tenantId);
+        if (string.IsNullOrWhiteSpace(actor) || actor.Trim().Length > 100)
+            throw new ArgumentException("An authenticated administrator is required.", nameof(actor));
+        var config = await Configuration(tenantId, cancellationToken);
         // Save first, then close sessions: a link created concurrently either is found by this scan or
         // sees the disabled configuration itself and is never handed out (PatientBalanceCheckoutService).
+        var now = clock.GetUtcNow().UtcDateTime;
         config.Enabled = false; config.OnboardingStatus = PaymentProcessorOnboardingStatus.Disabled;
-        config.UpdatedAt = clock.GetUtcNow().UtcDateTime; await db.SaveChangesAsync(cancellationToken);
+        config.UpdatedAt = now;
+        BillingAudit.Add(db, tenantId, actor.Trim(), "StripePaymentsDisabled", nameof(PaymentProcessorConfiguration),
+            config.Id.ToString("N"), null, now);
+        await db.SaveChangesAsync(cancellationToken);
         await ExpireOpenCheckoutSessionsAsync(config, cancellationToken);
         await db.SaveChangesAsync(cancellationToken);
     }

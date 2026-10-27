@@ -98,7 +98,13 @@
         });
     }
     private Task RefreshStatus() => Run(Load);
-    private Task Disable() => Run(async () => { await StripeConnect.DisableAsync(TenantProvider.TenantId); await Load(); });
+    private Task Disable() => Run(async () =>
+    {
+        var auth = await AuthenticationState.GetAuthenticationStateAsync();
+        var actor = BillingAudit.Actor(auth.User) ?? throw new InvalidOperationException("Administrator identity is unavailable.");
+        await StripeConnect.DisableAsync(TenantProvider.TenantId, actor);
+        await Load();
+    });
     private async Task Run(Func<Task> action)
     {
         _busy = true; try { await action(); }
