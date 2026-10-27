@@ -80,7 +80,7 @@
                 <MudItem xs="6" md="4">
                     <MudPaper Class="pa-3" Style="background:#181818; height:100%;">
                         <MudText Typo="Typo.caption" Style="color:#b0b0b0">@total.Label</MudText>
-                        <MudText Typo="Typo.h6" Style="color:#f5f5f5">@total.Value.ToString("C2", System.Globalization.CultureInfo.GetCultureInfo("en-US"))</MudText>
+                        <MudText Typo="Typo.h6" Style="color:#f5f5f5">@CurrencyDisplay.Usd(total.Value)</MudText>
                     </MudPaper>
                 </MudItem>
             }
@@ -93,18 +93,18 @@
                     <TitleContent>
                         <MudGrid AlignItems="AlignItems.Center">
                             <MudItem xs="12" sm="4"><strong>@line.ProcedureCode</strong> @line.Description</MudItem>
-                            <MudItem xs="4" sm="2">Charge<br /><strong>@line.ChargeAmount.ToString("C2", System.Globalization.CultureInfo.GetCultureInfo("en-US"))</strong></MudItem>
-                            <MudItem xs="4" sm="2">Allowed<br /><strong>@line.AllowedAmount.ToString("C2", System.Globalization.CultureInfo.GetCultureInfo("en-US"))</strong></MudItem>
-                            <MudItem xs="4" sm="2">Insurance<br /><strong>@line.InsurancePayment.ToString("C2", System.Globalization.CultureInfo.GetCultureInfo("en-US"))</strong></MudItem>
-                            <MudItem xs="6" sm="2">Patient<br /><strong>@line.PatientResponsibility.ToString("C2", System.Globalization.CultureInfo.GetCultureInfo("en-US"))</strong></MudItem>
+                            <MudItem xs="4" sm="2">Charge<br /><strong>@CurrencyDisplay.Usd(line.ChargeAmount)</strong></MudItem>
+                            <MudItem xs="4" sm="2">Allowed<br /><strong>@CurrencyDisplay.Usd(line.AllowedAmount)</strong></MudItem>
+                            <MudItem xs="4" sm="2">Insurance<br /><strong>@CurrencyDisplay.Usd(line.InsurancePayment)</strong></MudItem>
+                            <MudItem xs="6" sm="2">Patient<br /><strong>@CurrencyDisplay.Usd(line.PatientResponsibility)</strong></MudItem>
                         </MudGrid>
                     </TitleContent>
                     <ChildContent>
                         <MudSimpleTable Dense="true" Style="background:transparent; color:#e0e0e0;">
                             <tbody>
-                                <tr><td>Contract adjustment</td><td>@line.ContractAdjustment.ToString("C2", System.Globalization.CultureInfo.GetCultureInfo("en-US"))</td></tr>
+                                <tr><td>Contract adjustment</td><td>@CurrencyDisplay.Usd(line.ContractAdjustment)</td></tr>
                                 <tr><td>Plan benefit</td><td>@(line.BenefitPercentage.HasValue ? line.BenefitPercentage.Value.ToString("P0") : "Not provided")</td></tr>
-                                <tr><td>Deductible</td><td>@line.Deductible.ToString("C2", System.Globalization.CultureInfo.GetCultureInfo("en-US"))</td></tr>
+                                <tr><td>Deductible</td><td>@CurrencyDisplay.Usd(line.Deductible)</td></tr>
                                 <tr><td>Prior authorization</td><td>@line.PriorAuthorization</td></tr>
                                 <tr><td>Status</td><td>@line.Status</td></tr>
                             </tbody>
