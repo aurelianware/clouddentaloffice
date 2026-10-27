@@ -343,10 +343,11 @@ public static class CloudHealthOfficeEligibilityMapper
         messages.AddRange(benefits.SelectMany(b => b.Messages ?? []).Where(m => !string.IsNullOrWhiteSpace(m)).Select(m => m.Trim()));
 
         var dentalNotCovered = DentalNotCovered(benefits);
-        var deductible = Amount(benefits, Deductible, remaining: false);
-        var deductibleRemaining = Amount(benefits, Deductible, remaining: true);
-        var annualMaximum = Amount(benefits, Limitation, remaining: false);
-        var annualMaximumRemaining = Amount(benefits, Limitation, remaining: true);
+        var planBenefits = benefits.Where(b => string.IsNullOrWhiteSpace(b.ProcedureCode)).ToList();
+        var deductible = Amount(planBenefits, Deductible, remaining: false);
+        var deductibleRemaining = Amount(planBenefits, Deductible, remaining: true);
+        var annualMaximum = Amount(planBenefits, Limitation, remaining: false);
+        var annualMaximumRemaining = Amount(planBenefits, Limitation, remaining: true);
 
         return new EligibilityResult
         {
@@ -383,6 +384,8 @@ public static class CloudHealthOfficeEligibilityMapper
         IReadOnlyList<ChoBenefit> benefits, decimal? deductible, decimal? deductibleRemaining,
         decimal? annualMaximum, decimal? annualMaximumRemaining)
     {
+        var procedureBenefits = benefits.Where(b => !string.IsNullOrWhiteSpace(b.ProcedureCode)).ToList();
+        benefits = benefits.Where(b => string.IsNullOrWhiteSpace(b.ProcedureCode)).ToList();
         var general = Category(benefits, [DentalServiceTypes.DentalCare], general: null);
         var preventive = Category(benefits, DentalServiceTypes.Preventive, general);
         var basic = Category(benefits, DentalServiceTypes.Basic, general);
@@ -398,6 +401,16 @@ public static class CloudHealthOfficeEligibilityMapper
 
         return new DentalBenefitSummary
         {
+            Services = benefits.Where(b => !string.IsNullOrWhiteSpace(b.ServiceTypeCode))
+                .GroupBy(b => b.ServiceTypeCode!.Trim()).ToDictionary(g => g.Key, g => Category(g.ToList(), [g.Key], general)),
+            Procedures = procedureBenefits.Where(b => string.IsNullOrWhiteSpace(b.ProcedureEndCode) || b.ProcedureEndCode == b.ProcedureCode)
+                .GroupBy(b => b.ProcedureCode!.Trim().ToUpperInvariant())
+                .ToDictionary(g => g.Key, g => Category(g.Select(b => new ChoBenefit
+                {
+                    BenefitCode = b.BenefitCode, ServiceTypeCode = "procedure", InNetwork = b.InNetwork,
+                    CoverageLevel = b.CoverageLevel, Percent = b.Percent, CoinsurancePercent = b.CoinsurancePercent,
+                    Messages = b.Messages
+                }).ToList(), ["procedure"], null)),
             Preventive = preventive,
             Basic = basic,
             Major = major,
@@ -544,6 +557,7 @@ public static class CloudHealthOfficeEligibilityMapper
         var parts = new[]
         {
             kind,
+            string.IsNullOrWhiteSpace(b.ProcedureCode) ? null : b.ProcedureCode.Trim(),
             string.IsNullOrWhiteSpace(b.ServiceTypeName) ? null : b.ServiceTypeName.Trim(),
             string.IsNullOrWhiteSpace(b.TimePeriod) ? null : b.TimePeriod.Trim(),
             b.InNetwork ? null : "out of network"
@@ -569,12 +583,14 @@ public static class CloudHealthOfficeEligibilityMapper
     internal static bool DentalNotCovered(IReadOnlyList<ChoBenefit> benefits)
     {
         static string? Code(ChoBenefit b) => b.BenefitCode?.Trim().ToUpperInvariant();
-        static bool IsDental(ChoBenefit b) => string.Equals(b.ServiceTypeCode?.Trim(), DentalCare, StringComparison.Ordinal);
+        // Procedure exclusions never establish an exclusion for the entire dental plan.
+        benefits = benefits.Where(b => string.IsNullOrWhiteSpace(b.ProcedureCode)).ToList();
+        static bool IsDental(ChoBenefit b) => b.ServiceTypeCode?.Trim() is { } code &&
+            DentalServiceTypes.DetailedInquiry.Contains(code);
 
-        if (benefits.Any(b => Code(b) == NonCovered && IsDental(b))) return true;
+        if (benefits.Any(b => Code(b) == NonCovered && b.ServiceTypeCode?.Trim() == DentalCare)) return true;
         var unscopedNonCovered = benefits.Any(b => Code(b) == NonCovered && string.IsNullOrWhiteSpace(b.ServiceTypeCode));
-        var dentalCovered = benefits.Any(b => IsDental(b) && Code(b) is not (NonCovered or "6") &&
-                                              !InformationalCodes.Contains(Code(b) ?? string.Empty));
+        var dentalCovered = benefits.Any(b => IsDental(b) && Code(b) is "1" or CoInsurance or CoPayment or Deductible or Limitation);
         return unscopedNonCovered && !dentalCovered;
     }
 
@@ -673,6 +689,8 @@ public sealed class ChoEligibilityResponse
 
 public sealed class ChoBenefit
 {
+    public string? ProcedureCode { get; set; }
+    public string? ProcedureEndCode { get; set; }
     public string? BenefitCode { get; set; }
 
     /// <summary>The payer's name for the benefit line (e.g. "Non-Covered"). Set by the direct Stedi path.</summary>

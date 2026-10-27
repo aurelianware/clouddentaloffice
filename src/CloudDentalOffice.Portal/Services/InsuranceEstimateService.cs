@@ -39,6 +39,26 @@ public static class TreatmentEstimateMapper
         if (!benefitPlanMappings.TryGetValue(insurance.InsurancePlan.PayerId, out var benefitPlanId) || benefitPlanId == Guid.Empty)
             throw new TreatmentEstimateValidationException("The selected payer is not mapped to a CloudHealthOffice benefit plan.");
         if (provider is null || string.IsNullOrWhiteSpace(provider.NPI)) throw new TreatmentEstimateValidationException("Select a rendering provider with an NPI before estimating insurance.");
+
+        return Build(plan, patient, insurance, provider.NPI.Trim(), benefitPlanId, serviceDate, tenantId);
+    }
+
+    /// <summary>
+    /// The request for an estimate from the patient's saved eligibility benefits. No payer
+    /// is called, so no benefit-plan mapping or rendering provider is needed.
+    /// </summary>
+    public static TreatmentEstimateRequest MapForSavedBenefits(
+        TreatmentPlan plan, Patient patient, PatientInsurance? insurance, Provider? provider,
+        DateOnly serviceDate, string tenantId)
+    {
+        if (insurance is null) throw new TreatmentEstimateValidationException("This patient does not have active insurance selected.");
+        return Build(plan, patient, insurance, provider?.NPI?.Trim() ?? string.Empty, Guid.Empty, serviceDate, tenantId);
+    }
+
+    private static TreatmentEstimateRequest Build(
+        TreatmentPlan plan, Patient patient, PatientInsurance insurance, string providerNpi, Guid benefitPlanId,
+        DateOnly serviceDate, string tenantId)
+    {
         if (plan.PlannedProcedures.Count == 0) throw new TreatmentEstimateValidationException("Add at least one procedure before estimating insurance.");
         if (plan.PatientId != patient.PatientId) throw new TreatmentEstimateValidationException("The treatment plan does not belong to the selected patient.");
 
@@ -64,10 +84,10 @@ public static class TreatmentEstimateMapper
             TenantId = tenantId,
             TreatmentPlanId = plan.TreatmentPlanId > 0 ? plan.TreatmentPlanId.ToString() : "draft",
             PatientId = patient.PatientId.ToString(),
-            MemberId = insurance.MemberId.Trim(),
+            MemberId = insurance.MemberId?.Trim() ?? string.Empty,
             GroupNumber = insurance.GroupNumber,
             BenefitPlanId = benefitPlanId,
-            RenderingProviderNpi = provider.NPI.Trim(),
+            RenderingProviderNpi = providerNpi,
             ServiceDate = serviceDate,
             Lines = lines
         };
@@ -277,6 +297,7 @@ public static class TreatmentEstimateDisplay
     {
         EstimateAuthority.PayerAdjudication => "Payer Adjudication",
         EstimateAuthority.PayerEstimate => "Payer Estimate",
+        EstimateAuthority.EligibilityBenefits => "From eligibility benefits",
         _ => "CloudHealthOffice Estimate"
     };
 

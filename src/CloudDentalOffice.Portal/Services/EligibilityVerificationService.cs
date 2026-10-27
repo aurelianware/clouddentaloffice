@@ -24,6 +24,10 @@ public interface IEligibilityVerificationService
 
     Task<IReadOnlyList<EligibilityVerification>> GetHistoryAsync(
         int patientInsuranceId, int take = 10, CancellationToken cancellationToken = default);
+
+    /// <summary>The newest check for this coverage/date, only if it confirms active dental coverage; a later failure blocks older answers.</summary>
+    Task<EligibilityResult?> GetLatestVerifiedResultAsync(
+        int patientInsuranceId, DateOnly? serviceDate = null, CancellationToken cancellationToken = default);
 }
 
 /// <summary>
@@ -80,6 +84,26 @@ public sealed class EligibilityVerificationService(
             .OrderByDescending(x => x.Id)
             .Take(Math.Clamp(take, 1, 100))
             .ToListAsync(cancellationToken);
+
+    public async Task<EligibilityResult?> GetLatestVerifiedResultAsync(
+        int patientInsuranceId, DateOnly? serviceDate = null, CancellationToken cancellationToken = default)
+    {
+        var latest = await db.EligibilityVerifications.AsNoTracking()
+            .Where(x => x.PatientInsuranceId == patientInsuranceId && (serviceDate == null || x.ServiceDate == serviceDate))
+            .OrderByDescending(x => x.Id).FirstOrDefaultAsync(cancellationToken);
+        if (latest is not { State: EligibilityVerificationState.Verified, ResultJson: not null }) return null;
+        var json = latest.ResultJson;
+        try
+        {
+            var result = JsonSerializer.Deserialize<EligibilityResult>(json, Json);
+            return result is { CoverageStatus: CoverageStatus.Active, DentalCareNotCovered: false } ? result : null;
+        }
+        catch (JsonException ex)
+        {
+            logger.LogWarning(ex, "Stored eligibility result for coverage {PatientInsuranceId} could not be read", patientInsuranceId);
+            return null;
+        }
+    }
 
     /// <summary>Maps the normalized payer answer onto a front-desk state. The result's own messages stay on the result.</summary>
     public static EligibilityVerificationOutcome Classify(EligibilityResult result, DateOnly serviceDate) => result.CoverageStatus switch

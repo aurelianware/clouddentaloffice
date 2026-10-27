@@ -92,6 +92,30 @@ public sealed class EligibilityVerificationTests : IDisposable
     }
 
     [Fact]
+    public async Task Latest_check_is_service_date_scoped_and_a_newer_inactive_answer_blocks_reuse()
+    {
+        var summary = new DentalBenefitSummary
+        {
+            Preventive = new CategoryCoverage(1m, true, false, []),
+            Basic = new CategoryCoverage(0.8m, true, false, []),
+            Major = CategoryCoverage.NotReported,
+            Orthodontics = CategoryCoverage.NotReported
+        };
+        _router.Result = Result(CoverageStatus.Active) with { BenefitSummary = summary };
+        await _service.VerifyAsync(await LoadPatient(), await LoadCoverage(), Provider(), ServiceDate);
+        Assert.Equal(0.8m, (await _service.GetLatestVerifiedResultAsync(CoverageId, ServiceDate))?.BenefitSummary?.Basic.PlanPaysPercent);
+        Assert.Null(await _service.GetLatestVerifiedResultAsync(CoverageId, ServiceDate.AddDays(1)));
+        // A newer inactive check must block reuse of the older active answer.
+        _router.Result = Result(CoverageStatus.Inactive);
+        await _service.VerifyAsync(await LoadPatient(), await LoadCoverage(), Provider(), ServiceDate);
+
+        var latest = await _service.GetLatestVerifiedResultAsync(CoverageId);
+
+        Assert.Null(latest);
+        Assert.Null(await _service.GetLatestVerifiedResultAsync(OtherTenantCoverageId));
+    }
+
+    [Fact]
     public async Task Recording_does_not_save_other_pending_edits_to_the_coverage()
     {
         _router.Result = Result(CoverageStatus.Active);
