@@ -226,8 +226,11 @@ resource portal 'Microsoft.App/containerApps@2024-03-01' = {
   properties: {
     environmentId: environmentId
     configuration: {
+      // Blazor circuits must stay on one revision and one replica.
+      activeRevisionsMode: 'Single'
       registries: registry
       ingress: {
+        stickySessions: { affinity: 'sticky' }
         external: true
         targetPort: 5000
         transport: 'http'
