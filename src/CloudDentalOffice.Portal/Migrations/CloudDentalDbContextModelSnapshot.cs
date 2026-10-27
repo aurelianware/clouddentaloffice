@@ -15,7 +15,7 @@ namespace CloudDentalOffice.Portal.Migrations
         protected override void BuildModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
-            modelBuilder.HasAnnotation("ProductVersion", "8.0.0");
+            modelBuilder.HasAnnotation("ProductVersion", "8.0.11");
 
             modelBuilder.Entity("CloudDentalOffice.Portal.Models.Appointment", b =>
                 {
@@ -1962,6 +1962,46 @@ namespace CloudDentalOffice.Portal.Migrations
                     b.HasIndex("TreatmentPlanId");
 
                     b.ToTable("PlannedProcedures");
+                });
+
+            modelBuilder.Entity("CloudDentalOffice.Portal.Models.PracticeFeeSchedule", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("EntriesJson")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("ImportedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("IsPracticeDefault")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("TenantId")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT")
+                        .HasDefaultValue("demo");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId")
+                        .IsUnique()
+                        .HasFilter("\"IsPracticeDefault\"");
+
+                    b.HasIndex("TenantId", "Name")
+                        .IsUnique();
+
+                    b.ToTable("PracticeFeeSchedules");
                 });
 
             modelBuilder.Entity("CloudDentalOffice.Portal.Models.Procedure", b =>
