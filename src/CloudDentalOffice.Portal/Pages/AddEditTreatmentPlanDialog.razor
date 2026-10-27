@@ -123,7 +123,7 @@
                                 </HeaderContent>
                                 <RowTemplate>
                                     <MudTd DataLabel="Code">
-                                        <MudAutocomplete T="ProcedureCode" 
+                                        <MudAutocomplete @key="context" T="ProcedureCode" 
                                                          Value="@GetProcedureCodeForRow(context)"
                                                          ValueChanged="@(code => OnProcedureCodeSelected(context, code))"
                                                          SearchFunc="@SearchProcedureCodes"
@@ -309,7 +309,18 @@
     {
         if (_procedureCodeCache.TryGetValue(procedure, out var cachedCode))
             return cachedCode;
-        return null;
+        if (string.IsNullOrWhiteSpace(procedure.CDTCode)) return null;
+
+        // Editing a saved plan must show its stored code, even if the catalog
+        // changed or the code is inactive. Do not reprice historical procedures.
+        var savedSelection = new ProcedureCode
+        {
+            Code = procedure.CDTCode,
+            Description = procedure.Description,
+            DefaultFee = procedure.EstimatedFee
+        };
+        _procedureCodeCache[procedure] = savedSelection;
+        return savedSelection;
     }
 
     private void OnProcedureCodeSelected(PlannedProcedure procedure, ProcedureCode? selectedCode)
