@@ -56,6 +56,7 @@ jobs:
           --no-restore
           --no-build
           --logger "trx;LogFilePrefix=zocdoc-sandbox"
+          --logger "console;verbosity=detailed"
           --results-directory "${{ github.workspace }}/TestResults"
 
       - name: Upload certification results

@@ -14,6 +14,10 @@ Missing credentials cause every external test to report **Skipped**, not failed.
 Never put credentials in a `.runsettings` file, shell script, CI variable value,
 test output, or source control. Use a secret-backed CI environment when automating.
 
+`ZocdocPayloadShapeTests` also prints the JSON paths and value kinds (never values)
+of the appointment, schedulable-entity, and visit-reason payloads. Use that output to
+extend the transport DTOs, for example to capture Zocdoc's insurance hint.
+
 The suite verifies OAuth, reference data, multiple locations, documented fixed
 new/existing patient and appointment lifecycle cases, and authentication failure.
 Signed/replayed/malformed webhook behavior is deterministic and remains in
