@@ -83,6 +83,14 @@ jobs:
       - name: Install Playwright Chromium
         run: pwsh src/CloudDentalOffice.Portal.Tests/bin/Release/net8.0/playwright.ps1 install --with-deps chromium
 
+      - name: Render eligibility with production invariant globalization
+        env:
+          DOTNET_SYSTEM_GLOBALIZATION_INVARIANT: '1'
+        run: >-
+          dotnet test src/CloudDentalOffice.Portal.Tests
+          --configuration Release --no-build
+          --filter FullyQualifiedName~CurrencyDisplayTests
+
       - name: Run deterministic test suite
         run: >-
           dotnet test CloudDentalOffice.sln
