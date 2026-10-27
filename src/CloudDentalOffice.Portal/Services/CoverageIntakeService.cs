@@ -109,10 +109,20 @@ public interface ICoverageIntakeService
     Task<int> SendDueAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Emails one patient the link now, for staff working a website insurance check. Returns the
-    /// patient's open request when one was already sent and is unanswered, rather than sending another.
+    /// Emails one patient the link now: for a website insurance check, or a website booking staff just
+    /// approved (pass its start so the email names the visit). Returns the patient's open request when
+    /// one was already sent and is unanswered, rather than sending another.
     /// </summary>
-    Task<CoverageIntakeRequest> SendNowAsync(int patientId, CancellationToken cancellationToken = default);
+    Task<CoverageIntakeRequest> SendNowAsync(int patientId, DateTime? appointmentStartUtc = null,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// After staff approve a website booking: emails the link at once when the patient has no active
+    /// coverage, an email on file, and no answer the front desk is already working from. Null when
+    /// nothing was sent.
+    /// </summary>
+    Task<CoverageIntakeRequest?> SendForBookingAsync(int patientId, DateTime appointmentStartUtc,
+        CancellationToken cancellationToken = default);
 }
 
 /// <summary>
@@ -245,7 +255,8 @@ public sealed class CoverageIntakeService(
         return sent;
     }
 
-    public async Task<CoverageIntakeRequest> SendNowAsync(int patientId, CancellationToken cancellationToken = default)
+    public async Task<CoverageIntakeRequest> SendNowAsync(int patientId, DateTime? appointmentStartUtc = null,
+        CancellationToken cancellationToken = default)
     {
         if (!Options.IsConfigured)
             throw new InvalidOperationException("Coverage intake links aren't set up for this practice.");
@@ -281,9 +292,29 @@ public sealed class CoverageIntakeService(
 
         var practice = await PracticeNameAsync(tenantId, cancellationToken);
         var zone = verificationOptions.Value.ResolveTimeZone(time);
-        await SendAsync(request, practice, appointmentStart: null, zone, reminder: false, now, cancellationToken);
+        await SendAsync(request, practice, appointmentStartUtc, zone, reminder: false, now, cancellationToken);
         await ShowOnAppointmentsAsync(request, email, zone, now, cancellationToken);
         return request;
+    }
+
+    public async Task<CoverageIntakeRequest?> SendForBookingAsync(int patientId, DateTime appointmentStartUtc,
+        CancellationToken cancellationToken = default)
+    {
+        if (!Options.IsConfigured) return null;
+        var now = time.GetUtcNow().UtcDateTime;
+        var today = now.Date;
+        if (await db.PatientInsurances.AnyAsync(c => c.PatientId == patientId && c.IsActive &&
+                (c.TerminationDate == null || c.TerminationDate >= today), cancellationToken))
+            return null;
+        var email = await db.Patients.AsNoTracking().Where(p => p.PatientId == patientId)
+            .Select(p => p.Email).SingleOrDefaultAsync(cancellationToken);
+        if (!IsDeliverable(email)) return null;
+        var latest = (await CoverageIntakeRules.LatestByPatientAsync(db.CoverageIntakeRequests, [patientId], cancellationToken))
+            .GetValueOrDefault(patientId);
+        if (latest is { Answer: CoverageIntakeAnswer.Plan }) return null;   // staff take it from here
+        if (latest is { Answer: CoverageIntakeAnswer.NoInsurance } &&
+            latest.AnsweredAt >= now.AddDays(-Options.NoInsuranceValidDays)) return null;
+        return await SendNowAsync(patientId, appointmentStartUtc, cancellationToken);
     }
 
     public static Guid NextRequestId(string tenantId, int patientId, Guid? previousId) =>

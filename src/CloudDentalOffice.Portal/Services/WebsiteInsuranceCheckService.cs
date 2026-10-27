@@ -121,7 +121,7 @@ public sealed class WebsiteInsuranceCheckService(
         var check = await Open(id, cancellationToken);
         if (check.PatientId is not { } patientId)
             throw new InvalidOperationException("Match the request to a patient first.");
-        var request = await intake.SendNowAsync(patientId, cancellationToken);
+        var request = await intake.SendNowAsync(patientId, cancellationToken: cancellationToken);
         check.CoverageIntakeRequestId = request.Id;
         await db.SaveChangesAsync(cancellationToken);
         return request;

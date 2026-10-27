@@ -100,6 +100,11 @@ coverage dialog with **Fill in these details**. Adding the coverage and checking
 eligibility there saves the benefits the treatment plan estimate uses. **Done** closes the
 row.
 
+**Website bookings.** When staff **Approve & Schedule** a website booking whose visitor
+didn't answer "No" to insurance, the link goes out at once, naming the visit date, instead of
+waiting for the visit to come within the verification window. Nothing is sent when the patient
+already has active coverage, has no email, or has already sent a plan or said they have none.
+
 It uses the coverage intake switches above. No new secrets, topics or subscriptions are
 needed; the website needs `CLOUDDENTAL_API_BASE` and `CLOUDDENTAL_API_KEY`, which booking
 already uses.

@@ -185,7 +185,57 @@ public sealed partial class WebsiteInsuranceCheckTests : IDisposable
         Assert.Equal(expected, WebsiteInsuranceCheckService.StepFor(matched, hasEmail, hasCoverage, request));
     }
 
+    [Fact]
+    public async Task An_approved_booking_without_coverage_gets_the_link_at_once()
+    {
+        var visit = Now.UtcDateTime.AddDays(30);
+
+        var request = await Intake().SendForBookingAsync(PatientId, visit);
+
+        Assert.NotNull(request);
+        var message = Assert.Single(_sender.Messages);
+        Assert.Contains("before your appointment on Thursday, November 26.", message.Body);
+        Assert.Equal("Your dental insurance for your visit with Sunrise Dental", message.Subject);
+        Assert.Null(request!.CoverageVerificationId);
+    }
+
+    [Fact]
+    public async Task An_approved_booking_with_coverage_or_a_sent_plan_gets_no_link()
+    {
+        await using (var db = Db())
+        {
+            db.PatientInsurances.Add(new PatientInsurance
+            {
+                TenantId = Tenant, PatientId = PatientId, InsurancePlanId = 11, MemberId = "MBR-123", SequenceNumber = 1,
+                EffectiveDate = Now.UtcDateTime.AddYears(-1)
+            });
+            db.CoverageIntakeRequests.Add(new CoverageIntakeRequest
+            {
+                Id = Guid.NewGuid(), TenantId = Tenant, PatientId = PatientId + 1, RecipientEmail = "x@example.test",
+                CreatedAt = Now.UtcDateTime, ExpiresAt = Now.UtcDateTime.AddDays(7), Status = CoverageIntakeStatus.Answered,
+                Answer = CoverageIntakeAnswer.Plan, AnsweredAt = Now.UtcDateTime
+            });
+            db.Patients.Add(new Patient
+            {
+                PatientId = PatientId + 1, TenantId = Tenant, FirstName = "Ash", LastName = "Reed", Email = "ash@example.test",
+                DateOfBirth = new DateTime(1985, 1, 2), Gender = "U", Status = "Active", CreatedDate = Now.UtcDateTime
+            });
+            await db.SaveChangesAsync();
+        }
+
+        Assert.Null(await Intake().SendForBookingAsync(PatientId, Now.UtcDateTime.AddDays(3)));
+        Assert.Null(await Intake().SendForBookingAsync(PatientId + 1, Now.UtcDateTime.AddDays(3)));
+        Assert.Empty(_sender.Messages);
+    }
+
     // ── Helpers ────────────────────────────────────────────────────────────
+
+    private CoverageIntakeService Intake()
+    {
+        var tenant = new FixedTenantProvider(Tenant);
+        return new CoverageIntakeService(new CloudDentalDbContext(_options, tenant), _sender, tenant, Options.Create(_intake),
+            Options.Create(_verification), new Clock(Now), NullLogger<CoverageIntakeService>.Instance);
+    }
 
     private static WebsiteInsuranceCheckEvent Event() => new(Tenant, "Rowan Vale", "Delta Dental")
     {
