@@ -250,32 +250,7 @@ var databaseProvider = builder.Configuration["Database:Provider"]
     ?? (builder.Environment.IsDevelopment() ? "Sqlite" : "PostgreSQL");
 
 builder.Services.AddDbContext<CloudDentalDbContext>(options =>
-{
-    if (databaseProvider.Equals("Sqlite", StringComparison.OrdinalIgnoreCase))
-    {
-        options.UseSqlite(connectionString);
-        if (builder.Environment.IsDevelopment())
-        {
-            options.EnableSensitiveDataLogging();
-            options.EnableDetailedErrors();
-        }
-    }
-    else if (databaseProvider.Equals("PostgreSQL", StringComparison.OrdinalIgnoreCase))
-    {
-        options.UseNpgsql(connectionString, pgOptions => 
-        {
-            pgOptions.EnableRetryOnFailure(maxRetryCount: 10, maxRetryDelay: TimeSpan.FromSeconds(30), errorCodesToAdd: null);
-        });
-    }
-    else if (databaseProvider.Equals("SqlServer", StringComparison.OrdinalIgnoreCase))
-    {
-        options.UseSqlServer(connectionString);
-    }
-    else
-    {
-        throw new InvalidOperationException($"Unsupported database provider '{databaseProvider}'.");
-    }
-});
+    PortalDatabase.Configure(options, databaseProvider, connectionString, builder.Environment.IsDevelopment()));
 
 // Health endpoints back the Container App liveness/readiness probes.
 //   /health/live  — process is up. Runs no checks, so a transient database
