@@ -442,7 +442,7 @@ public sealed class DentrixPatientImportService(
         await transaction.CommitAsync(cancellationToken);
 
         logger.LogInformation("Dentrix patient import for tenant {TenantId}: {Created} created, {Updated} updated, {Added} coverages added, {Changed} updated, {Replaced} replaced, {Plans} plans created",
-            tenant.TenantId, created, updated, added, changed, replaced, plansCreated);
+            ClaimLifecycleMapper.SanitizeForLog(tenant.TenantId), created, updated, added, changed, replaced, plansCreated);
         return new(created, updated, added, changed, replaced, plansCreated, issues);
     }
 
