@@ -250,32 +250,7 @@ var databaseProvider = builder.Configuration["Database:Provider"]
     ?? (builder.Environment.IsDevelopment() ? "Sqlite" : "PostgreSQL");
 
 builder.Services.AddDbContext<CloudDentalDbContext>(options =>
-{
-    if (databaseProvider.Equals("Sqlite", StringComparison.OrdinalIgnoreCase))
-    {
-        options.UseSqlite(connectionString);
-        if (builder.Environment.IsDevelopment())
-        {
-            options.EnableSensitiveDataLogging();
-            options.EnableDetailedErrors();
-        }
-    }
-    else if (databaseProvider.Equals("PostgreSQL", StringComparison.OrdinalIgnoreCase))
-    {
-        options.UseNpgsql(connectionString, pgOptions => 
-        {
-            pgOptions.EnableRetryOnFailure(maxRetryCount: 10, maxRetryDelay: TimeSpan.FromSeconds(30), errorCodesToAdd: null);
-        });
-    }
-    else if (databaseProvider.Equals("SqlServer", StringComparison.OrdinalIgnoreCase))
-    {
-        options.UseSqlServer(connectionString);
-    }
-    else
-    {
-        throw new InvalidOperationException($"Unsupported database provider '{databaseProvider}'.");
-    }
-});
+    PortalDatabase.Configure(options, databaseProvider, connectionString, builder.Environment.IsDevelopment()));
 
 // Health endpoints back the Container App liveness/readiness probes.
 //   /health/live  — process is up. Runs no checks, so a transient database
@@ -401,6 +376,7 @@ builder.Services.AddScoped<ITreatmentPlanService, TreatmentPlanService>();
 builder.Services.AddScoped<IEdiService, EdiService>();
 builder.Services.AddScoped<IProviderService, ProviderServiceImpl>();
 builder.Services.AddScoped<IProcedureCodeService, ProcedureCodeServiceImpl>();
+builder.Services.AddScoped<FeeScheduleService>();
 builder.Services.AddScoped<IBillingService, BillingService>();
 builder.Services.AddScoped<IPatientAccountService, PatientAccountService>();
 builder.Services.AddScoped<IPatientResponsibilityService, PatientResponsibilityService>();
@@ -565,6 +541,7 @@ using (var scope = app.Services.CreateScope())
         await EligibilityVerificationSchemaReconciliation.ApplyAsync(dbContext, databaseProvider, logger);
         await CoverageVerificationSchemaReconciliation.ApplyAsync(dbContext, databaseProvider, logger);
         await CoverageIntakeSchemaReconciliation.ApplyAsync(dbContext, databaseProvider, logger);
+        await FeeScheduleSchemaReconciliation.ApplyAsync(dbContext, databaseProvider, logger);
 
         await InitialTenantBootstrap.ApplyAsync(dbContext, builder.Configuration);
 
