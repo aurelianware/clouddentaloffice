@@ -4,8 +4,8 @@
   "metadata": {
     "_generator": {
       "name": "bicep",
-      "version": "0.47.16.16243",
-      "templateHash": "15725742983085801059"
+      "version": "0.48.1.52935",
+      "templateHash": "7542610949316136077"
     }
   },
   "parameters": {
@@ -527,8 +527,8 @@
           "metadata": {
             "_generator": {
               "name": "bicep",
-              "version": "0.47.16.16243",
-              "templateHash": "17765014531335499627"
+              "version": "0.48.1.52935",
+              "templateHash": "4507813816930782131"
             }
           },
           "parameters": {
@@ -811,8 +811,12 @@
               "properties": {
                 "environmentId": "[parameters('environmentId')]",
                 "configuration": {
+                  "activeRevisionsMode": "Single",
                   "registries": "[variables('registry')]",
                   "ingress": {
+                    "stickySessions": {
+                      "affinity": "sticky"
+                    },
                     "external": true,
                     "targetPort": 5000,
                     "transport": "http",
