@@ -39,7 +39,10 @@ public sealed class ZocdocSandboxCertificationTests
         using var client = new ZocdocSandboxClient();
         await client.AuthenticateAsync();
         using var providers = await client.GetAsync("v1/providers?npis=npi_multiplelocations");
-        Assert.True(providers.RootElement.GetProperty("data").GetArrayLength() > 1);
+        var locations = providers.RootElement.GetProperty("data").EnumerateArray()
+            .SelectMany(npi => npi.GetProperty("providers").EnumerateArray())
+            .Sum(provider => provider.GetProperty("locations").GetArrayLength());
+        Assert.True(locations > 1);
     }
 
     [ZocdocSandboxFact]
@@ -50,9 +53,10 @@ public sealed class ZocdocSandboxCertificationTests
         foreach (var (id, status, patientType) in AppointmentCases)
         {
             using var appointment = await client.GetAsync($"v1/appointments/{id}");
-            Assert.Equal(status, appointment.RootElement.GetProperty("status").GetString());
+            var data = appointment.RootElement.GetProperty("data");
+            Assert.Equal(status, data.GetProperty("appointment_status").GetString());
             if (patientType is not null)
-                Assert.Equal(patientType, appointment.RootElement.GetProperty("patient_type").GetString());
+                Assert.Equal(patientType, data.GetProperty("patient_type").GetString());
         }
     }
 

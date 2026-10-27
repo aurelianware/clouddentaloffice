@@ -6,7 +6,8 @@ namespace Zocdoc.IntegrationTests;
 /// <summary>
 /// Reports the field structure (JSON paths and value kinds, never values) of the
 /// sandbox payloads the adapter reads, so DTO changes such as capturing Zocdoc's
-/// insurance hint can be designed from the real response shape.
+/// insurance hint can be designed from the real response shape. Identifier formats
+/// are reported as masks (letters become a, digits become 9).
 /// </summary>
 public sealed class ZocdocPayloadShapeTests(ITestOutputHelper output)
 {
@@ -30,7 +31,25 @@ public sealed class ZocdocPayloadShapeTests(ITestOutputHelper output)
         }
 
         Write("appointment", paths);
-        Assert.Contains("$.status", paths.Keys);
+        Assert.Contains("$.data.appointment_status", paths.Keys);
+    }
+
+    [ZocdocSandboxFact]
+    public async Task ReportAppointmentParticipantsPayloadShape()
+    {
+        using var client = new ZocdocSandboxClient();
+        await client.AuthenticateAsync();
+        var paths = new SortedDictionary<string, SortedSet<string>>(StringComparer.Ordinal);
+        foreach (var id in AppointmentShapeCases)
+        {
+            using var participants = await client.GetAsync($"v1/appointments/{id}/participants");
+            Collect(participants.RootElement, "$", paths);
+            var data = participants.RootElement.GetProperty("data");
+            output.WriteLine($"provider_id {Mask(data, "provider_id")}, location_id {Mask(data, "location_id")}");
+        }
+
+        Write("appointment participants", paths);
+        Assert.Contains("$.data.patient", paths.Keys);
     }
 
     [ZocdocSandboxFact]
@@ -41,13 +60,18 @@ public sealed class ZocdocPayloadShapeTests(ITestOutputHelper output)
         foreach (var (name, path) in new[]
                  {
                      ("schedulable_entities", "v1/schedulable_entities?page_size=5"),
-                     ("visit_reasons", "v1/visit_reasons?page_size=5")
+                     ("visit_reasons", "v1/visit_reasons?page_size=5"),
+                     ("providers", "v1/providers?npis=npi_multiplelocations")
                  })
         {
             using var document = await client.GetAsync(path);
             var paths = new SortedDictionary<string, SortedSet<string>>(StringComparer.Ordinal);
             Collect(document.RootElement, "$", paths);
             Write(name, paths);
+            if (name == "schedulable_entities")
+                foreach (var entity in document.RootElement.GetProperty("data")
+                             .GetProperty("schedulable_entities").EnumerateArray())
+                    output.WriteLine($"  schedulable entity id format: {Mask(entity, "id")}");
             Assert.Contains("$.data", paths.Keys);
         }
     }
@@ -71,6 +95,11 @@ public sealed class ZocdocPayloadShapeTests(ITestOutputHelper output)
                 break;
         }
     }
+
+    private static string Mask(JsonElement element, string property) =>
+        element.TryGetProperty(property, out var value) && value.ValueKind == JsonValueKind.String
+            ? new string(value.GetString()!.Select(c => char.IsLetter(c) ? 'a' : char.IsDigit(c) ? '9' : c).ToArray())
+            : "(absent)";
 
     private void Write(string payload, SortedDictionary<string, SortedSet<string>> paths)
     {
