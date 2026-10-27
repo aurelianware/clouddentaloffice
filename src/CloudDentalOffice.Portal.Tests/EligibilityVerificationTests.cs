@@ -92,7 +92,7 @@ public sealed class EligibilityVerificationTests : IDisposable
     }
 
     [Fact]
-    public async Task Latest_verified_result_comes_back_with_its_benefit_summary()
+    public async Task Latest_check_is_service_date_scoped_and_a_newer_inactive_answer_blocks_reuse()
     {
         var summary = new DentalBenefitSummary
         {
@@ -103,13 +103,15 @@ public sealed class EligibilityVerificationTests : IDisposable
         };
         _router.Result = Result(CoverageStatus.Active) with { BenefitSummary = summary };
         await _service.VerifyAsync(await LoadPatient(), await LoadCoverage(), Provider(), ServiceDate);
-        // A later check that didn't verify coverage doesn't replace the benefits staff can use.
+        Assert.Equal(0.8m, (await _service.GetLatestVerifiedResultAsync(CoverageId, ServiceDate))?.BenefitSummary?.Basic.PlanPaysPercent);
+        Assert.Null(await _service.GetLatestVerifiedResultAsync(CoverageId, ServiceDate.AddDays(1)));
+        // A newer inactive check must block reuse of the older active answer.
         _router.Result = Result(CoverageStatus.Inactive);
         await _service.VerifyAsync(await LoadPatient(), await LoadCoverage(), Provider(), ServiceDate);
 
         var latest = await _service.GetLatestVerifiedResultAsync(CoverageId);
 
-        Assert.Equal(0.8m, latest?.BenefitSummary?.Basic.PlanPaysPercent);
+        Assert.Null(latest);
         Assert.Null(await _service.GetLatestVerifiedResultAsync(OtherTenantCoverageId));
     }
 

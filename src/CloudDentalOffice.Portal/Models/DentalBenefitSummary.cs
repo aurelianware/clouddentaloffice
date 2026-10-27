@@ -8,6 +8,9 @@ namespace CloudDentalOffice.Portal.Models;
 /// </summary>
 public sealed record DentalBenefitSummary
 {
+    public IReadOnlyDictionary<string, CategoryCoverage> Services { get; init; } = new Dictionary<string, CategoryCoverage>();
+    public IReadOnlyDictionary<string, CategoryCoverage> Procedures { get; init; } = new Dictionary<string, CategoryCoverage>();
+
     public required CategoryCoverage Preventive { get; init; }
     public required CategoryCoverage Basic { get; init; }
     public required CategoryCoverage Major { get; init; }

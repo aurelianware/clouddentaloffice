@@ -282,6 +282,8 @@ internal static class StediEligibilityWire
         return new ChoBenefit
         {
             BenefitCode = b.Code,
+            ProcedureCode = b.CompositeMedicalProcedureIdentifier?.ProcedureCode?.Trim().ToUpperInvariant(),
+            ProcedureEndCode = b.CompositeMedicalProcedureIdentifier?.ProductOrServiceID,
             ServiceTypeCode = serviceTypeCode,
             // Stedi's "name" is the benefit line's name ("Active Coverage", "Non-Covered");
             // the service type's own name is in serviceTypes.
@@ -406,8 +408,15 @@ internal sealed class StediPlanStatus
     public string? PlanDetails { get; set; }
 }
 
+internal sealed class StediProcedureIdentifier
+{
+    public string? ProcedureCode { get; set; }
+    public string? ProductOrServiceID { get; set; }
+}
+
 internal sealed class StediBenefit
 {
+    public StediProcedureIdentifier? CompositeMedicalProcedureIdentifier { get; set; }
     public string? Code { get; set; }
     public string? Name { get; set; }
     public List<string>? ServiceTypeCodes { get; set; }

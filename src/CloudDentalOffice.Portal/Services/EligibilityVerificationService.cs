@@ -25,9 +25,9 @@ public interface IEligibilityVerificationService
     Task<IReadOnlyList<EligibilityVerification>> GetHistoryAsync(
         int patientInsuranceId, int take = 10, CancellationToken cancellationToken = default);
 
-    /// <summary>The payer's answer from the coverage's most recent check that confirmed dental coverage, or null.</summary>
+    /// <summary>The newest check for this coverage/date, only if it confirms active dental coverage; a later failure blocks older answers.</summary>
     Task<EligibilityResult?> GetLatestVerifiedResultAsync(
-        int patientInsuranceId, CancellationToken cancellationToken = default);
+        int patientInsuranceId, DateOnly? serviceDate = null, CancellationToken cancellationToken = default);
 }
 
 /// <summary>
@@ -86,18 +86,17 @@ public sealed class EligibilityVerificationService(
             .ToListAsync(cancellationToken);
 
     public async Task<EligibilityResult?> GetLatestVerifiedResultAsync(
-        int patientInsuranceId, CancellationToken cancellationToken = default)
+        int patientInsuranceId, DateOnly? serviceDate = null, CancellationToken cancellationToken = default)
     {
-        var json = await db.EligibilityVerifications.AsNoTracking()
-            .Where(x => x.PatientInsuranceId == patientInsuranceId &&
-                        x.State == EligibilityVerificationState.Verified && x.ResultJson != null)
-            .OrderByDescending(x => x.Id)
-            .Select(x => x.ResultJson)
-            .FirstOrDefaultAsync(cancellationToken);
-        if (json is null) return null;
+        var latest = await db.EligibilityVerifications.AsNoTracking()
+            .Where(x => x.PatientInsuranceId == patientInsuranceId && (serviceDate == null || x.ServiceDate == serviceDate))
+            .OrderByDescending(x => x.Id).FirstOrDefaultAsync(cancellationToken);
+        if (latest is not { State: EligibilityVerificationState.Verified, ResultJson: not null }) return null;
+        var json = latest.ResultJson;
         try
         {
-            return JsonSerializer.Deserialize<EligibilityResult>(json, Json);
+            var result = JsonSerializer.Deserialize<EligibilityResult>(json, Json);
+            return result is { CoverageStatus: CoverageStatus.Active, DentalCareNotCovered: false } ? result : null;
         }
         catch (JsonException ex)
         {

@@ -118,6 +118,54 @@ public sealed class EligibilityCoverageScopeTests
         Assert.Equal(CoverageStatus.Inactive, result.Benefits.Single(b => b.ServiceTypeCode == "38").Status);
     }
 
+    [Fact]
+    public async Task Procedure_exclusions_do_not_hide_reported_dental_benefits()
+    {
+        // Synthetic payer response: no patient or subscriber data from production.
+        var result = await DirectCheck("""
+            {
+              "planInformation": { "groupDescription": "Example employer dental" },
+              "planStatus": [{ "statusCode": "1" }],
+              "benefitsInformation": [
+                { "code":"1", "serviceTypeCodes":["30"] },
+                { "code":"A", "serviceTypeCodes":["23"], "benefitPercent":"0" },
+                { "code":"A", "serviceTypeCodes":["25"], "benefitPercent":"0.2" },
+                { "code":"A", "serviceTypeCodes":["40"], "benefitPercent":"0.4" },
+                { "code":"C", "serviceTypeCodes":["40"], "benefitAmount":"100", "timeQualifier":"Service Year" },
+                { "code":"F", "serviceTypeCodes":["35"], "benefitAmount":"1000", "timeQualifier":"Service Year" },
+                { "code":"I", "compositeMedicalProcedureIdentifier":{ "procedureCode":"D7880", "productOrServiceIDQualifierCode":"AD" } },
+                { "code":"I", "compositeMedicalProcedureIdentifier":{ "procedureCode":"D9944", "productOrServiceIDQualifierCode":"AD" } }
+              ]
+            }
+            """);
+        Assert.False(result.DentalCareNotCovered);
+        var summary = Assert.IsType<DentalBenefitSummary>(result.BenefitSummary);
+        Assert.Equal(1m, summary.Preventive.PlanPaysPercent);
+        Assert.Equal(0.6m, summary.Services["40"].PlanPaysPercent);
+        Assert.False(summary.Procedures["D7880"].Covered);
+        Assert.Contains(result.Benefits, b => b.Description.Contains("D7880"));
+        var estimate = BenefitSummaryEstimator.Estimate(new TreatmentEstimateRequest
+        {
+            TenantId="practice-a", PatientId="1", TreatmentPlanId="draft", MemberId="synthetic", RenderingProviderNpi="",
+            BenefitPlanId=Guid.Empty, ServiceDate=new DateOnly(2026,10,26),
+            Lines=[new TreatmentEstimateRequestLine { LineId="1", LineNumber=1, ProcedureCode="D7220", ChargeAmount=266m },
+                   new TreatmentEstimateRequestLine { LineId="2", LineNumber=2, ProcedureCode="D7880", ChargeAmount=100m }]
+        }, summary, result.VerifiedAt);
+        Assert.Equal(159.60m, estimate.Lines[0].InsurancePayment);
+        Assert.Equal(106.40m, estimate.Lines[0].PatientResponsibility);
+        Assert.Equal("Not covered", estimate.Lines[1].Status);
+        Assert.Contains(estimate.Warnings, w => w.Code == "DEDUCTIBLE_UNKNOWN");
+        Assert.Contains(estimate.Warnings, w => w.Code == "MAXIMUM_UNKNOWN");
+    }
+
+    [Fact]
+    public void Detailed_dental_coverage_prevents_unscoped_exclusion_from_becoming_plan_wide()
+    {
+        var result = Map(new ChoBenefit { BenefitCode="A", ServiceTypeCode="40", Percent=0.4m },
+                         new ChoBenefit { BenefitCode="I" });
+        Assert.False(result.DentalCareNotCovered);
+    }
+
     private static EligibilityResult Map(params ChoBenefit[] benefits) =>
         CloudHealthOfficeEligibilityMapper.ToResult(new ChoEligibilityResponse
         {

@@ -44,7 +44,9 @@ public static class BenefitSummaryEstimator
     {
         // Only what the payer says is still available is used. A plan total is not what's
         // left, so a missing remaining amount is unknown, never the total.
-        var deductibleLeft = summary.DeductibleRemaining ?? 0m;
+        if (request.Lines.Any(l => l.ChargeAmount < 0 || l.Units <= 0))
+            throw new TreatmentEstimateValidationException("Procedure fees must be non-negative and units must be positive.");
+        var deductibleLeft = Math.Max(summary.DeductibleRemaining ?? 0m, 0m);
         var annualLeft = summary.AnnualMaximumRemaining;
         var orthoLeft = summary.OrthodonticLifetimeMaximumRemaining;
         var estimatedOrtho = false;
@@ -64,6 +66,13 @@ public static class BenefitSummaryEstimator
                 DentalBenefitCategory.Orthodontics => summary.Orthodontics,
                 _ => null
             };
+            var procedureCode = line.ProcedureCode.Trim().ToUpperInvariant();
+            if (summary.Procedures.TryGetValue(procedureCode, out var procedureCoverage) &&
+                (procedureCoverage.Covered == false || procedureCoverage.PlanPaysPercent is not null))
+                coverage = procedureCoverage;
+            else if (ServiceTypeFor(procedureCode) is { } serviceType && summary.Services.TryGetValue(serviceType, out var specific) &&
+                (specific.Covered is not null || specific.PlanPaysPercent is not null))
+                coverage = specific;
             var explanations = new List<string>();
 
             if (coverage is null || (coverage.PlanPaysPercent is null && coverage.Covered != false))
@@ -180,6 +189,12 @@ public static class BenefitSummaryEstimator
         BenefitPercentage = percent,
         Status = status,
         Explanations = explanations
+    };
+
+    private static string? ServiceTypeFor(string code) => CategoryFor(code) == DentalBenefitCategory.Unknown ? null : code[1] switch
+    {
+        '0' => "23", '1' => "41", '2' when CategoryFor(code) == DentalBenefitCategory.Basic => "25",
+        '3' => "26", '4' => "24", '5' or '6' => "39", '7' => "40", '8' => "38", _ => null
     };
 
     private static string Name(DentalBenefitCategory category, bool capitalize = false)

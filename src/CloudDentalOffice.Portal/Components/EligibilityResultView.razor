@@ -106,7 +106,7 @@
     private static bool UsesGeneralLine(DentalBenefitSummary s) =>
         new[] { s.Preventive, s.Basic, s.Major }.Any(c => c.FromGeneralDentalLine);
 
-    private static string Money(decimal? value) => value.HasValue ? value.Value.ToString("C2") : "not reported";
+    private static string Money(decimal? value) => value.HasValue ? value.Value.ToString("C2", System.Globalization.CultureInfo.GetCultureInfo("en-US")) : "not reported";
 
-    private static string BenefitValue(decimal? value, string format) => value.HasValue ? value.Value.ToString(format) : "—";
+    private static string BenefitValue(decimal? value, string format) => value.HasValue ? value.Value.ToString(format, System.Globalization.CultureInfo.GetCultureInfo("en-US")) : "—";
 }

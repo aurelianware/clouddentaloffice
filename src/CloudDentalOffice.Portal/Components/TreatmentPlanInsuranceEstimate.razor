@@ -16,7 +16,7 @@
             <MudText Typo="Typo.caption" Style="color: #b0b0b0;">Planning estimate only—no claim is created.</MudText>
         </div>
         <MudButton Color="Color.Primary" Variant="Variant.Filled" StartIcon="@Icons.Material.Filled.Calculate"
-                   Disabled="@_estimating" OnClick="EstimateAsync">
+                   Disabled="@(_estimating || _checkingEligibility)" OnClick="EstimateAsync">
             @(_estimating ? "Estimating…" : "Estimate Insurance")
         </MudButton>
     </MudStack>
@@ -33,7 +33,7 @@
     {
         <MudGrid>
             <MudItem xs="12" md="8">
-                <MudSelect T="int?" Label="Insurance coverage" Variant="Variant.Outlined" @bind-Value="_selectedInsuranceId">
+                <MudSelect T="int?" Label="Insurance coverage" Variant="Variant.Outlined" Disabled="@(_checkingEligibility || _estimating)" @bind-Value="_selectedInsuranceId">
                     @foreach (var coverage in _coverages)
                     {
                         <MudSelectItem Value="@((int?)coverage.PatientInsuranceId)">
@@ -43,11 +43,11 @@
                 </MudSelect>
             </MudItem>
             <MudItem xs="12" md="4">
-                <MudDatePicker Label="Proposed service date" Variant="Variant.Outlined" @bind-Date="_serviceDate" />
+                <MudDatePicker Label="Proposed service date" Variant="Variant.Outlined" Disabled="@(_checkingEligibility || _estimating)" @bind-Date="_serviceDate" />
             </MudItem>
         </MudGrid>
         <MudButton Class="mt-2" Variant="Variant.Outlined" Color="Color.Info" StartIcon="@Icons.Material.Filled.VerifiedUser"
-                   Disabled="@_checkingEligibility" OnClick="CheckEligibilityAsync">
+                   Disabled="@(_estimating || _checkingEligibility)" OnClick="CheckEligibilityAsync">
             @(_checkingEligibility ? "Checking…" : "Check Eligibility")
         </MudButton>
     }
@@ -80,7 +80,7 @@
                 <MudItem xs="6" md="4">
                     <MudPaper Class="pa-3" Style="background:#181818; height:100%;">
                         <MudText Typo="Typo.caption" Style="color:#b0b0b0">@total.Label</MudText>
-                        <MudText Typo="Typo.h6" Style="color:#f5f5f5">@total.Value.ToString("C2")</MudText>
+                        <MudText Typo="Typo.h6" Style="color:#f5f5f5">@total.Value.ToString("C2", System.Globalization.CultureInfo.GetCultureInfo("en-US"))</MudText>
                     </MudPaper>
                 </MudItem>
             }
@@ -93,18 +93,18 @@
                     <TitleContent>
                         <MudGrid AlignItems="AlignItems.Center">
                             <MudItem xs="12" sm="4"><strong>@line.ProcedureCode</strong> @line.Description</MudItem>
-                            <MudItem xs="4" sm="2">Charge<br /><strong>@line.ChargeAmount.ToString("C2")</strong></MudItem>
-                            <MudItem xs="4" sm="2">Allowed<br /><strong>@line.AllowedAmount.ToString("C2")</strong></MudItem>
-                            <MudItem xs="4" sm="2">Insurance<br /><strong>@line.InsurancePayment.ToString("C2")</strong></MudItem>
-                            <MudItem xs="6" sm="2">Patient<br /><strong>@line.PatientResponsibility.ToString("C2")</strong></MudItem>
+                            <MudItem xs="4" sm="2">Charge<br /><strong>@line.ChargeAmount.ToString("C2", System.Globalization.CultureInfo.GetCultureInfo("en-US"))</strong></MudItem>
+                            <MudItem xs="4" sm="2">Allowed<br /><strong>@line.AllowedAmount.ToString("C2", System.Globalization.CultureInfo.GetCultureInfo("en-US"))</strong></MudItem>
+                            <MudItem xs="4" sm="2">Insurance<br /><strong>@line.InsurancePayment.ToString("C2", System.Globalization.CultureInfo.GetCultureInfo("en-US"))</strong></MudItem>
+                            <MudItem xs="6" sm="2">Patient<br /><strong>@line.PatientResponsibility.ToString("C2", System.Globalization.CultureInfo.GetCultureInfo("en-US"))</strong></MudItem>
                         </MudGrid>
                     </TitleContent>
                     <ChildContent>
                         <MudSimpleTable Dense="true" Style="background:transparent; color:#e0e0e0;">
                             <tbody>
-                                <tr><td>Contract adjustment</td><td>@line.ContractAdjustment.ToString("C2")</td></tr>
+                                <tr><td>Contract adjustment</td><td>@line.ContractAdjustment.ToString("C2", System.Globalization.CultureInfo.GetCultureInfo("en-US"))</td></tr>
                                 <tr><td>Plan benefit</td><td>@(line.BenefitPercentage.HasValue ? line.BenefitPercentage.Value.ToString("P0") : "Not provided")</td></tr>
-                                <tr><td>Deductible</td><td>@line.Deductible.ToString("C2")</td></tr>
+                                <tr><td>Deductible</td><td>@line.Deductible.ToString("C2", System.Globalization.CultureInfo.GetCultureInfo("en-US"))</td></tr>
                                 <tr><td>Prior authorization</td><td>@line.PriorAuthorization</td></tr>
                                 <tr><td>Status</td><td>@line.Status</td></tr>
                             </tbody>
@@ -134,18 +134,37 @@
 
     private Patient? _patient;
     private List<PatientInsurance> _coverages = [];
-    private int? _selectedInsuranceId;
-    private DateTime? _serviceDate = DateTime.Today;
+    private int? _insuranceSelection;
+    private DateTime? _dateSelection = DateTime.Today;
+    private int? _selectedInsuranceId
+    {
+        get => _insuranceSelection;
+        set { if (_insuranceSelection != value) { _insuranceSelection = value; ClearResults(); } }
+    }
+    private DateTime? _serviceDate
+    {
+        get => _dateSelection;
+        set { if (_dateSelection != value) { _dateSelection = value; ClearResults(); } }
+    }
+    private void ClearResults()
+    {
+        _result = null; _message = null; _eligibility = null;
+        _eligibilityInsuranceId = null; _eligibilityServiceDate = null; _estimateSource = null;
+    }
     private TreatmentEstimateResult? _result;
     private string? _message;
     private bool _estimating;
     private bool _checkingEligibility;
     private EligibilityResult? _eligibility;
     private int? _eligibilityInsuranceId;
+    private DateOnly? _eligibilityServiceDate;
     private string? _estimateSource;
+    private string? _procedureSignature;
 
     protected override async Task OnParametersSetAsync()
     {
+        var signature = $"{ProviderId}:" + string.Join("|", Procedures.Select(p => $"{p.CDTCode}:{p.EstimatedFee}:{p.ToothNumber}:{p.Surface}"));
+        if (_procedureSignature != signature) { _procedureSignature = signature; _result = null; }
         if (_patient?.PatientId == TreatmentPlan.PatientId) return;
         _patient = await PatientService.GetPatientByIdAsync(TreatmentPlan.PatientId.ToString());
         _coverages = _patient?.Insurances.Where(x => x.IsActive).OrderBy(x => x.SequenceNumber).ToList() ?? [];
@@ -203,9 +222,11 @@
             DateOnly.FromDateTime(_serviceDate ?? DateTime.Today), TenantProvider.TenantId);
 
         // A check just run on this screen is the freshest answer; otherwise use the last saved one.
-        var eligibility = _eligibility is { BenefitSummary: not null } current && _eligibilityInsuranceId == insurance!.PatientInsuranceId
-            ? current
-            : await Verification.GetLatestVerifiedResultAsync(insurance!.PatientInsuranceId);
+        var serviceDate = DateOnly.FromDateTime(_serviceDate ?? DateTime.Today);
+        var eligibility = _eligibilityInsuranceId == insurance!.PatientInsuranceId && _eligibilityServiceDate == serviceDate
+            ? _eligibility
+            : await Verification.GetLatestVerifiedResultAsync(insurance.PatientInsuranceId, serviceDate);
+        if (eligibility is { CoverageStatus: not CoverageStatus.Active } or { DentalCareNotCovered: true }) eligibility = null;
         if (eligibility?.BenefitSummary is not { } summary)
         {
             _message = "There are no saved benefits for this coverage yet. Select Check Eligibility, then estimate again.";
@@ -231,6 +252,7 @@
                 DateOnly.FromDateTime(_serviceDate ?? DateTime.Today));
             _eligibility = outcome.Result;
             _eligibilityInsuranceId = insurance?.PatientInsuranceId;
+            _eligibilityServiceDate = DateOnly.FromDateTime(_serviceDate ?? DateTime.Today);
             if (outcome.Result is null) _message = outcome.Message;
         }
         catch (UnauthorizedAccessException) { _message = "The eligibility request was denied for this practice."; }
@@ -245,7 +267,7 @@
     internal static IEnumerable<(string Label, decimal Value)> SummaryTotals(TreatmentEstimateResult result) =>
     [
         ("Total treatment charges", result.TotalCharges),
-        ("Estimated allowed amount", result.EstimatedAllowed),
+        (result.Authority == EstimateAuthority.EligibilityBenefits ? "Fee basis (practice charges)" : "Estimated allowed amount", result.EstimatedAllowed),
         ("Estimated insurance payment", result.EstimatedInsurancePayment),
         ("Estimated patient responsibility", result.EstimatedPatientResponsibility),
         ("Estimated contractual adjustment", result.EstimatedContractAdjustment)
