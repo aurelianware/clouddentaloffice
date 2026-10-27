@@ -1,0 +1,91 @@
+@using System.Globalization
+@using CloudDentalOffice.Portal.Models
+
+@* A patient's primary dental coverage at a glance. Compact on the schedule, a short panel on the chart. *@
+@if (Snapshot is null)
+{
+    <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Color="Color.Default">No insurance on file</MudChip>
+}
+else if (Compact)
+{
+    <MudTooltip Text="@Details(Snapshot)">
+        <MudChip T="string" Size="Size.Small" Color="@StateColor(Snapshot.State)">@Headline(Snapshot)</MudChip>
+    </MudTooltip>
+    @if (Snapshot.Benefits is { } compact)
+    {
+        <MudText Typo="Typo.caption" Style="color: #b0b0b0; display: block;">@BenefitLine(compact)</MudText>
+    }
+}
+else
+{
+    <MudStack Spacing="0">
+        <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center">
+            <MudText Typo="Typo.body2" Style="color: #e0e0e0;">@(Snapshot.PayerName ?? "Insurance")</MudText>
+            <MudChip T="string" Size="Size.Small" Color="@StateColor(Snapshot.State)">@Headline(Snapshot)</MudChip>
+        </MudStack>
+        @if (Snapshot.Benefits is { } benefits)
+        {
+            <MudText Typo="Typo.body2" Style="color: #b0b0b0;">@BenefitLine(benefits)</MudText>
+            @if (!benefits.IsComplete)
+            {
+                <MudText Typo="Typo.caption" Style="color: #ffcc66;">Confirm with the payer: @string.Join(", ", benefits.MissingFields)</MudText>
+            }
+        }
+    </MudStack>
+}
+
+@code {
+    [Parameter] public CoverageSnapshot? Snapshot { get; set; }
+    [Parameter] public bool Compact { get; set; }
+
+    /// <summary>The last check's outcome and date, e.g. "Verified 9/28".</summary>
+    public static string Headline(CoverageSnapshot snapshot)
+    {
+        var label = snapshot.State switch
+        {
+            EligibilityVerificationState.Verified => "Verified",
+            EligibilityVerificationState.NotDental => "No dental coverage",
+            EligibilityVerificationState.Inactive => "Inactive",
+            EligibilityVerificationState.Unconfirmed => "Unconfirmed",
+            EligibilityVerificationState.NeedsInfo => "Needs correction",
+            EligibilityVerificationState.Unavailable => "Check failed",
+            EligibilityVerificationState.SelfPay => "Self-pay",
+            _ => "Not checked"
+        };
+        return snapshot.LastVerifiedAt is { } at && snapshot.State is not null
+            ? $"{label} {at.LocalDateTime.ToString("M/d", CultureInfo.InvariantCulture)}"
+            : label;
+    }
+
+    /// <summary>"Plan pays 100/80/50 · $1,000.00 max left · $50.00 deductible left", leaving out what the payer didn't report.</summary>
+    public static string BenefitLine(DentalBenefitSummary benefits)
+    {
+        var parts = new List<string> { "Plan pays " + string.Join("/", new[] { benefits.Preventive, benefits.Basic, benefits.Major }.Select(Pays)) };
+        if (benefits.AnnualMaximumRemaining is { } max) parts.Add($"{max:C2} max left");
+        if (benefits.DeductibleRemaining is { } deductible) parts.Add($"{deductible:C2} deductible left");
+        return string.Join(" · ", parts);
+    }
+
+    private static string Pays(CategoryCoverage category) => category switch
+    {
+        { Covered: false } => "0",
+        { PlanPaysPercent: { } pays } => Math.Round(pays * 100m, MidpointRounding.AwayFromZero).ToString("0", CultureInfo.InvariantCulture),
+        _ => "?"
+    };
+
+    private static string Details(CoverageSnapshot snapshot)
+    {
+        var text = snapshot.PayerName ?? "Insurance";
+        if (snapshot.Benefits is { IsComplete: false } benefits)
+            text += " · confirm with the payer: " + string.Join(", ", benefits.MissingFields);
+        return text;
+    }
+
+    private static Color StateColor(EligibilityVerificationState? state) => state switch
+    {
+        EligibilityVerificationState.Verified => Color.Success,
+        EligibilityVerificationState.SelfPay or null => Color.Default,
+        EligibilityVerificationState.NotDental or EligibilityVerificationState.Inactive => Color.Error,
+        _ => Color.Warning
+    };
+}

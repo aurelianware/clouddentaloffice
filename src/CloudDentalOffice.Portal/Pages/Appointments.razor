@@ -2,9 +2,11 @@
 @page "/appointments/{PatientId:int}"
 @using CloudDentalOffice.Portal.Models
 @using MudBlazor
+@using CloudDentalOffice.Portal.Components
 @inject IAppointmentService AppointmentService
 @inject IPatientService PatientService
 @inject IProviderService ProviderService
+@inject IEligibilityVerificationService Verification
 @inject PatientContextService PatientContext
 @inject NavigationManager Navigation
 @inject IDialogService DialogService
@@ -75,6 +77,7 @@
                 <HeaderContent>
                     <MudTh Style="color: #00ffff;">Time</MudTh>
                     <MudTh Style="color: #00ffff;">Patient</MudTh>
+                    <MudTh Style="color: #00ffff;">Coverage</MudTh>
                     <MudTh Style="color: #00ffff;">Provider</MudTh>
                     <MudTh Style="color: #00ffff;">Type</MudTh>
                     <MudTh Style="color: #00ffff;">Duration</MudTh>
@@ -90,6 +93,9 @@
                     </MudTd>
                     <MudTd DataLabel="Patient">
                         <MudText Typo="Typo.body2">@GetPatientName(context.PatientId)</MudText>
+                    </MudTd>
+                    <MudTd DataLabel="Coverage">
+                        <CoverageSnapshotView Compact="true" Snapshot="@_coverage.GetValueOrDefault(context.PatientId)" />
                     </MudTd>
                     <MudTd DataLabel="Provider">
                         <MudText Typo="Typo.body2">@GetProviderName(context.ProviderId)</MudText>
@@ -141,6 +147,7 @@
     private List<Appointment> _appointments = new();
     private Dictionary<int, string> _patientNames = new();
     private Dictionary<int, string> _providerNames = new();
+    private IReadOnlyDictionary<int, CoverageSnapshot> _coverage = new Dictionary<int, CoverageSnapshot>();
     private List<Patient> _allPatients = new();
     private Patient? _selectedPatient = null;
     private bool _loading = true;
@@ -209,6 +216,7 @@
                 {
                     _appointments = allAppointments;
                 }
+                await LoadCoverage();
             }
         }
         catch (Exception ex)
@@ -219,6 +227,20 @@
         finally
         {
             _loading = false;
+        }
+    }
+
+    // Coverage is context for the schedule; a failure to load it never hides the appointments.
+    private async Task LoadCoverage()
+    {
+        try
+        {
+            _coverage = await Verification.GetCoverageSnapshotsAsync(_appointments.Select(a => a.PatientId).ToList());
+        }
+        catch (Exception ex)
+        {
+            _coverage = new Dictionary<int, CoverageSnapshot>();
+            Snackbar.Add($"Error loading coverage: {ex.Message}", Severity.Warning);
         }
     }
 

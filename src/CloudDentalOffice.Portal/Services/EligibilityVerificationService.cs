@@ -28,6 +28,14 @@ public interface IEligibilityVerificationService
     /// <summary>The newest check for this coverage/date, only if it confirms active dental coverage; a later failure blocks older answers.</summary>
     Task<EligibilityResult?> GetLatestVerifiedResultAsync(
         int patientInsuranceId, DateOnly? serviceDate = null, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Each patient's primary active coverage with its last check and, when that check
+    /// verified dental coverage, the benefits it reported. Patients without an active
+    /// coverage are left out. Two queries regardless of how many patients are asked about.
+    /// </summary>
+    Task<IReadOnlyDictionary<int, CoverageSnapshot>> GetCoverageSnapshotsAsync(
+        IReadOnlyCollection<int> patientIds, CancellationToken cancellationToken = default);
 }
 
 /// <summary>
@@ -84,6 +92,55 @@ public sealed class EligibilityVerificationService(
             .OrderByDescending(x => x.Id)
             .Take(Math.Clamp(take, 1, 100))
             .ToListAsync(cancellationToken);
+
+    public async Task<IReadOnlyDictionary<int, CoverageSnapshot>> GetCoverageSnapshotsAsync(
+        IReadOnlyCollection<int> patientIds, CancellationToken cancellationToken = default)
+    {
+        if (patientIds.Count == 0) return new Dictionary<int, CoverageSnapshot>();
+        var ids = patientIds.Distinct().ToList();
+
+        var coverages = (await db.PatientInsurances.AsNoTracking()
+                .Where(x => ids.Contains(x.PatientId) && x.IsActive)
+                .Select(x => new
+                {
+                    x.PatientId, x.PatientInsuranceId, x.SequenceNumber,
+                    x.LastVerificationState, x.LastVerifiedAt, PayerName = x.InsurancePlan.PayerName
+                })
+                .ToListAsync(cancellationToken))
+            .GroupBy(x => x.PatientId)
+            .Select(g => g.OrderBy(x => x.SequenceNumber).ThenBy(x => x.PatientInsuranceId).First())
+            .ToList();
+
+        var coverageIds = coverages.Select(x => x.PatientInsuranceId).ToList();
+        // Only the latest check counts: a later failed or inactive check retires earlier benefits.
+        var latestChecks = await db.EligibilityVerifications.AsNoTracking()
+            .Where(x => coverageIds.Contains(x.PatientInsuranceId))
+            .GroupBy(x => x.PatientInsuranceId)
+            .Select(g => g.Max(x => x.Id))
+            .ToListAsync(cancellationToken);
+        var verifiedJson = await db.EligibilityVerifications.AsNoTracking()
+            .Where(x => latestChecks.Contains(x.Id) && x.State == EligibilityVerificationState.Verified && x.ResultJson != null)
+            .Select(x => new { x.PatientInsuranceId, x.ResultJson })
+            .ToDictionaryAsync(x => x.PatientInsuranceId, x => x.ResultJson!, cancellationToken);
+
+        return coverages.ToDictionary(c => c.PatientId, c => new CoverageSnapshot(
+            c.PatientId, c.PatientInsuranceId, c.PayerName, c.LastVerificationState, c.LastVerifiedAt,
+            verifiedJson.TryGetValue(c.PatientInsuranceId, out var json) ? ReadBenefits(json, c.PatientInsuranceId) : null));
+    }
+
+    private DentalBenefitSummary? ReadBenefits(string json, int patientInsuranceId)
+    {
+        try
+        {
+            var result = JsonSerializer.Deserialize<EligibilityResult>(json, Json);
+            return result is { CoverageStatus: CoverageStatus.Active, DentalCareNotCovered: false } ? result.BenefitSummary : null;
+        }
+        catch (JsonException ex)
+        {
+            logger.LogWarning(ex, "Stored eligibility result for coverage {PatientInsuranceId} could not be read", patientInsuranceId);
+            return null;
+        }
+    }
 
     public async Task<EligibilityResult?> GetLatestVerifiedResultAsync(
         int patientInsuranceId, DateOnly? serviceDate = null, CancellationToken cancellationToken = default)

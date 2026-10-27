@@ -92,6 +92,61 @@ public sealed class EligibilityVerificationTests : IDisposable
     }
 
     [Fact]
+    public async Task Coverage_snapshot_shows_the_last_check_and_its_benefits()
+    {
+        var summary = new DentalBenefitSummary
+        {
+            Preventive = new CategoryCoverage(1m, true, false, []),
+            Basic = new CategoryCoverage(0.8m, true, false, []),
+            Major = new CategoryCoverage(0.5m, true, false, []),
+            Orthodontics = CategoryCoverage.NotReported,
+            AnnualMaximumRemaining = 1000m
+        };
+        _router.Result = Result(CoverageStatus.Active) with { BenefitSummary = summary };
+        await _service.VerifyAsync(await LoadPatient(), await LoadCoverage(), Provider(), ServiceDate);
+
+        var snapshots = await _service.GetCoverageSnapshotsAsync([PatientId, 202, 999]);
+
+        var snapshot = Assert.Single(snapshots).Value;
+        Assert.Equal(PatientId, snapshot.PatientId);
+        Assert.Equal("Delta Dental Arizona", snapshot.PayerName);
+        Assert.Equal(EligibilityVerificationState.Verified, snapshot.State);
+        Assert.NotNull(snapshot.LastVerifiedAt);
+        Assert.Equal(1000m, snapshot.Benefits?.AnnualMaximumRemaining);
+    }
+
+    [Fact]
+    public async Task Coverage_snapshot_drops_benefits_once_a_newer_check_fails()
+    {
+        _router.Result = Result(CoverageStatus.Active) with
+        {
+            BenefitSummary = new DentalBenefitSummary
+            {
+                Preventive = CategoryCoverage.NotReported, Basic = CategoryCoverage.NotReported,
+                Major = CategoryCoverage.NotReported, Orthodontics = CategoryCoverage.NotReported
+            }
+        };
+        await _service.VerifyAsync(await LoadPatient(), await LoadCoverage(), Provider(), ServiceDate);
+        _router.Result = Result(CoverageStatus.Inactive);
+        await _service.VerifyAsync(await LoadPatient(), await LoadCoverage(), Provider(), ServiceDate);
+
+        var snapshot = (await _service.GetCoverageSnapshotsAsync([PatientId]))[PatientId];
+
+        Assert.Equal(EligibilityVerificationState.Inactive, snapshot.State);
+        Assert.Null(snapshot.Benefits);
+    }
+
+    [Fact]
+    public async Task Coverage_snapshot_for_an_unchecked_coverage_has_no_state()
+    {
+        var snapshot = (await _service.GetCoverageSnapshotsAsync([PatientId]))[PatientId];
+
+        Assert.Null(snapshot.State);
+        Assert.Null(snapshot.Benefits);
+        Assert.Empty(await _service.GetCoverageSnapshotsAsync([]));
+    }
+
+    [Fact]
     public async Task Latest_check_is_service_date_scoped_and_a_newer_inactive_answer_blocks_reuse()
     {
         var summary = new DentalBenefitSummary
