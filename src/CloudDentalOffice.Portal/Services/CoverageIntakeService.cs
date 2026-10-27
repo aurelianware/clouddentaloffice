@@ -107,6 +107,12 @@ public interface ICoverageIntakeService
 {
     /// <summary>Emails patients whose upcoming appointments have no coverage, and reminds once. Runs under a pinned tenant.</summary>
     Task<int> SendDueAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Emails one patient the link now, for staff working a website insurance check. Returns the
+    /// patient's open request when one was already sent and is unanswered, rather than sending another.
+    /// </summary>
+    Task<CoverageIntakeRequest> SendNowAsync(int patientId, CancellationToken cancellationToken = default);
 }
 
 /// <summary>
@@ -239,6 +245,47 @@ public sealed class CoverageIntakeService(
         return sent;
     }
 
+    public async Task<CoverageIntakeRequest> SendNowAsync(int patientId, CancellationToken cancellationToken = default)
+    {
+        if (!Options.IsConfigured)
+            throw new InvalidOperationException("Coverage intake links aren't set up for this practice.");
+        var tenantId = tenantProvider.TenantId;
+        if (string.IsNullOrWhiteSpace(tenantId))
+            throw new InvalidOperationException("Coverage intake must run for an explicit tenant.");
+        var email = await db.Patients.AsNoTracking().Where(p => p.PatientId == patientId)
+            .Select(p => p.Email).SingleOrDefaultAsync(cancellationToken);
+        if (!IsDeliverable(email))
+            throw new InvalidOperationException("The patient has no email address the link can go to.");
+        var now = time.GetUtcNow().UtcDateTime;
+
+        var latest = (await CoverageIntakeRules.LatestByPatientAsync(db.CoverageIntakeRequests, [patientId], cancellationToken))
+            .GetValueOrDefault(patientId);
+        if (latest is { Status: CoverageIntakeStatus.Sent, AnsweredAt: null } && latest.ExpiresAt > now) return latest;
+
+        var request = new CoverageIntakeRequest
+        {
+            Id = NextRequestId(tenantId, patientId, latest?.Id),
+            TenantId = tenantId,
+            PatientId = patientId,
+            RecipientEmail = email!.Trim(),
+            Status = CoverageIntakeStatus.Pending,
+            CreatedAt = now,
+            ExpiresAt = now.AddDays(Options.LinkValidDays),
+            SendAttempts = 1,
+            LastAttemptAt = now
+        };
+        db.CoverageIntakeRequests.Add(request);
+        // Saved before sending, so the portal always knows about a link that went out.
+        await db.SaveChangesAsync(cancellationToken);
+        db.Entry(request).State = EntityState.Detached;
+
+        var practice = await PracticeNameAsync(tenantId, cancellationToken);
+        var zone = verificationOptions.Value.ResolveTimeZone(time);
+        await SendAsync(request, practice, appointmentStart: null, zone, reminder: false, now, cancellationToken);
+        await ShowOnAppointmentsAsync(request, email, zone, now, cancellationToken);
+        return request;
+    }
+
     public static Guid NextRequestId(string tenantId, int patientId, Guid? previousId) =>
         new(SHA256.HashData(Encoding.UTF8.GetBytes(
             $"coverage-intake\n{tenantId}\n{patientId}\n{previousId?.ToString("N") ?? "first"}")).AsSpan(0, 16));
@@ -257,20 +304,25 @@ public sealed class CoverageIntakeService(
                 .SetProperty(x => x.UpdatedAt, now), cancellationToken);
     }
 
-    private async Task<bool> SendAsync(CoverageIntakeRequest request, string practice, DateTime appointmentStart,
+    private async Task<bool> SendAsync(CoverageIntakeRequest request, string practice, DateTime? appointmentStart,
         TimeZoneInfo zone, bool reminder, DateTime now, CancellationToken cancellationToken)
     {
         var token = CoverageIntakeToken.Create(
             new(request.TenantId, request.Id, practice, new DateTimeOffset(DateTime.SpecifyKind(request.ExpiresAt, DateTimeKind.Utc))),
             Options.SigningKey!);
         var link = new Uri(Options.LinkOrigin!, $"/coverage/{token}");
-        var visit = TimeZoneInfo.ConvertTimeFromUtc(DateTime.SpecifyKind(appointmentStart, DateTimeKind.Utc), zone);
         var expires = TimeZoneInfo.ConvertTimeFromUtc(DateTime.SpecifyKind(request.ExpiresAt, DateTimeKind.Utc), zone);
+        var opening = appointmentStart is { } start
+            ? $"{practice} would like to confirm your dental insurance before your appointment on " +
+              $"{TimeZoneInfo.ConvertTimeFromUtc(DateTime.SpecifyKind(start, DateTimeKind.Utc), zone):dddd, MMMM d}."
+            : $"Thank you for asking {practice} to check your dental insurance.";
         var body =
-            $"Hello,\n\n{practice} would like to confirm your dental insurance before your appointment on {visit:dddd, MMMM d}.\n\n" +
+            $"Hello,\n\n{opening}\n\n" +
             $"Please tell us about your dental plan, or let us know you don't have one, using this secure link:\n{link.AbsoluteUri}\n\n" +
             $"The link works until {expires:MMMM d}. If you have questions, please call the office.\n\n{practice}";
-        var subject = (reminder ? "Reminder: " : "") + $"Your dental insurance for your visit with {practice}";
+        var subject = (reminder ? "Reminder: " : "") + (appointmentStart is null
+            ? $"Your dental insurance check with {practice}"
+            : $"Your dental insurance for your visit with {practice}");
 
         BillingNotificationSendResult result;
         try
@@ -445,6 +497,12 @@ public sealed class CoverageIntakeConsumer(IServiceProvider services, ServiceBus
 
     private async Task ProcessAsync(ProcessMessageEventArgs args)
     {
+        if (args.Message.Subject == nameof(WebsiteInsuranceCheckEvent))
+        {
+            await RecordWebsiteCheckAsync(args);
+            return;
+        }
+
         CoverageIntakeSubmittedEvent? answer = null;
         if (args.Message.Subject == nameof(CoverageIntakeSubmittedEvent))
         {
@@ -471,6 +529,36 @@ public sealed class CoverageIntakeConsumer(IServiceProvider services, ServiceBus
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             logger.LogWarning("Coverage intake answer {RequestId} will retry ({FailureKind}).", answer.RequestId, ex.GetType().Name);
+            await args.AbandonMessageAsync(args.Message, cancellationToken: args.CancellationToken);
+        }
+    }
+
+    private async Task RecordWebsiteCheckAsync(ProcessMessageEventArgs args)
+    {
+        WebsiteInsuranceCheckEvent? check = null;
+        try { check = JsonSerializer.Deserialize<WebsiteInsuranceCheckEvent>(args.Message.Body.ToString()); }
+        catch (JsonException) { }
+        if (check is null)
+        {
+            await args.DeadLetterMessageAsync(args.Message, "InvalidEvent");
+            return;
+        }
+
+        await using var scope = services.CreateAsyncScope();
+        try
+        {
+            await WebsiteInsuranceCheckService.RecordAsync(scope.ServiceProvider.GetRequiredService<CloudDentalDbContext>(),
+                check, scope.ServiceProvider.GetRequiredService<TimeProvider>().GetUtcNow().UtcDateTime, args.CancellationToken);
+            await args.CompleteMessageAsync(args.Message, args.CancellationToken);
+        }
+        catch (CoverageIntakeRejectedException ex)
+        {
+            logger.LogWarning("Website insurance check {EventId} rejected ({Reason}).", check.EventId, ex.Message);
+            await args.DeadLetterMessageAsync(args.Message, "Rejected", ex.Message, args.CancellationToken);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning("Website insurance check {EventId} will retry ({FailureKind}).", check.EventId, ex.GetType().Name);
             await args.AbandonMessageAsync(args.Message, cancellationToken: args.CancellationToken);
         }
     }

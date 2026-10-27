@@ -362,6 +362,7 @@ builder.Services.AddOptions<CoverageIntakeOptions>()
     .ValidateDataAnnotations();
 builder.Services.AddScoped<ICoverageIntakeService, CoverageIntakeService>();
 builder.Services.AddScoped<ICoverageIntakeProcessor, CoverageIntakeProcessor>();
+builder.Services.AddScoped<IWebsiteInsuranceCheckService, WebsiteInsuranceCheckService>();
 builder.Services.AddHostedService<CoverageIntakeConsumer>();
 builder.Services.AddEventPublishing(builder.Configuration);
 builder.Services.Configure<ReviewEmailOptions>(builder.Configuration.GetSection(ReviewEmailOptions.SectionName));

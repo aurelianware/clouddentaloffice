@@ -3,6 +3,7 @@
 @using CloudDentalOffice.Portal.Models
 @using Microsoft.Extensions.Options
 @inject ICoverageVerificationQueue Queue
+@inject IWebsiteInsuranceCheckService WebsiteChecks
 @inject IPatientService PatientService
 @inject IOptions<CoverageVerificationOptions> VerificationOptions
 @inject TimeProvider Time
@@ -30,6 +31,49 @@
             </MudStack>
         </MudStack>
     </MudPaper>
+
+    @if (_websiteChecks.Count > 0)
+    {
+        <MudPaper Class="pa-4 mt-4" Style="background:#0a0a0a;border:1px solid rgba(0,255,255,.3);">
+            <MudText Typo="Typo.h6" Color="Color.Primary">From the website</MudText>
+            <MudText Typo="Typo.body2" Class="mb-2">Visitors who asked to check their insurance. Match each one to a patient, then email the secure link that asks for their member ID.</MudText>
+            <MudTable Items="_websiteChecks" Hover Dense>
+                <HeaderContent>
+                    <MudTh>Received</MudTh><MudTh>Visitor</MudTh><MudTh>Insurance</MudTh><MudTh>Patient</MudTh>
+                    <MudTh>What to do</MudTh><MudTh></MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd DataLabel="Received">@Local(context.ReceivedAt).ToString("M/d h:mm tt")</MudTd>
+                    <MudTd DataLabel="Visitor">
+                        <div>@context.Name@(context.WantsAppointment ? " · wants an appointment" : "")</div>
+                        <MudText Typo="Typo.caption">@string.Join(" · ", new[] { context.Phone, context.Email }.Where(v => !string.IsNullOrWhiteSpace(v)))</MudText>
+                    </MudTd>
+                    <MudTd DataLabel="Insurance">@context.Carrier@(context.Plan is null ? "" : $" · {context.Plan}")</MudTd>
+                    <MudTd DataLabel="Patient">@(context.PatientName ?? "—")</MudTd>
+                    <MudTd DataLabel="What to do">@WebsiteStepText(context)</MudTd>
+                    <MudTd>
+                        <MudStack Row Spacing="1">
+                            <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Primary" OnClick="@(() => MatchWebsiteCheck(context))">
+                                @(context.PatientId is null ? "Match patient" : "Change patient")
+                            </MudButton>
+                            @if (context.Step is WebsiteInsuranceCheckStep.SendLink or WebsiteInsuranceCheckStep.LinkFailed)
+                            {
+                                <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Primary" Disabled="@(_sendingId is not null)"
+                                           OnClick="@(() => SendWebsiteLink(context))">
+                                    @(_sendingId == context.Id ? "Sending…" : context.Step == WebsiteInsuranceCheckStep.LinkFailed ? "Send again" : "Email secure link")
+                                </MudButton>
+                            }
+                            @if (context.PatientId is not null)
+                            {
+                                <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Primary" OnClick="@(() => OpenWebsiteInsurance(context))">Insurance</MudButton>
+                            }
+                            <MudButton Size="Size.Small" Variant="Variant.Text" OnClick="@(() => CloseWebsiteCheck(context))">Done</MudButton>
+                        </MudStack>
+                    </MudTd>
+                </RowTemplate>
+            </MudTable>
+        </MudPaper>
+    }
 
     <MudPaper Class="pa-4 mt-4" Style="background:#0a0a0a;border:1px solid rgba(0,255,255,.3);">
         @if (_loading) { <MudProgressLinear Indeterminate Color="Color.Primary" /> }
@@ -69,6 +113,8 @@
 
 @code {
     private IReadOnlyList<CoverageQueueItem> _items = [];
+    private IReadOnlyList<WebsiteInsuranceCheckItem> _websiteChecks = [];
+    private Guid? _sendingId;
     private int _days = 3;
     private bool _includeVerified;
     private bool _loading = true;
@@ -91,7 +137,84 @@
             Snackbar.Add("Unable to load the verification list.", Severity.Error);
         }
         finally { _loading = false; }
+        await LoadWebsiteChecks();
     }
+
+    // Separate from the appointment list, so a problem here never hides it.
+    private async Task LoadWebsiteChecks()
+    {
+        try { _websiteChecks = await WebsiteChecks.GetOpenAsync(); }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Could not load website insurance checks");
+            Snackbar.Add("Unable to load insurance checks from the website.", Severity.Warning);
+        }
+    }
+
+    private async Task MatchWebsiteCheck(WebsiteInsuranceCheckItem check)
+    {
+        var dialog = await DialogService.ShowAsync<WebsiteInsuranceCheckMatchDialog>($"Match {check.Name} to a patient",
+            new DialogParameters<WebsiteInsuranceCheckMatchDialog> { { x => x.Check, check } },
+            new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true, CloseOnEscapeKey = true });
+        var result = await dialog.Result;
+        if (!result.Canceled) await LoadWebsiteChecks();
+    }
+
+    private async Task SendWebsiteLink(WebsiteInsuranceCheckItem check)
+    {
+        _sendingId = check.Id;
+        try
+        {
+            var request = await WebsiteChecks.SendLinkAsync(check.Id);
+            if (request.Status == CoverageIntakeStatus.Sent) Snackbar.Add($"Secure link emailed to {request.RecipientEmail}.", Severity.Success);
+            else Snackbar.Add("The email couldn't be sent. Try again, or call the patient.", Severity.Warning);
+        }
+        catch (InvalidOperationException ex) { Snackbar.Add(ex.Message, Severity.Warning); }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Could not send the coverage link for website check {CheckId}", check.Id);
+            Snackbar.Add("The link could not be sent. Try again later.", Severity.Error);
+        }
+        finally { _sendingId = null; }
+        await LoadWebsiteChecks();
+    }
+
+    private async Task OpenWebsiteInsurance(WebsiteInsuranceCheckItem check)
+    {
+        var patient = await PatientService.GetPatientByIdAsync(check.PatientId!.Value.ToString());
+        if (patient is null)
+        {
+            Snackbar.Add("This patient could not be found.", Severity.Warning);
+            return;
+        }
+        var sentPlan = check.SentPlanId is { } planId ? await Queue.GetSentPlanAsync(planId) : null;
+        var dialog = DialogService.Show<PatientInsuranceDialog>($"Insurance & Eligibility — {patient.FullName}",
+            new DialogParameters { ["Patient"] = patient, ["SentPlan"] = sentPlan },
+            new DialogOptions { MaxWidth = MaxWidth.Large, FullWidth = true, CloseOnEscapeKey = true });
+        await dialog.Result;
+        await LoadWebsiteChecks();
+    }
+
+    private async Task CloseWebsiteCheck(WebsiteInsuranceCheckItem check)
+    {
+        try { await WebsiteChecks.CloseAsync(check.Id); }
+        catch (InvalidOperationException ex) { Snackbar.Add(ex.Message, Severity.Warning); }
+        await LoadWebsiteChecks();
+    }
+
+    private string WebsiteStepText(WebsiteInsuranceCheckItem check) => check.Step switch
+    {
+        WebsiteInsuranceCheckStep.MatchPatient => "Match the visitor to a patient, or create one.",
+        WebsiteInsuranceCheckStep.CallPatient => "The patient has no email on file. Call them for their dental plan.",
+        WebsiteInsuranceCheckStep.SendLink => "Email the secure link for their member ID.",
+        WebsiteInsuranceCheckStep.WaitingForPatient => check.LinkSentAt is { } sent
+            ? $"Link emailed {Local(sent):M/d}; waiting for the patient." : "Link emailed; waiting for the patient.",
+        WebsiteInsuranceCheckStep.LinkFailed => "The email couldn't be delivered. Send again or call the patient.",
+        WebsiteInsuranceCheckStep.AddCoverage => "The patient sent their plan. Open Insurance, add it and check eligibility.",
+        WebsiteInsuranceCheckStep.NoInsurance => "The patient says they have no dental insurance. Mark done.",
+        WebsiteInsuranceCheckStep.CoverageOnFile => "Coverage is on file. Check eligibility under Insurance, then mark done.",
+        _ => string.Empty
+    };
 
     private async Task DaysChanged(int value) { _days = value; await Load(); }
     private async Task IncludeVerifiedChanged(bool value) { _includeVerified = value; await Load(); }

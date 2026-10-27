@@ -154,6 +154,28 @@ public record CoverageIntakeSubmittedEvent(
     public DateTime SubmittedAtUtc { get; init; }
 }
 
+/// <summary>
+/// A visitor's "Check My Insurance" request from the practice website, relayed by
+/// the public IntakeService to the portal for staff. Carries only what the website
+/// form collects: no member IDs, dates of birth or clinical detail.
+/// </summary>
+public record WebsiteInsuranceCheckEvent(
+    string TenantId,
+    string Name,
+    string Carrier) : IntegrationEvent
+{
+    public string? Plan { get; init; }
+    public string? Phone { get; init; }
+    public string? Email { get; init; }
+    /// <summary>Yes or No: whether the visitor also wants an appointment.</summary>
+    public string? RequestingAppointment { get; init; }
+    public string? WebsiteRequestId { get; init; }
+    public string? Source { get; init; }
+    public string? Campaign { get; init; }
+    public string? AttributionId { get; init; }
+    public DateTime SubmittedAtUtc { get; init; }
+}
+
 // ── Claims Events ──
 public record ClaimCreatedEvent(Guid ClaimId, Guid PatientId, decimal TotalCharge) : IntegrationEvent;
 public record ClaimSubmittedEvent(Guid ClaimId, string? ClaimControlNumber, string SubmissionMethod) : IntegrationEvent;

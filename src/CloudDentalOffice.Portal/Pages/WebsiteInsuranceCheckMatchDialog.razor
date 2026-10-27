@@ -1,0 +1,89 @@
+@using CloudDentalOffice.Portal.Models
+@inject IWebsiteInsuranceCheckService Checks
+@inject IPatientService PatientService
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+
+@* Match a website insurance check to a patient, or create one from it. *@
+<MudDialog>
+    <DialogContent>
+        <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Class="mb-4">
+            <MudText><b>@Check.Name</b>@(Check.Phone is null ? "" : $" · {Check.Phone}")@(Check.Email is null ? "" : $" · {Check.Email}")</MudText>
+            <MudText>@Check.Carrier@(Check.Plan is null ? "" : $" · {Check.Plan}")</MudText>
+        </MudAlert>
+        <MudAutocomplete T="Patient" @bind-Value="_patient" SearchFunc="SearchPatients"
+                         ToStringFunc="@(p => p?.FullName ?? string.Empty)" Label="Search by name, phone, or email"
+                         Variant="Variant.Outlined" Clearable Class="mb-2" />
+        @if (_potentialMatches.Count > 0 && _patient is null)
+        {
+            <MudText Typo="Typo.caption">Possible matches. Confirm it's the same person:</MudText>
+            @foreach (var patient in _potentialMatches.Take(5))
+            {
+                <MudButton Variant="Variant.Text" OnClick="@(() => _patient = patient)">@patient.FullName · @patient.PrimaryPhone · @patient.Email</MudButton>
+            }
+        }
+        <MudButton StartIcon="@Icons.Material.Filled.PersonAdd" Variant="Variant.Outlined" OnClick="CreatePatient">Create patient from request</MudButton>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="@(() => MudDialog.Cancel())">Cancel</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" Disabled="@(_patient is null)" OnClick="Match">Match</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] public MudDialogInstance MudDialog { get; set; } = null!;
+    [Parameter] public WebsiteInsuranceCheckItem Check { get; set; } = null!;
+    private List<Patient> _patients = [];
+    private List<Patient> _potentialMatches = [];
+    private Patient? _patient;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _patients = await PatientService.GetPatientsAsync();
+        _potentialMatches = _patients.Where(IsPotentialMatch).ToList();
+    }
+
+    private bool IsPotentialMatch(Patient p) =>
+        p.FullName.Equals(Check.Name, StringComparison.OrdinalIgnoreCase) ||
+        (!string.IsNullOrWhiteSpace(Check.Email) && p.Email?.Equals(Check.Email, StringComparison.OrdinalIgnoreCase) == true) ||
+        (Digits(Check.Phone).Length >= 7 && Digits(p.PrimaryPhone) == Digits(Check.Phone));
+
+    private static string Digits(string? value) => new((value ?? string.Empty).Where(char.IsDigit).ToArray());
+
+    private Task<IEnumerable<Patient>> SearchPatients(string value, CancellationToken token) => Task.FromResult<IEnumerable<Patient>>(
+        string.IsNullOrWhiteSpace(value) ? _patients.Take(10) : _patients.Where(p =>
+            p.FullName.Contains(value, StringComparison.OrdinalIgnoreCase) ||
+            (p.Email?.Contains(value, StringComparison.OrdinalIgnoreCase) ?? false) ||
+            (p.PrimaryPhone?.Contains(value, StringComparison.OrdinalIgnoreCase) ?? false)).Take(20));
+
+    private async Task CreatePatient()
+    {
+        var parts = Check.Name.Trim().Split(' ', 2, StringSplitOptions.RemoveEmptyEntries);
+        var patient = new Patient
+        {
+            FirstName = parts.ElementAtOrDefault(0) ?? string.Empty,
+            LastName = parts.ElementAtOrDefault(1) ?? string.Empty,
+            PrimaryPhone = Check.Phone, Email = Check.Email, Gender = string.Empty
+        };
+        var dialog = await DialogService.ShowAsync<PatientDialog>("Create Patient From Request",
+            new DialogParameters<PatientDialog> { { x => x.Patient, patient } },
+            new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true });
+        var result = await dialog.Result;
+        if (!result.Canceled && result.Data is Patient completed)
+        {
+            _patient = await PatientService.CreatePatientAsync(completed);
+            _patients.Add(_patient);
+        }
+    }
+
+    private async Task Match()
+    {
+        if (_patient is null) return;
+        try
+        {
+            await Checks.MatchPatientAsync(Check.Id, _patient.PatientId);
+            MudDialog.Close(DialogResult.Ok(_patient.PatientId));
+        }
+        catch (InvalidOperationException ex) { Snackbar.Add(ex.Message, Severity.Warning); }
+    }
+}

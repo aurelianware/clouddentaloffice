@@ -53,7 +53,7 @@ public sealed class ServiceBusEventPublisher : IEventPublisher, IAsyncDisposable
             ZocdocAppointmentWebhookEvent => _zocdocWebhookSender,
             AppointmentLifecycleChangedEvent => _appointmentLifecycleSender,
             StripePaymentWebhookEvent or StripeRefundWebhookEvent or StripeDisputeWebhookEvent => _stripeWebhookSender,
-            CoverageIntakeSubmittedEvent => _coverageIntakeSender,
+            CoverageIntakeSubmittedEvent or WebsiteInsuranceCheckEvent => _coverageIntakeSender,
             _ => _bookingSender
         };
         await sender.SendMessageAsync(message, cancellationToken);
