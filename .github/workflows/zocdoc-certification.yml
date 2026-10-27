@@ -35,7 +35,7 @@ jobs:
       - name: Require sandbox credentials
         env:
           ZOCDOC_SANDBOX_CLIENT_ID: ${{ secrets.ZOCDOC_SANDBOX_CLIENT_ID }}
-          ZOCDOC_SANDBOX_CLIENT_SECRET: ${{ secrets.ZOCDOC_SANDBOX_CLIENT_SECRET }}
+          ZOCDOC_SANDBOX_CLIENT_SECRET: ${{ secrets.ZOCDOC_SANDBOX_CLIENT_SECRET || secrets.ZOCDOC_API_SECRET }}
         shell: bash
         run: |
           if [[ -z "$ZOCDOC_SANDBOX_CLIENT_ID" || -z "$ZOCDOC_SANDBOX_CLIENT_SECRET" ]]; then
@@ -55,7 +55,7 @@ jobs:
       - name: Run certification tests
         env:
           ZOCDOC_SANDBOX_CLIENT_ID: ${{ secrets.ZOCDOC_SANDBOX_CLIENT_ID }}
-          ZOCDOC_SANDBOX_CLIENT_SECRET: ${{ secrets.ZOCDOC_SANDBOX_CLIENT_SECRET }}
+          ZOCDOC_SANDBOX_CLIENT_SECRET: ${{ secrets.ZOCDOC_SANDBOX_CLIENT_SECRET || secrets.ZOCDOC_API_SECRET }}
         run: >-
           dotnet test src/Services/Zocdoc.IntegrationTests/Zocdoc.IntegrationTests.csproj
           --configuration Release
