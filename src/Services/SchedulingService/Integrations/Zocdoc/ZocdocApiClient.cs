@@ -40,40 +40,83 @@ internal sealed class ZocdocApiClient(
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
+    private const int ProviderLookupBatchSize = 50;
+
     public async Task ValidateConnectionAsync(string tenantId, SchedulingIntegrationConfiguration configuration,
         CancellationToken cancellationToken = default) =>
-        _ = await GetPageAsync<ZocdocSchedulableEntityDto>(tenantId, configuration,
+        _ = await GetAsync<ZocdocSchedulableEntitiesData>(tenantId, configuration,
             "ValidateConnection", "v1/schedulable_entities?page_size=1", cancellationToken);
 
-    public Task<IReadOnlyList<ZocdocSchedulableEntityDto>> GetSchedulableEntitiesAsync(
+    public async Task<IReadOnlyList<ZocdocSchedulableEntityDto>> GetSchedulableEntitiesAsync(
         string tenantId, SchedulingIntegrationConfiguration configuration,
-        CancellationToken cancellationToken = default) => GetAllPagesAsync<ZocdocSchedulableEntityDto>(
+        CancellationToken cancellationToken = default)
+    {
+        var entities = await GetAllPagesAsync<ZocdocSchedulableEntitiesData, ZocdocSchedulableEntityDto>(
             tenantId, configuration, "GetSchedulableEntities", "v1/schedulable_entities?page_size=10000",
-            cancellationToken);
+            data => data.SchedulableEntities, cancellationToken);
+
+        // The entity feed carries only IDs and NPIs, so names and addresses come from the
+        // provider directory, looked up by NPI in the batches Zocdoc allows.
+        var locations = new Dictionary<string, (ZocdocProviderDto Provider, ZocdocProviderLocationDto Location)>(
+            StringComparer.Ordinal);
+        foreach (var batch in entities.Select(x => x.Npi).Where(x => !string.IsNullOrWhiteSpace(x))
+                     .Distinct(StringComparer.Ordinal).Chunk(ProviderLookupBatchSize))
+        {
+            var page = await GetAsync<List<ZocdocNpiProvidersDto>>(tenantId, configuration, "GetProviders",
+                $"v1/providers?npis={string.Join(',', batch.Select(npi => Uri.EscapeDataString(npi!)))}", cancellationToken);
+            foreach (var provider in (page.Data ?? Enumerable.Empty<ZocdocNpiProvidersDto>()).SelectMany(x => x.Providers))
+            foreach (var location in provider.Locations.Where(x => !string.IsNullOrWhiteSpace(x.ProviderLocationId)))
+                locations.TryAdd(location.ProviderLocationId, (provider, location));
+        }
+
+        return entities.Select(entity => locations.TryGetValue(entity.ProviderLocationId, out var match)
+            ? entity with
+            {
+                ProviderId = match.Provider.ProviderId ?? entity.ProviderId,
+                FirstName = match.Provider.FirstName ?? entity.FirstName,
+                LastName = match.Provider.LastName ?? entity.LastName,
+                DefaultVisitReasonId = match.Provider.DefaultVisitReasonId ?? entity.DefaultVisitReasonId,
+                Address1 = match.Location.Address1, Address2 = match.Location.Address2,
+                City = match.Location.City, State = match.Location.State, Zip = match.Location.ZipCode
+            }
+            : entity).ToList();
+    }
 
     public Task<IReadOnlyList<ZocdocVisitReasonDto>> GetVisitReasonsAsync(
         string tenantId, SchedulingIntegrationConfiguration configuration,
-        CancellationToken cancellationToken = default) => GetAllPagesAsync<ZocdocVisitReasonDto>(
-            tenantId, configuration, "GetVisitReasons", "v1/visit_reasons?page_size=10000", cancellationToken);
+        CancellationToken cancellationToken = default) =>
+        GetAllPagesAsync<List<ZocdocVisitReasonDto>, ZocdocVisitReasonDto>(
+            tenantId, configuration, "GetVisitReasons", "v1/visit_reasons?page_size=10000",
+            data => data, cancellationToken);
 
     public async Task<ZocdocAppointmentDto> GetAppointmentAsync(string tenantId,
         SchedulingIntegrationConfiguration configuration, string appointmentId,
         CancellationToken cancellationToken = default)
     {
-        SchedulingIntegrationConfigurationStore.ValidateTenant(tenantId);
         if (string.IsNullOrWhiteSpace(appointmentId)) throw new ArgumentException("Appointment ID is required.");
-        var endpoints = ZocdocEndpoints.For(ZocdocEndpoints.Parse(configuration.Environment));
-        var token = await tokenProvider.GetAccessTokenAsync(tenantId, configuration, cancellationToken);
-        using var request = new HttpRequestMessage(HttpMethod.Get,
-            new Uri(endpoints.ApiBaseUri, $"v1/appointments/{Uri.EscapeDataString(appointmentId)}"));
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
-        using var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
-        var correlationId = CorrelationId(response);
-        if (!response.IsSuccessStatusCode) throw FromApiResponse(response, correlationId);
-        return await response.Content.ReadFromJsonAsync<ZocdocAppointmentDto>(JsonOptions, cancellationToken)
+        var id = Uri.EscapeDataString(appointmentId);
+        var appointment = (await GetAsync<ZocdocAppointmentDto>(tenantId, configuration, "GetAppointment",
+            $"v1/appointments/{id}", cancellationToken)).Data
             ?? throw new ZocdocIntegrationException(ZocdocFailureKind.TemporaryRemoteFailure,
-                "Zocdoc returned an empty appointment response.", response.StatusCode,
-                externalCorrelationId: correlationId);
+                "Zocdoc returned an empty appointment response.");
+
+        // Patient demographics and insurance are only returned by the participants endpoint.
+        ZocdocParticipantsDto? participants;
+        try
+        {
+            participants = (await GetAsync<ZocdocParticipantsDto>(tenantId, configuration,
+                "GetAppointmentParticipants", $"v1/appointments/{id}/participants", cancellationToken)).Data;
+        }
+        catch (ZocdocIntegrationException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
+        {
+            participants = null;
+        }
+
+        return appointment with
+        {
+            AppointmentId = string.IsNullOrWhiteSpace(appointment.AppointmentId) ? appointmentId : appointment.AppointmentId,
+            Patient = participants?.Patient
+        };
     }
 
     public async Task ConfirmAppointmentAsync(string tenantId, SchedulingIntegrationConfiguration configuration,
@@ -161,23 +204,23 @@ internal sealed class ZocdocApiClient(
         }
     }
 
-    private async Task<IReadOnlyList<T>> GetAllPagesAsync<T>(string tenantId,
+    private async Task<IReadOnlyList<TItem>> GetAllPagesAsync<TData, TItem>(string tenantId,
         SchedulingIntegrationConfiguration configuration, string operation, string initialPath,
-        CancellationToken cancellationToken)
+        Func<TData, IEnumerable<TItem>> items, CancellationToken cancellationToken)
     {
-        var results = new List<T>();
-        var path = initialPath;
-        do
+        var results = new List<TItem>();
+        var pageNumber = 0;
+        while (true)
         {
-            var page = await GetPageAsync<T>(tenantId, configuration, operation, path, cancellationToken);
-            results.AddRange(page.Data);
-            path = string.IsNullOrWhiteSpace(page.NextPageToken) ? string.Empty
-                : $"{initialPath}&next_page_token={Uri.EscapeDataString(page.NextPageToken)}";
-        } while (!string.IsNullOrEmpty(path));
-        return results;
+            var path = pageNumber == 0 ? initialPath : $"{initialPath}&page={pageNumber}";
+            var page = await GetAsync<TData>(tenantId, configuration, operation, path, cancellationToken);
+            if (page.Data is not null) results.AddRange(items(page.Data));
+            if (string.IsNullOrWhiteSpace(page.NextUrl)) return results;
+            pageNumber = (page.Page ?? pageNumber) + 1;
+        }
     }
 
-    private async Task<ZocdocCollectionResponse<T>> GetPageAsync<T>(string tenantId,
+    private async Task<ZocdocResponse<T>> GetAsync<T>(string tenantId,
         SchedulingIntegrationConfiguration configuration, string operation, string path,
         CancellationToken cancellationToken)
     {
@@ -197,8 +240,17 @@ internal sealed class ZocdocApiClient(
             correlationId = CorrelationId(response);
             if (!response.IsSuccessStatusCode)
                 throw FromApiResponse(response, correlationId);
-            var payload = await response.Content.ReadFromJsonAsync<ZocdocCollectionResponse<T>>(
-                JsonOptions, cancellationToken);
+            ZocdocResponse<T>? payload;
+            try
+            {
+                payload = await response.Content.ReadFromJsonAsync<ZocdocResponse<T>>(JsonOptions, cancellationToken);
+            }
+            catch (JsonException ex)
+            {
+                throw new ZocdocIntegrationException(ZocdocFailureKind.RemoteValidation,
+                    "Zocdoc returned a response in an unexpected format.", response.StatusCode,
+                    externalCorrelationId: correlationId, innerException: ex);
+            }
             if (payload is null)
                 throw new ZocdocIntegrationException(ZocdocFailureKind.TemporaryRemoteFailure,
                     "Zocdoc returned an empty response.", response.StatusCode,

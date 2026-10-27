@@ -46,16 +46,24 @@ public sealed class ZocdocIntegrationException : Exception
         statusCode == HttpStatusCode.TooManyRequests ? retryAfter : null);
 }
 
-// Transport DTOs intentionally remain internal to the Zocdoc boundary.
-internal sealed record ZocdocCollectionResponse<T>
+// Transport DTOs intentionally remain internal to the Zocdoc boundary. Shapes follow
+// the responses observed from the developer sandbox (see Zocdoc.IntegrationTests).
+internal sealed record ZocdocResponse<T>
 {
-    [JsonPropertyName("data")] public List<T> Data { get; init; } = [];
-    [JsonPropertyName("next_page_token")] public string? NextPageToken { get; init; }
+    [JsonPropertyName("data")] public T? Data { get; init; }
+    [JsonPropertyName("page")] public int? Page { get; init; }
+    [JsonPropertyName("next_url")] public string? NextUrl { get; init; }
+}
+
+internal sealed record ZocdocSchedulableEntitiesData
+{
+    [JsonPropertyName("schedulable_entities")] public List<ZocdocSchedulableEntityDto> SchedulableEntities { get; init; } = [];
 }
 
 internal sealed record ZocdocSchedulableEntityDto
 {
-    [JsonPropertyName("provider_location_id")] public string ProviderLocationId { get; init; } = string.Empty;
+    // Zocdoc returns "<provider_id>|<location_id>" as the provider-location entity ID.
+    [JsonPropertyName("id")] public string ProviderLocationId { get; init; } = string.Empty;
     [JsonPropertyName("provider_id")] public string? ProviderId { get; init; }
     [JsonPropertyName("npi")] public string? Npi { get; init; }
     [JsonPropertyName("first_name")] public string FirstName { get; init; } = string.Empty;
@@ -68,9 +76,35 @@ internal sealed record ZocdocSchedulableEntityDto
     [JsonPropertyName("zip")] public string? Zip { get; init; }
 }
 
+// GET /v1/providers?npis=... supplies the names and addresses the entity feed omits.
+internal sealed record ZocdocNpiProvidersDto
+{
+    [JsonPropertyName("npi")] public string? Npi { get; init; }
+    [JsonPropertyName("providers")] public List<ZocdocProviderDto> Providers { get; init; } = [];
+}
+
+internal sealed record ZocdocProviderDto
+{
+    [JsonPropertyName("provider_id")] public string? ProviderId { get; init; }
+    [JsonPropertyName("first_name")] public string? FirstName { get; init; }
+    [JsonPropertyName("last_name")] public string? LastName { get; init; }
+    [JsonPropertyName("default_visit_reason_id")] public string? DefaultVisitReasonId { get; init; }
+    [JsonPropertyName("locations")] public List<ZocdocProviderLocationDto> Locations { get; init; } = [];
+}
+
+internal sealed record ZocdocProviderLocationDto
+{
+    [JsonPropertyName("provider_location_id")] public string ProviderLocationId { get; init; } = string.Empty;
+    [JsonPropertyName("address1")] public string? Address1 { get; init; }
+    [JsonPropertyName("address2")] public string? Address2 { get; init; }
+    [JsonPropertyName("city")] public string? City { get; init; }
+    [JsonPropertyName("state")] public string? State { get; init; }
+    [JsonPropertyName("zip_code")] public string? ZipCode { get; init; }
+}
+
 internal sealed record ZocdocVisitReasonDto
 {
-    [JsonPropertyName("visit_reason_id")] public string VisitReasonId { get; init; } = string.Empty;
+    [JsonPropertyName("id")] public string VisitReasonId { get; init; } = string.Empty;
     [JsonPropertyName("name")] public string Name { get; init; } = string.Empty;
     [JsonPropertyName("specialty_id")] public string? SpecialtyId { get; init; }
 }
@@ -91,11 +125,19 @@ internal sealed record ZocdocTimeslotRequest
 internal sealed record ZocdocAppointmentDto
 {
     [JsonPropertyName("appointment_id")] public string AppointmentId { get; init; } = string.Empty;
-    [JsonPropertyName("status")] public string Status { get; init; } = string.Empty;
+    [JsonPropertyName("appointment_status")] public string Status { get; init; } = string.Empty;
     [JsonPropertyName("start_time")] public DateTimeOffset StartTime { get; init; }
     [JsonPropertyName("provider_location_id")] public string ProviderLocationId { get; init; } = string.Empty;
     [JsonPropertyName("visit_reason_id")] public string VisitReasonId { get; init; } = string.Empty;
     [JsonPropertyName("patient_type")] public string? PatientType { get; init; }
+    // Not part of GET /v1/appointments/{id}; filled from the participants endpoint.
+    [JsonPropertyName("patient")] public ZocdocPatientDto? Patient { get; init; }
+}
+
+internal sealed record ZocdocParticipantsDto
+{
+    [JsonPropertyName("provider_id")] public string? ProviderId { get; init; }
+    [JsonPropertyName("location_id")] public string? LocationId { get; init; }
     [JsonPropertyName("patient")] public ZocdocPatientDto? Patient { get; init; }
 }
 
@@ -109,6 +151,16 @@ internal sealed record ZocdocPatientDto
     [JsonPropertyName("sex_at_birth")] public string? SexAtBirth { get; init; }
     [JsonPropertyName("phone_number")] public string? PhoneNumber { get; init; }
     [JsonPropertyName("email_address")] public string? EmailAddress { get; init; }
+    [JsonPropertyName("insurance")] public ZocdocInsuranceDto? Insurance { get; init; }
+}
+
+// Insurance the patient entered on Zocdoc; a hint for eligibility, not verified coverage.
+internal sealed record ZocdocInsuranceDto
+{
+    [JsonPropertyName("insurance_plan_id")] public string? InsurancePlanId { get; init; }
+    [JsonPropertyName("insurance_group_number")] public string? GroupNumber { get; init; }
+    [JsonPropertyName("insurance_member_id")] public string? MemberId { get; init; }
+    [JsonPropertyName("is_self_pay")] public bool IsSelfPay { get; init; }
 }
 
 internal static class ZocdocMapper

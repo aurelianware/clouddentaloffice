@@ -190,6 +190,89 @@ public sealed class ZocdocSchedulingAdapterTests
     }
 
     [Fact]
+    public async Task SchedulableEntitiesAreReadFromSandboxShapeAndNamedFromProviderDirectory()
+    {
+        var handler = new RecordingHandler(request => request.RequestUri!.AbsolutePath switch
+        {
+            "/v1/schedulable_entities" => Json(HttpStatusCode.OK, """
+                {"request_id":"r1","page":0,"page_size":10000,"total_count":1,"next_url":null,
+                 "data":{"recent_change_summary":{"schedulable_entities_added":[],"schedulable_entities_removed":[],
+                   "schedulable_entities_profile_updated":[]},
+                   "schedulable_entities":[{"id":"pr_123|lo_456","npi":"1234567890","type":"provider_location",
+                     "time_zone":"America/Phoenix"}]}}
+                """),
+            "/v1/providers" => Json(HttpStatusCode.OK, """
+                {"request_id":"r2","data":[{"npi":"1234567890","providers":[{"provider_id":"pr_123",
+                  "first_name":"Alex","last_name":"Rivera","default_visit_reason_id":"pc_exam",
+                  "locations":[{"provider_location_id":"pr_123|lo_456","address1":"1 Main St",
+                    "address2":"Suite 200","city":"Mesa","state":"AZ","zip_code":"85201"}]}]}]}
+                """),
+            _ => Json(HttpStatusCode.NotFound, "{}")
+        });
+
+        var entity = Assert.Single(await ApiClient(handler).GetSchedulableEntitiesAsync("practice-a", Configuration()));
+
+        Assert.Equal("pr_123|lo_456", entity.ProviderLocationId);
+        Assert.Equal("pr_123", entity.ProviderId);
+        Assert.Equal("Rivera", entity.LastName);
+        Assert.Equal("85201", entity.Zip);
+        Assert.EndsWith("/v1/providers?npis=1234567890", handler.Requests[1].Uri);
+    }
+
+    [Fact]
+    public async Task VisitReasonsFollowPageNumbersUntilNextUrlIsNull()
+    {
+        var handler = new RecordingHandler(request => Json(HttpStatusCode.OK,
+            request.RequestUri!.Query.Contains("page=1")
+                ? """{"request_id":"r2","page":1,"page_size":1,"total_count":2,"next_url":null,"data":[{"id":"pc_b","name":"Cleaning","specialty_id":"sp_1"}]}"""
+                : """{"request_id":"r1","page":0,"page_size":1,"total_count":2,"next_url":"https://example.test/next","data":[{"id":"pc_a","name":"Exam","specialty_id":"sp_1"}]}"""));
+
+        var reasons = await ApiClient(handler).GetVisitReasonsAsync("practice-a", Configuration());
+
+        Assert.Equal(new[] { "pc_a", "pc_b" }, reasons.Select(x => x.VisitReasonId));
+        Assert.Equal(2, handler.Requests.Count);
+    }
+
+    [Fact]
+    public async Task AppointmentCombinesEnvelopeStatusWithParticipantPatientAndInsurance()
+    {
+        var handler = new RecordingHandler(request => request.RequestUri!.AbsolutePath.EndsWith("/participants")
+            ? Json(HttpStatusCode.OK, """
+                {"request_id":"r2","data":{"provider_id":"pr_123","location_id":"lo_456","patient":{
+                  "patient_id":"zp_1","developer_patient_id":"dp_1","first_name":"Sam","last_name":"Lee",
+                  "date_of_birth":"1990-04-01","sex_at_birth":"female","phone_number":"5555550100",
+                  "email_address":"sam@example.test","insurance":{"insurance_plan_id":"ip_9",
+                  "insurance_group_number":"G1","insurance_member_id":"M1","is_self_pay":false}}}}
+                """)
+            : Json(HttpStatusCode.OK, """
+                {"request_id":"r1","data":{"appointment_id":"za-1","appointment_status":"pending_booking",
+                  "start_time":"2026-09-09T09:00:00-07:00","provider_location_id":"pr_123|lo_456",
+                  "visit_reason_id":"pc_exam","patient_type":"new"}}
+                """));
+
+        var appointment = await ApiClient(handler).GetAppointmentAsync("practice-a", Configuration(), "za-1");
+
+        Assert.Equal("pending_booking", appointment.Status);
+        Assert.Equal("pr_123|lo_456", appointment.ProviderLocationId);
+        Assert.Equal("Lee", appointment.Patient?.LastName);
+        Assert.Equal("ip_9", appointment.Patient?.Insurance?.InsurancePlanId);
+        Assert.EndsWith("/v1/appointments/za-1/participants", handler.Requests[1].Uri);
+    }
+
+    [Fact]
+    public async Task AppointmentWithoutParticipantsHasNoPatient()
+    {
+        var handler = new RecordingHandler(request => request.RequestUri!.AbsolutePath.EndsWith("/participants")
+            ? Json(HttpStatusCode.NotFound, """{"request_id":"r2","error_type":"invalid_request","errors":[]}""")
+            : Json(HttpStatusCode.OK, """{"request_id":"r1","data":{"appointment_id":"za-1","appointment_status":"cancelled"}}"""));
+
+        var appointment = await ApiClient(handler).GetAppointmentAsync("practice-a", Configuration(), "za-1");
+
+        Assert.Equal("cancelled", appointment.Status);
+        Assert.Null(appointment.Patient);
+    }
+
+    [Fact]
     public async Task AdapterMapsZocdocDtosToCanonicalExternalEntities()
     {
         var api = new FakeApiClient
