@@ -27,6 +27,29 @@ namespace CloudDentalOffice.Portal.Tests;
 public sealed class RunningPortalTests(RunningPortalFixture portal) : IClassFixture<RunningPortalFixture>
 {
     [Fact]
+    public async Task Reopening_a_saved_treatment_plan_displays_CDT_codes_and_keeps_stored_fees()
+    {
+        var patientId = await portal.SeedSavedTreatmentPlanAsync();
+        using var playwright = await Playwright.CreateAsync();
+        await using var browser = await playwright.Chromium.LaunchAsync();
+        var page = await browser.NewPageAsync();
+        await page.GotoAsync(new Uri(portal.EasyAuthUrl, $"/treatment-plans/{patientId}").ToString(),
+            new() { WaitUntil = WaitUntilState.NetworkIdle });
+        await page.GetByRole(AriaRole.Button, new() { Name = "Edit treatment plan", Exact = true }).ClickAsync();
+        var codes = page.Locator("input[placeholder='Type to search...']");
+        await Assertions.Expect(codes).ToHaveCountAsync(2);
+        await Assertions.Expect(codes.Nth(0)).ToHaveValueAsync("D7210");
+        await Assertions.Expect(codes.Nth(1)).ToHaveValueAsync("D7220");
+        var values = await page.Locator("input").EvaluateAllAsync<string[]>("els => els.map(e => e.value)");
+        Assert.Contains(values, v => v.Contains("287.00"));
+        Assert.Contains(values, v => v.Contains("299.00"));
+        await page.GetByRole(AriaRole.Button, new() { Name = "Cancel", Exact = true }).ClickAsync();
+        await page.GetByRole(AriaRole.Button, new() { Name = "Edit treatment plan", Exact = true }).ClickAsync();
+        await Assertions.Expect(codes.Nth(0)).ToHaveValueAsync("D7210");
+        await Assertions.Expect(codes.Nth(1)).ToHaveValueAsync("D7220");
+    }
+
+    [Fact]
     public async Task Http_client_handlers_inside_a_Blazor_circuit_forward_the_signed_in_staff_user()
     {
         using var playwright = await Playwright.CreateAsync();
@@ -186,6 +209,28 @@ public sealed class RunningPortalFixture : IAsyncLifetime
             await context.Response.WriteAsync("[]");
         });
         return app;
+    }
+
+    public async Task<int> SeedSavedTreatmentPlanAsync()
+    {
+        var options = new Microsoft.EntityFrameworkCore.DbContextOptionsBuilder<CloudDentalOffice.Portal.Data.CloudDentalDbContext>();
+        Microsoft.EntityFrameworkCore.SqliteDbContextOptionsBuilderExtensions.UseSqlite(options, $"Data Source={_database}");
+        await using var db = new CloudDentalOffice.Portal.Data.CloudDentalDbContext(options.Options);
+        var patient = new CloudDentalOffice.Portal.Models.Patient { TenantId=TenantId, FirstName="Synthetic", LastName="Procedure Test" };
+        var provider = new CloudDentalOffice.Portal.Models.Provider { TenantId=TenantId, FirstName="Synthetic", LastName="Dentist", NPI="1999999984" };
+        db.AddRange(patient, provider);
+        await db.SaveChangesAsync();
+        db.Add(new CloudDentalOffice.Portal.Models.TreatmentPlan
+        {
+            TenantId=TenantId, PatientId=patient.PatientId, ProviderId=provider.ProviderId,
+            Title="Synthetic saved-code test", Status="Draft", CreatedDate=DateTime.UtcNow,
+            PlannedProcedures=[
+                new() { TenantId=TenantId, CDTCode="D7210", Description="Stored first procedure", EstimatedFee=287m, ToothNumber="17" },
+                new() { TenantId=TenantId, CDTCode="D7220", Description="Stored second procedure", EstimatedFee=299m, ToothNumber="18" }
+            ]
+        });
+        await db.SaveChangesAsync();
+        return patient.PatientId;
     }
 
     private Process StartPortal(Uri gatewayUrl)
