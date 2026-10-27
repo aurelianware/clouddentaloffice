@@ -26,6 +26,7 @@ public class CloudDentalDbContext : DbContext
     }
 
     public DbSet<PracticeFeeSchedule> PracticeFeeSchedules => Set<PracticeFeeSchedule>();
+    public DbSet<ImportedRecordLink> ImportedRecordLinks => Set<ImportedRecordLink>();
 
     // DbSets
     public DbSet<TenantRegistry> Tenants => Set<TenantRegistry>();
@@ -73,6 +74,13 @@ public class CloudDentalDbContext : DbContext
         {
             entity.HasIndex(x => x.TenantId).IsUnique().HasFilter("\"IsPracticeDefault\"");
             entity.HasIndex(x => new { x.TenantId, x.Name }).IsUnique();
+            entity.HasQueryFilter(x => x.TenantId == CurrentTenantId);
+        });
+        ConfigureTenantEntity<ImportedRecordLink>(modelBuilder);
+        modelBuilder.Entity<ImportedRecordLink>(entity =>
+        {
+            entity.HasIndex(x => new { x.TenantId, x.Source, x.EntityType, x.ExternalId }).IsUnique();
+            entity.HasIndex(x => new { x.TenantId, x.Source, x.EntityType, x.LocalId }).IsUnique();
             entity.HasQueryFilter(x => x.TenantId == CurrentTenantId);
         });
         ConfigureTenantEntity<Patient>(modelBuilder);

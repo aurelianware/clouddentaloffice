@@ -1,0 +1,97 @@
+@page "/dentrix-import"
+@attribute [Authorize(Roles = CloudDentalOffice.Portal.Services.Auth.StaffRoles.PayerManagers)]
+@inject DentrixPatientImportService Importer
+@inject ILogger<DentrixImport> Logger
+
+<PageTitle>Import patients from Dentrix - Cloud Dental Office</PageTitle>
+<MudContainer MaxWidth="MaxWidth.Large" Class="mt-4">
+    <MudText Typo="Typo.h4">Import patients from Dentrix</MudText>
+    <MudText Class="my-3">Export patients from Dentrix as CSV with Chart Number, First Name, Last Name and Birth Date, plus
+        primary and secondary carrier name, payer ID, subscriber ID, group number, relation to subscriber and subscriber
+        name and birth date. Columns are matched by name, so their order doesn't matter.</MudText>
+    <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Class="mb-3">
+        A repeat import updates the same patients by chart number, so you can import again until you switch over.
+        Patients already in Cloud Dental Office with the same name and birth date are linked instead of duplicated.
+        Social Security numbers are never imported. Carriers whose payer ID isn't in your payer list are added; check
+        them under Claims → Payers before running eligibility.
+    </MudAlert>
+    <MudPaper Class="pa-4 mb-4">
+        <label for="dentrix-file">Dentrix patient export (CSV, up to 20 MB)</label>
+        <InputFile id="dentrix-file" OnChange="ReadFile" accept=".csv" disabled="@_busy" />
+        @if (_preview is not null)
+        {
+            var withCoverage = _preview.Patients.Count(p => p.Coverages.Count > 0);
+            <MudSimpleTable Dense="true" Class="my-3">
+                <tbody>
+                    <tr><td>Patients ready to import</td><td>@_preview.Patients.Count</td></tr>
+                    <tr><td>With insurance</td><td>@withCoverage</td></tr>
+                    <tr><td>Rows skipped</td><td>@_preview.Issues.Count(i => i.Message.StartsWith("Skipped"))</td></tr>
+                </tbody>
+            </MudSimpleTable>
+            <MudText Typo="Typo.body2">Recognized columns: @string.Join(", ", _preview.RecognizedColumns)</MudText>
+            @if (_preview.IgnoredColumns.Count > 0)
+            {
+                <MudText Typo="Typo.body2" Class="mt-1">Not imported: @string.Join(", ", _preview.IgnoredColumns)</MudText>
+            }
+            <MudButton OnClick="Import" Disabled="@(_busy || _preview.Patients.Count == 0)" Variant="Variant.Filled" Color="Color.Primary" Class="mt-3">
+                Import @_preview.Patients.Count patients
+            </MudButton>
+        }
+    </MudPaper>
+    @if (_message is not null) { <MudAlert Severity="@_severity" Variant="Variant.Outlined" Class="my-3">@_message</MudAlert> }
+    @if (_issues.Count > 0)
+    {
+        <MudText Typo="Typo.h6">Rows to review in Dentrix or on the patient's chart (@_issues.Count)</MudText>
+        <MudSimpleTable Dense="true">
+            <thead><tr><th>Row</th><th>Chart #</th><th>Issue</th></tr></thead>
+            <tbody>@foreach (var issue in _issues.Take(500))
+            { <tr><td>@issue.Row</td><td>@issue.ChartNumber</td><td>@issue.Message</td></tr> }</tbody>
+        </MudSimpleTable>
+    }
+</MudContainer>
+
+@code {
+    private PatientImportPreview? _preview;
+    private List<ImportIssue> _issues = [];
+    private string? _message;
+    private Severity _severity = Severity.Info;
+    private bool _busy;
+
+    private async Task ReadFile(InputFileChangeEventArgs args)
+    {
+        _busy = true; _preview = null; _issues = []; _message = null;
+        try
+        {
+            await using var stream = args.File.OpenReadStream(20 * 1024 * 1024);
+            using var reader = new StreamReader(stream);
+            _preview = DentrixPatientCsv.Parse(await reader.ReadToEndAsync(), Importer.Today);
+            _issues = _preview.Issues.ToList();
+        }
+        catch (Exception ex) { Fail(ex); }
+        finally { _busy = false; }
+    }
+
+    private async Task Import()
+    {
+        if (_preview is null) return;
+        _busy = true;
+        try
+        {
+            var result = await Importer.ImportAsync(_preview);
+            _message = $"Imported {result.Created} new and updated {result.Updated} existing patients. Insurance: {result.CoveragesAdded} added, " +
+                $"{result.CoveragesUpdated} updated, {result.CoveragesReplaced} replaced. {result.PlansCreated} payers added to your payer list.";
+            _severity = Severity.Success;
+            _issues = _preview.Issues.Concat(result.Issues).OrderBy(i => i.Row).ToList();
+            _preview = null;
+        }
+        catch (Exception ex) { Fail(ex); }
+        finally { _busy = false; }
+    }
+
+    private void Fail(Exception ex)
+    {
+        Logger.LogWarning("Dentrix patient import failed ({ErrorType})", ex.GetType().Name);
+        _message = ex is FormatException ? ex.Message : "Could not complete the import. Nothing was saved. Please retry or contact support.";
+        _severity = Severity.Error;
+    }
+}

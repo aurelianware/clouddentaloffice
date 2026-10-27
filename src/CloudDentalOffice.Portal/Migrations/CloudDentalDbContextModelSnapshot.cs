@@ -586,6 +586,53 @@ namespace CloudDentalOffice.Portal.Migrations
                     b.ToTable("FinancialAuditEvents");
                 });
 
+            modelBuilder.Entity("CloudDentalOffice.Portal.Models.ImportedRecordLink", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("EntityType")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ExternalId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("ImportedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("LocalId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("TenantId")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT")
+                        .HasDefaultValue("demo");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId");
+
+                    b.HasIndex("TenantId", "Source", "EntityType", "ExternalId")
+                        .IsUnique();
+
+                    b.HasIndex("TenantId", "Source", "EntityType", "LocalId")
+                        .IsUnique();
+
+                    b.ToTable("ImportedRecordLinks");
+                });
+
             modelBuilder.Entity("CloudDentalOffice.Portal.Models.InsurancePlan", b =>
                 {
                     b.Property<int>("InsurancePlanId")
