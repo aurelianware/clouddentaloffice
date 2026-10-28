@@ -6,11 +6,11 @@
 <PageTitle>Import patients from Dentrix - Cloud Dental Office</PageTitle>
 <MudContainer MaxWidth="MaxWidth.Large" Class="mt-4">
     <MudText Typo="Typo.h4">Import patients from Dentrix</MudText>
-    <MudText Class="my-3">Export patients from Dentrix as CSV with Chart Number, First Name, Last Name and Birth Date, plus
+    <MudText Class="my-3">Upload a Dentrix or Dentrix Ascend patient report as CSV with First Name, Last Name and Birth Date (Chart Number when you have it), plus
         primary and secondary carrier name, payer ID, subscriber ID, group number, relation to subscriber and subscriber
         name and birth date. Columns are matched by name, so their order doesn't matter.</MudText>
     <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Class="mb-3">
-        A repeat import updates the same patients by chart number, so you can import again until you switch over.
+        A repeat import updates the same patients, by chart number or, for patients without one, by name and birth date, so you can import again until you switch over.
         Patients already in Cloud Dental Office with the same name and birth date are linked instead of duplicated.
         Social Security numbers are never imported. Carriers whose payer ID isn't in your payer list are added; check
         them under Claims → Payers before running eligibility.

@@ -10,12 +10,23 @@ Dentrix lets the practice choose and order export columns, so the importer
 matches columns by name (case, spaces and punctuation are ignored) and skips any
 title or print-option lines above the header row. Required columns:
 
-- `Chart Number` (also `Chart #`, `Patient ID`)
-- `First Name`, `Last Name`, `Birth Date` (`M/D/YYYY` or `YYYY-MM-DD`)
+- `First Name`, `Last Name`, `Birth Date`/`Date of Birth` (`M/D/YYYY` or `YYYY-MM-DD`)
 
-Optional patient columns: `MI`, `Preferred Name`, `Gender`, `Home Phone`,
-`Mobile Phone`, `Email`, `Address 1`, `Address 2`, `City`, `State`, `Zip`,
-`Status`.
+`Chart Number` (also `Chart #`, `Patient ID`) is used when present. The Dentrix
+Ascend patient report leaves it blank for many patients (about 60% of 3rd Set
+Smiles' patients), so those are linked by a hash of name and birth date instead.
+When Dentrix later assigns a chart number, the next import moves the link to it
+and keeps the same CDO patient. A second row with the same name and birth date
+is skipped for review.
+
+Optional patient columns: `MI`, `Preferred Name`, `Gender`, `Home Phone`
+or `Phone Numbers` (Ascend's comma-separated list: the first is primary and the
+second is secondary), `Mobile Phone`, `Email`, `Address 1`, `Address 2`, `City`,
+`State`, `Zip`/`Postal Code`, `Status`/`Patient Status` (`NEW` and `ACTIVE`
+are active).
+
+The Ascend patient report carries no insurance columns. Insurance needs a
+separate subscriber/insurance export, which is the next step.
 
 Insurance columns, prefixed with `Prim`/`Primary` or `Sec`/`Secondary`
 (for example `Prim Ins Carrier Name`): `Carrier Name`, `Payor ID`,
@@ -29,7 +40,7 @@ column is visible before anything is saved. **SSN columns are never read.**
 ## Behaviour
 
 - The import is one transaction: it saves everything or nothing.
-- Each patient is linked to its Dentrix chart number (`ImportedRecordLinks`).
+- Each patient is linked to its Dentrix chart number, or name/birth-date hash (`ImportedRecordLinks`).
   Importing again updates the same patients, so the practice can re-import up
   to cutover.
 - A patient already in CDO (for example booked online) with the same first

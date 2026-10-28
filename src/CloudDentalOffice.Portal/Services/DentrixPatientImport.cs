@@ -13,7 +13,7 @@ public sealed record ImportedCoverage(int SequenceNumber, string CarrierName, st
     string? GroupNumber, string Relationship, string? SubscriberFirstName, string? SubscriberLastName,
     DateTime? SubscriberDateOfBirth, DateTime? EffectiveDate);
 
-public sealed record ImportedPatient(int Row, string ChartNumber, string FirstName, string LastName, string? MiddleName,
+public sealed record ImportedPatient(int Row, string? ChartNumber, string NameKey, string FirstName, string LastName, string? MiddleName,
     string? PreferredName, DateTime DateOfBirth, string Gender, string? Email, string? PrimaryPhone, string? SecondaryPhone,
     string? Address1, string? Address2, string? City, string? State, string? ZipCode, string Status,
     IReadOnlyList<ImportedCoverage> Coverages);
@@ -53,7 +53,7 @@ public static class DentrixPatientCsv
         [Field.Birth] = ["birthdate", "dateofbirth", "dob", "birthday", "patientbirthdate", "patientdob"],
         [Field.Gender] = ["gender", "sex", "patientgender"],
         [Field.Email] = ["email", "emailaddress", "patientemail"],
-        [Field.Phone] = ["homephone", "phone", "primaryphone", "patientphone"],
+        [Field.Phone] = ["homephone", "phone", "primaryphone", "patientphone", "phonenumbers"],
         [Field.Phone2] = ["mobilephone", "cellphone", "mobile", "cell", "workphone", "secondaryphone"],
         [Field.Address1] = ["address1", "address", "street", "streetaddress", "addressline1", "street1"],
         [Field.Address2] = ["address2", "addressline2", "street2"],
@@ -113,8 +113,6 @@ public static class DentrixPatientCsv
                     var mapped = MapPatientColumns(row);
                     if (mapped.ContainsKey(Field.First) && mapped.ContainsKey(Field.Last) && mapped.ContainsKey(Field.Birth))
                     {
-                        if (!mapped.ContainsKey(Field.Chart))
-                            throw new FormatException("The export needs a Chart Number column so a repeat import updates the same patients.");
                         patientColumns = mapped;
                         coverageColumns = MapCoverageColumns(row, mapped.Values.ToHashSet());
                         header = row;
@@ -128,7 +126,7 @@ public static class DentrixPatientCsv
         }
         catch (MalformedLineException) { throw new FormatException("The CSV contains an invalid quoted row."); }
         if (patientColumns is null)
-            throw new FormatException("Expected a Dentrix patient export with a header row containing First Name, Last Name, Birth Date and Chart Number.");
+            throw new FormatException("Expected a Dentrix patient export with a header row containing First Name, Last Name and Birth Date.");
         if (patients.Count == 0 && issues.Count == 0)
             throw new FormatException("The export has a header row but no patients.");
 
@@ -180,13 +178,19 @@ public static class DentrixPatientCsv
         void Skip(string reason) => issues.Add(new(rowNumber, chart, "Skipped: " + reason));
         void Warn(string message) => issues.Add(new(rowNumber, chart, message));
 
-        if (chart is null || chart.Length > 64 || chart.Any(char.IsControl)) { Skip("missing or invalid chart number."); return; }
-        if (!charts.Add(chart)) { Skip("the chart number appears more than once in this file."); return; }
+        if (chart is not null && (chart.Length > 64 || chart.Any(char.IsControl) || chart.StartsWith(NameKeyPrefix, StringComparison.OrdinalIgnoreCase)))
+        { Skip("invalid chart number."); return; }
+        if (chart is not null && !charts.Add(chart)) { Skip("the chart number appears more than once in this file."); return; }
         var first = Value(Field.First);
         var last = Value(Field.Last);
         if (first is null || last is null || first.Length > 100 || last.Length > 100) { Skip("first and last name are required (up to 100 characters)."); return; }
         if (ParseDate(Value(Field.Birth)) is not { } dob || dob > today || dob.Year < 1900) { Skip("missing or invalid birth date."); return; }
+        // Many patients have no chart number; they are matched on name and birth date instead.
+        var nameKey = NameKey(first, last, dob);
+        if (!charts.Add(nameKey)) { Skip("another row has the same name and birth date."); return; }
 
+        // Ascend lists every phone number in one cell, comma-separated.
+        var phones = (Value(Field.Phone) ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         var email = Value(Field.Email);
         if (email is not null && (email.Length > 255 || !MailAddress.TryCreate(email, out _))) { Warn("Email address was not valid and was left blank."); email = null; }
         var state = Value(Field.State)?.ToUpperInvariant();
@@ -224,10 +228,21 @@ public static class DentrixPatientCsv
                 ParseDate(CoverageValue(slot, Field.Effective))));
         }
 
-        patients.Add(new(rowNumber, chart, first, last, Truncate(Value(Field.Middle), 50), Truncate(Value(Field.Preferred), 20),
-            dob, MapGender(Value(Field.Gender)), email, Phone(Value(Field.Phone)), Phone(Value(Field.Phone2)),
+        patients.Add(new(rowNumber, chart, nameKey, first, last, Truncate(Value(Field.Middle), 50), Truncate(Value(Field.Preferred), 20),
+            dob, MapGender(Value(Field.Gender)), email, Phone(phones.ElementAtOrDefault(0)),
+            Phone(Value(Field.Phone2) ?? phones.ElementAtOrDefault(1)),
             Truncate(Value(Field.Address1), 255), Truncate(Value(Field.Address2), 255), Truncate(Value(Field.City), 100),
             state, Truncate(Value(Field.Zip), 10), MapStatus(Value(Field.Status)), coverages));
+    }
+
+    public const string NameKeyPrefix = "name:";
+
+    /// <summary>A link key for a patient without a chart number. Hashed so the link table holds no name or birth date.</summary>
+    internal static string NameKey(string first, string last, DateTime dob)
+    {
+        var text = $"{last.Trim().ToLowerInvariant()}|{first.Trim().ToLowerInvariant()}|{dob:yyyy-MM-dd}";
+        var hash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(text)));
+        return NameKeyPrefix + hash[..56].ToLowerInvariant();
     }
 
     internal static DateTime? ParseDate(string? value) =>
@@ -244,7 +259,7 @@ public static class DentrixPatientCsv
 
     internal static string MapStatus(string? value) => value?.Trim().ToLowerInvariant() switch
     {
-        null or "" or "active" or "patient" => "Active",
+        null or "" or "active" or "new" or "patient" => "Active",
         "archived" => "Archived",
         "deceased" => "Deceased",
         _ => "Inactive" // Inactive, Non-Patient, Duplicate, etc.
@@ -309,11 +324,13 @@ public sealed class DentrixPatientImportService(
             .Where(g => g.Count() == 1).ToDictionary(g => g.Key, g => g.Single());
         var plans = await db.InsurancePlans.ToListAsync(cancellationToken);
 
-        var pending = new List<(ImportedPatient Source, Patient Patient)>();
+        var pending = new List<(ImportedPatient Source, Patient Patient, ImportedRecordLink? Link)>();
         foreach (var source in preview.Patients)
         {
             Patient patient;
-            if (links.TryGetValue(source.ChartNumber, out var link) && patients.TryGetValue(link.LocalId, out var linked))
+            // A patient first linked by name and birth date keeps its record once Dentrix assigns a chart number.
+            var link = (source.ChartNumber is { } chart ? links.GetValueOrDefault(chart) : null) ?? links.GetValueOrDefault(source.NameKey);
+            if (link is not null && patients.TryGetValue(link.LocalId, out var linked))
             {
                 patient = linked;
                 updated++;
@@ -331,14 +348,15 @@ public sealed class DentrixPatientImportService(
             }
             if (patient.PatientId != 0) patient.ModifiedDate = now;
             Apply(patient, source);
-            pending.Add((source, patient));
+            pending.Add((source, patient, link));
         }
         await db.SaveChangesAsync(cancellationToken);
 
-        foreach (var (source, patient) in pending)
+        foreach (var (source, patient, link) in pending)
         {
-            if (links.TryGetValue(source.ChartNumber, out var link))
+            if (link is not null)
             {
+                link.ExternalId = source.ChartNumber ?? source.NameKey;
                 link.LocalId = patient.PatientId;
                 link.ImportedAt = now;
             }
@@ -347,7 +365,7 @@ public sealed class DentrixPatientImportService(
                 db.ImportedRecordLinks.Add(new ImportedRecordLink
                 {
                     TenantId = tenant.TenantId, Source = ImportSources.Dentrix, EntityType = ImportedEntityTypes.Patient,
-                    ExternalId = source.ChartNumber, LocalId = patient.PatientId, ImportedAt = now
+                    ExternalId = source.ChartNumber ?? source.NameKey, LocalId = patient.PatientId, ImportedAt = now
                 });
             }
 

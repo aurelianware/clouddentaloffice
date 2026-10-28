@@ -22,7 +22,7 @@ public class DentrixPatientImportTests
         TEST01,Testpatient,Alpha,Q,01/02/1980,Female,(555) 010-0001,alpha@example.com,1 Test St,Testville,ca,99999,Active,000-00-0000,Delta Dental of Test,DDTST,M100,G1,Self,"Testpatient, Alpha",01/02/1980,,,,
         TEST02,Testpatient,Beta,,03/04/2012,M,,,,,,,Active,,Delta Dental of Test,DDTST,M100,G1,Child,"Testpatient, Alpha Q",01/02/1980,Test Mutual,TMUT1,S200,Child
         TEST03,Noinsurance,Gamma,,5/6/1990,,,not-an-email,,,,,Non-Patient,,,,,,,,,,,,
-        ,Missing,Chart,,01/01/1990,F,,,,,,,,,,,,,,,,,,,
+        ,,Nolastname,,01/01/1990,F,,,,,,,,,,,,,,,,,,,
         TEST01,Duplicate,Chart,,01/01/1990,F,,,,,,,,,,,,,,,,,,,
         TEST04,Baddate,Delta,,13/45/1990,F,,,,,,,,,,,,,,,,,,,
         """;
@@ -53,7 +53,7 @@ public class DentrixPatientImportTests
 
     [Theory]
     [InlineData("Name,DOB\nA,01/01/1990")]
-    [InlineData("First Name,Last Name,Birth Date\nA,B,01/01/1990")]
+    [InlineData("Chart Number,First Name,Birth Date\nC1,A,01/01/1990")]
     public void RejectsExportsWithoutRequiredColumns(string csv) =>
         Assert.Throws<FormatException>(() => DentrixPatientCsv.Parse(csv, Today));
 
@@ -108,6 +108,48 @@ public class DentrixPatientImportTests
         await using (var db = new CloudDentalDbContext(options, other))
             Assert.Empty(await db.Patients.ToListAsync());
         Assert.Equal(3, (await Service(options, other).ImportAsync(preview)).Created);
+    }
+
+    // Column layout of a Dentrix Ascend patient report; synthetic values.
+    private const string AscendCsv = """
+        Preferred Location,First Name,Last Name,Address 1,Address 2,City,State,Postal Code,Phone Numbers,Email Address,Date of Birth,Gender,Patient Status,Chart Number,First Visit Date,Last Visit,Last Visit Provider,Next Visit,Billing Type,Orthodontia Patient,Race,Ethnicity
+        Test Dental PLLC,Nochart,Testone,1 Test St,,Testville,AZ,99999,"5550100001, 5550100002",one@example.com,1985-06-07,F,NEW,,,,,,Standard Billing,false,,
+        Test Dental PLLC,Haschart,Testtwo,2 Test St,,Testville,AZ,99999-0001,5550100003,,1970-01-31,M,ACTIVE,AB1234C,2020-01-01,2026-10-01T15:00:00.000Z,Test Provider,,Standard Billing,false,,
+        """;
+
+    [Fact]
+    public void ReadsAscendPatientReports()
+    {
+        var preview = DentrixPatientCsv.Parse(AscendCsv, Today);
+        Assert.Empty(preview.Issues);
+        var (nochart, haschart) = (preview.Patients[0], preview.Patients[1]);
+        Assert.Null(nochart.ChartNumber);
+        Assert.StartsWith(DentrixPatientCsv.NameKeyPrefix, nochart.NameKey);
+        Assert.DoesNotContain("testone", nochart.NameKey);
+        Assert.Equal(("Active", "5550100001", "5550100002", new DateTime(1985, 6, 7)),
+            (nochart.Status, nochart.PrimaryPhone, nochart.SecondaryPhone, nochart.DateOfBirth));
+        Assert.Equal(("AB1234C", "99999-0001"), (haschart.ChartNumber, haschart.ZipCode));
+        Assert.Contains("Billing Type", preview.IgnoredColumns);
+    }
+
+    [Fact]
+    public async Task PatientsWithoutChartNumbersKeepTheirRecordWhenOneIsAssigned()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = new DbContextOptionsBuilder<CloudDentalDbContext>().UseSqlite(connection).Options;
+        var tenant = new Tenant("practice-a");
+        await using (var db = new CloudDentalDbContext(options, tenant)) await db.Database.EnsureCreatedAsync();
+        var service = Service(options, tenant);
+        Assert.Equal(2, (await service.ImportAsync(DentrixPatientCsv.Parse(AscendCsv, Today))).Created);
+        Assert.Equal(2, (await service.ImportAsync(DentrixPatientCsv.Parse(AscendCsv, Today))).Updated);
+        var assigned = DentrixPatientCsv.Parse(AscendCsv.Replace(",F,NEW,,", ",F,ACTIVE,ZZ9,"), Today);
+        Assert.Equal((0, 2), (await service.ImportAsync(assigned)) is var r ? (r.Created, r.Updated) : default);
+        await using (var db = new CloudDentalDbContext(options, tenant))
+        {
+            Assert.Equal(2, await db.Patients.CountAsync());
+            Assert.Contains(await db.ImportedRecordLinks.Select(x => x.ExternalId).ToListAsync(), x => x == "ZZ9");
+        }
     }
 
     [Fact]
