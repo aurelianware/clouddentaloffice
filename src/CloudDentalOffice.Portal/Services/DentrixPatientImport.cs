@@ -25,7 +25,7 @@ public sealed record PatientImportPreview(IReadOnlyList<ImportedPatient> Patient
     IReadOnlyList<string> RecognizedColumns, IReadOnlyList<string> IgnoredColumns);
 
 public sealed record PatientImportResult(int Created, int Updated, int CoveragesAdded, int CoveragesUpdated,
-    int CoveragesReplaced, int PlansCreated, IReadOnlyList<ImportIssue> Issues);
+    int CoveragesReplaced, int PlansCreated, IReadOnlyList<ImportIssue> Issues, int CoveragesUnchanged = 0);
 
 /// <summary>
 /// Reads a Dentrix patient export (Office Manager data export or a saved report as CSV).
@@ -308,7 +308,7 @@ public sealed class DentrixPatientImportService(
         var now = time.GetUtcNow().UtcDateTime;
         var today = Today;
         var issues = new List<ImportIssue>();
-        int created = 0, updated = 0, added = 0, changed = 0, replaced = 0, plansCreated = 0;
+        int created = 0, updated = 0, added = 0, changed = 0, replaced = 0;
 
         await using var db = new CloudDentalDbContext(options, tenant);
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
@@ -323,6 +323,7 @@ public sealed class DentrixPatientImportService(
             .GroupBy(p => (p.FirstName.ToLowerInvariant(), p.LastName.ToLowerInvariant(), p.DateOfBirth.Date))
             .Where(g => g.Count() == 1).ToDictionary(g => g.Key, g => g.Single());
         var plans = await db.InsurancePlans.ToListAsync(cancellationToken);
+        var planCount = plans.Count;
 
         var pending = new List<(ImportedPatient Source, Patient Patient, ImportedRecordLink? Link)>();
         foreach (var source in preview.Patients)
@@ -371,97 +372,182 @@ public sealed class DentrixPatientImportService(
 
             foreach (var coverage in source.Coverages)
             {
-                var label = coverage.SequenceNumber == 1 ? "Primary" : "Secondary";
-                if (coverage.PayerId is null || coverage.PayerId.Length > 10)
-                {
-                    issues.Add(new(source.Row, source.ChartNumber, $"{label} insurance not imported: the carrier has no electronic payer ID (up to 10 characters). Add it on the patient's insurance tab."));
-                    continue;
-                }
-                if (coverage.MemberId is null || coverage.MemberId.Length > 50)
-                {
-                    issues.Add(new(source.Row, source.ChartNumber, $"{label} insurance not imported: the subscriber ID is missing or longer than 50 characters."));
-                    continue;
-                }
-                if (coverage.Relationship != CoverageRelationships.Self &&
-                    (coverage.SubscriberFirstName is null || coverage.SubscriberLastName is null || coverage.SubscriberDateOfBirth is null))
-                {
-                    issues.Add(new(source.Row, source.ChartNumber, $"{label} insurance not imported: the patient isn't the subscriber, and the subscriber's name and birth date are needed for eligibility."));
-                    continue;
-                }
-
-                var plan = plans.FirstOrDefault(p => p.IsActive && p.PayerId.Equals(coverage.PayerId, StringComparison.OrdinalIgnoreCase))
-                    ?? plans.FirstOrDefault(p => p.PayerId.Equals(coverage.PayerId, StringComparison.OrdinalIgnoreCase));
-                if (plan is null)
-                {
-                    plan = new InsurancePlan { TenantId = tenant.TenantId, PayerId = coverage.PayerId, PayerName = coverage.CarrierName, CreatedDate = now };
-                    db.InsurancePlans.Add(plan);
-                    plans.Add(plan);
-                    plansCreated++;
-                }
-                else if (!plan.IsActive)
-                {
-                    plan.IsActive = true;
-                    plan.ModifiedDate = now;
-                }
-
-                var input = new CoverageInput
-                {
-                    InsurancePlanId = plan.InsurancePlanId,
-                    MemberId = coverage.MemberId,
-                    GroupNumber = coverage.GroupNumber,
-                    SequenceNumber = coverage.SequenceNumber,
-                    RelationshipToSubscriber = coverage.Relationship,
-                    SubscriberFirstName = coverage.SubscriberFirstName,
-                    SubscriberLastName = coverage.SubscriberLastName,
-                    SubscriberDateOfBirth = coverage.SubscriberDateOfBirth,
-                    EffectiveDate = coverage.EffectiveDate ?? today
-                };
-                var current = patient.Insurances.FirstOrDefault(x => x.IsActive && x.SequenceNumber == coverage.SequenceNumber);
-                if (current is not null && (current.InsurancePlanId == plan.InsurancePlanId || current.InsurancePlan == plan) &&
-                    string.Equals(current.MemberId, coverage.MemberId, StringComparison.OrdinalIgnoreCase))
-                {
-                    if (!PatientCoverageService.ChangesWhatIsVerified(current, input with { InsurancePlanId = current.InsurancePlanId })) continue;
-                    current.LastVerifiedAt = null;
-                    current.LastVerificationState = null;
-                    current.GroupNumber = input.GroupNumber;
-                    current.RelationshipToSubscriber = input.RelationshipToSubscriber;
-                    current.SubscriberFirstName = input.SubscriberFirstName;
-                    current.SubscriberLastName = input.SubscriberLastName;
-                    current.SubscriberDateOfBirth = input.SubscriberDateOfBirth;
-                    current.ModifiedDate = now;
-                    changed++;
-                    continue;
-                }
-                if (current is not null)
-                {
-                    // Dentrix now lists a different plan or subscriber ID in this slot.
-                    current.IsActive = false;
-                    if (current.TerminationDate is null || current.TerminationDate.Value.Date > today) current.TerminationDate = today;
-                    current.ModifiedDate = now;
-                    replaced++;
-                    // The filtered unique index allows one active coverage per slot, so retire it first.
-                    await db.SaveChangesAsync(cancellationToken);
-                }
-                else added++;
-                var insurance = new PatientInsurance
-                {
-                    TenantId = tenant.TenantId, PatientId = patient.PatientId, InsurancePlan = plan,
-                    MemberId = input.MemberId, GroupNumber = input.GroupNumber, SequenceNumber = input.SequenceNumber,
-                    RelationshipToSubscriber = input.RelationshipToSubscriber,
-                    SubscriberFirstName = input.SubscriberFirstName, SubscriberLastName = input.SubscriberLastName,
-                    SubscriberDateOfBirth = input.SubscriberDateOfBirth, EffectiveDate = input.EffectiveDate.Date,
-                    IsActive = true, CreatedDate = now
-                };
-                db.PatientInsurances.Add(insurance);
-                patient.Insurances.Add(insurance);
+                var (outcome, problem) = await UpsertCoverageAsync(db, patient, coverage, plans, now, today, cancellationToken);
+                if (problem is not null) issues.Add(new(source.Row, source.ChartNumber, problem));
+                Count(outcome, ref added, ref changed, ref replaced);
             }
         }
         await db.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
+        var plansCreated = plans.Count - planCount;
 
         logger.LogInformation("Dentrix patient import for tenant {TenantId}: {Created} created, {Updated} updated, {Added} coverages added, {Changed} updated, {Replaced} replaced, {Plans} plans created",
             ClaimLifecycleMapper.SanitizeForLog(tenant.TenantId), created, updated, added, changed, replaced, plansCreated);
         return new(created, updated, added, changed, replaced, plansCreated, issues);
+    }
+
+    public async Task<PatientImportResult> ImportCoveragesAsync(InsuranceImportPreview preview, CancellationToken cancellationToken = default)
+    {
+        RequireStaff();
+        if (preview.Rows.Count is < 1 or > DentrixInsuranceCsv.MaxRows)
+            throw new FormatException("There are no importable insurance rows in this file.");
+        var now = time.GetUtcNow().UtcDateTime;
+        var today = Today;
+        var issues = new List<ImportIssue>();
+        int added = 0, changed = 0, replaced = 0, unchanged = 0;
+
+        await using var db = new CloudDentalDbContext(options, tenant);
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+        var patients = await db.Patients.Include(p => p.Insurances).ToListAsync(cancellationToken);
+        var byChart = (await db.ImportedRecordLinks
+                .Where(x => x.Source == ImportSources.Dentrix && x.EntityType == ImportedEntityTypes.Patient)
+                .ToListAsync(cancellationToken))
+            .Join(patients, l => l.LocalId, p => p.PatientId, (l, p) => (l.ExternalId, p))
+            .ToDictionary(x => x.ExternalId, x => x.p, StringComparer.OrdinalIgnoreCase);
+        var byName = patients.ToLookup(p => (p.LastName.Trim().ToLowerInvariant(),
+            DentrixInsuranceCsv.FirstWord(p.FirstName).ToLowerInvariant(), p.DateOfBirth.Date));
+        var plans = await db.InsurancePlans.ToListAsync(cancellationToken);
+        var planCount = plans.Count;
+
+        var matched = new List<(ImportedPatientCoverage Row, Patient Patient)>();
+        foreach (var row in preview.Rows)
+        {
+            if (row.ChartNumber is { } chart && byChart.TryGetValue(chart, out var linked)) { matched.Add((row, linked)); continue; }
+            var candidates = byName[(row.PatientLastName.Trim().ToLowerInvariant(),
+                DentrixInsuranceCsv.FirstWord(row.PatientFirstName).ToLowerInvariant(), row.PatientDateOfBirth)].ToList();
+            if (candidates.Count == 1) matched.Add((row, candidates[0]));
+            else issues.Add(new(row.Row, row.ChartNumber, candidates.Count == 0
+                ? "Skipped: no patient with this name and birth date. Import the patient list first."
+                : "Skipped: more than one patient has this name and birth date."));
+        }
+
+        foreach (var group in matched.GroupBy(x => x.Patient))
+        {
+            var patient = group.Key;
+            var rows = group.Select(x => x.Row).ToList();
+            // Without an order column, a single plan is primary; several plans need the report's order.
+            if (rows.All(r => r.Coverage.SequenceNumber == 0))
+            {
+                if (rows.Count > 1)
+                {
+                    issues.AddRange(rows.Select(r => new ImportIssue(r.Row, r.ChartNumber,
+                        $"Skipped: the patient has {rows.Count} plans and the report doesn't say which is primary. Add a coverage order column.")));
+                    continue;
+                }
+                rows = [rows[0] with { Coverage = rows[0].Coverage with { SequenceNumber = 1 } }];
+            }
+            var slots = rows.GroupBy(r => r.Coverage.SequenceNumber).ToList();
+            foreach (var slot in slots)
+            {
+                if (slot.Key is not (1 or 2) || slot.Count() > 1)
+                {
+                    issues.AddRange(slot.Select(r => new ImportIssue(r.Row, r.ChartNumber,
+                        slot.Key is 1 or 2 ? "Skipped: the patient has more than one plan in the same order." : "Skipped: only primary and secondary insurance are imported.")));
+                    continue;
+                }
+                var row = slot.Single();
+                var (outcome, problem) = await UpsertCoverageAsync(db, patient, row.Coverage, plans, now, today, cancellationToken);
+                if (problem is not null) issues.Add(new(row.Row, row.ChartNumber, problem));
+                if (outcome == CoverageOutcome.Unchanged) unchanged++;
+                Count(outcome, ref added, ref changed, ref replaced);
+            }
+        }
+        await db.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        var plansCreated = plans.Count - planCount;
+
+        logger.LogInformation("Dentrix insurance import for tenant {TenantId}: {Added} coverages added, {Changed} updated, {Replaced} replaced, {Plans} plans created, {Issues} issues",
+            ClaimLifecycleMapper.SanitizeForLog(tenant.TenantId), added, changed, replaced, plansCreated, issues.Count);
+        return new(0, 0, added, changed, replaced, plansCreated, issues.OrderBy(i => i.Row).ToList(), unchanged);
+    }
+
+    private enum CoverageOutcome { Skipped, Unchanged, Added, Updated, Replaced }
+
+    private static void Count(CoverageOutcome outcome, ref int added, ref int changed, ref int replaced)
+    {
+        if (outcome == CoverageOutcome.Added) added++;
+        else if (outcome == CoverageOutcome.Updated) changed++;
+        else if (outcome == CoverageOutcome.Replaced) replaced++;
+    }
+
+    /// <summary>Adds or updates one coverage slot. New payers are appended to <paramref name="plans"/>.</summary>
+    private async Task<(CoverageOutcome, string?)> UpsertCoverageAsync(CloudDentalDbContext db, Patient patient,
+        ImportedCoverage coverage, List<InsurancePlan> plans, DateTime now, DateTime today, CancellationToken cancellationToken)
+    {
+        var label = coverage.SequenceNumber == 1 ? "Primary" : "Secondary";
+        if (coverage.PayerId is null || !DentrixInsuranceCsv.IsPayerId(coverage.PayerId))
+            return (CoverageOutcome.Skipped, $"{label} insurance not imported: the carrier has no electronic payer ID (up to 10 letters or digits). Add it on the patient's insurance tab.");
+        if (coverage.MemberId is null || coverage.MemberId.Length > 50)
+            return (CoverageOutcome.Skipped, $"{label} insurance not imported: the subscriber ID is missing or longer than 50 characters.");
+        if (coverage.Relationship != CoverageRelationships.Self &&
+            (coverage.SubscriberFirstName is null || coverage.SubscriberLastName is null || coverage.SubscriberDateOfBirth is null))
+            return (CoverageOutcome.Skipped, $"{label} insurance not imported: the patient isn't the subscriber, and the subscriber's name and birth date are needed for eligibility.");
+
+        var plan = plans.FirstOrDefault(p => p.IsActive && p.PayerId.Equals(coverage.PayerId, StringComparison.OrdinalIgnoreCase))
+            ?? plans.FirstOrDefault(p => p.PayerId.Equals(coverage.PayerId, StringComparison.OrdinalIgnoreCase));
+        if (plan is null)
+        {
+            plan = new InsurancePlan { TenantId = tenant.TenantId, PayerId = coverage.PayerId, PayerName = coverage.CarrierName, CreatedDate = now };
+            db.InsurancePlans.Add(plan);
+            plans.Add(plan);
+        }
+        else if (!plan.IsActive)
+        {
+            plan.IsActive = true;
+            plan.ModifiedDate = now;
+        }
+
+        var input = new CoverageInput
+        {
+            InsurancePlanId = plan.InsurancePlanId,
+            MemberId = coverage.MemberId,
+            GroupNumber = coverage.GroupNumber,
+            SequenceNumber = coverage.SequenceNumber,
+            RelationshipToSubscriber = coverage.Relationship,
+            SubscriberFirstName = coverage.SubscriberFirstName,
+            SubscriberLastName = coverage.SubscriberLastName,
+            SubscriberDateOfBirth = coverage.SubscriberDateOfBirth,
+            EffectiveDate = coverage.EffectiveDate ?? today
+        };
+        var current = patient.Insurances.FirstOrDefault(x => x.IsActive && x.SequenceNumber == coverage.SequenceNumber);
+        if (current is not null && (current.InsurancePlanId == plan.InsurancePlanId || current.InsurancePlan == plan) &&
+            string.Equals(current.MemberId, coverage.MemberId, StringComparison.OrdinalIgnoreCase))
+        {
+            if (!PatientCoverageService.ChangesWhatIsVerified(current, input with { InsurancePlanId = current.InsurancePlanId }))
+                return (CoverageOutcome.Unchanged, null);
+            current.LastVerifiedAt = null;
+            current.LastVerificationState = null;
+            current.GroupNumber = input.GroupNumber;
+            current.RelationshipToSubscriber = input.RelationshipToSubscriber;
+            current.SubscriberFirstName = input.SubscriberFirstName;
+            current.SubscriberLastName = input.SubscriberLastName;
+            current.SubscriberDateOfBirth = input.SubscriberDateOfBirth;
+            current.ModifiedDate = now;
+            return (CoverageOutcome.Updated, null);
+        }
+        var outcome = CoverageOutcome.Added;
+        if (current is not null)
+        {
+            // Dentrix now lists a different plan or subscriber ID in this slot.
+            current.IsActive = false;
+            if (current.TerminationDate is null || current.TerminationDate.Value.Date > today) current.TerminationDate = today;
+            current.ModifiedDate = now;
+            outcome = CoverageOutcome.Replaced;
+            // The filtered unique index allows one active coverage per slot, so retire it first.
+            await db.SaveChangesAsync(cancellationToken);
+        }
+        var insurance = new PatientInsurance
+        {
+            TenantId = tenant.TenantId, PatientId = patient.PatientId, InsurancePlan = plan,
+            MemberId = input.MemberId, GroupNumber = input.GroupNumber, SequenceNumber = input.SequenceNumber,
+            RelationshipToSubscriber = input.RelationshipToSubscriber,
+            SubscriberFirstName = input.SubscriberFirstName, SubscriberLastName = input.SubscriberLastName,
+            SubscriberDateOfBirth = input.SubscriberDateOfBirth, EffectiveDate = input.EffectiveDate.Date,
+            IsActive = true, CreatedDate = now
+        };
+        db.PatientInsurances.Add(insurance);
+        patient.Insurances.Add(insurance);
+        return (outcome, null);
     }
 
     private static void Apply(Patient patient, ImportedPatient source)

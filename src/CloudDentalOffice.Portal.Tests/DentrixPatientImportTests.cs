@@ -152,6 +152,62 @@ public class DentrixPatientImportTests
         }
     }
 
+    // Column layout of the Ascend "Patient Insurance" report; synthetic values.
+    private const string AscendInsuranceCsv = """
+        Insurance Carrier,Payer ID,Insurance Plan,Plan Address,Patient,Subscriber ID #,Subscriber,Birth Date
+        Not Available: spaces etc.,Not Available: spaces etc.,Test Employer,"PO Box 1, Testville, AZ, 99999","Testone, Nochart Ann",X1,"Testone, Nochart",06/07/1985
+        Delta Dental of Test,DDTST,Test Employer,"PO Box 2, Testville, AZ, 99999","Testone, Nochart Ann",M200,"Testone, Nochart",06/07/1985
+        Delta Dental of Test,DDTST,Test Employer,"PO Box 2, Testville, AZ, 99999","Testtwo, Haschart",M300,"Testtwo, Haschart",01/31/1970
+        Test Mutual,TMUT1,Test Employer,"PO Box 3, Testville, AZ, 99999","Testthree, Kid",M400,"Testthree, Parent",01/01/2015
+        Test Mutual,TMUT1,Test Employer,"PO Box 3, Testville, AZ, 99999","Unknown, Person",M500,"Unknown, Person",01/01/1990
+        """;
+
+    [Fact]
+    public void ReadsAscendInsuranceReports()
+    {
+        Assert.True(DentrixInsuranceCsv.IsInsuranceReport(AscendInsuranceCsv));
+        Assert.False(DentrixInsuranceCsv.IsInsuranceReport(AscendCsv));
+        var preview = DentrixInsuranceCsv.Parse(AscendInsuranceCsv, Today);
+        Assert.Equal(5, preview.Rows.Count);
+        Assert.Null(preview.Rows[0].Coverage.PayerId);
+        Assert.Equal(("Testone", "Nochart", "Self"), (preview.Rows[1].PatientLastName, preview.Rows[1].PatientFirstName, preview.Rows[1].Coverage.Relationship));
+        var dependent = preview.Rows[3].Coverage;
+        Assert.Equal(("Other", "Parent", "Testthree"), (dependent.Relationship, dependent.SubscriberFirstName, dependent.SubscriberLastName));
+        Assert.Equal(0, dependent.SequenceNumber);
+        Assert.Contains("Insurance Plan", preview.IgnoredColumns);
+    }
+
+    [Fact]
+    public async Task ImportsAscendInsuranceForImportedPatients()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = new DbContextOptionsBuilder<CloudDentalDbContext>().UseSqlite(connection).Options;
+        var tenant = new Tenant("practice-a");
+        await using (var db = new CloudDentalDbContext(options, tenant)) await db.Database.EnsureCreatedAsync();
+        var service = Service(options, tenant);
+        await service.ImportAsync(DentrixPatientCsv.Parse(AscendCsv, Today));
+        var kid = "Chart Number,First Name,Last Name,Birth Date\nK1,Kid,Testthree,01/01/2015";
+        await service.ImportAsync(DentrixPatientCsv.Parse(kid, Today));
+
+        var preview = DentrixInsuranceCsv.Parse(AscendInsuranceCsv, Today);
+        var result = await service.ImportCoveragesAsync(preview);
+        // Nochart has two plans and no order column; Kid's subscriber has no birth date; Unknown isn't a patient.
+        Assert.Equal((1, 1), (result.CoveragesAdded, result.PlansCreated));
+        Assert.Equal([2, 3, 5, 6], result.Issues.Select(i => i.Row));
+
+        var ordered = DentrixInsuranceCsv.Parse(AscendInsuranceCsv.Replace("Birth Date\n", "Birth Date,Coverage Order\n")
+            .Replace("Nochart\",06/07/1985\n        Delta", "Nochart\",06/07/1985,Secondary\n        Delta")
+            .Replace("M200,\"Testone, Nochart\",06/07/1985", "M200,\"Testone, Nochart\",06/07/1985,Primary"), Today);
+        var again = await service.ImportCoveragesAsync(ordered);
+        Assert.Equal((1, 1), (again.CoveragesAdded, again.CoveragesUnchanged));
+        await using (var db = new CloudDentalDbContext(options, tenant))
+        {
+            var nochart = await db.Patients.Include(p => p.Insurances).SingleAsync(p => p.FirstName == "Nochart");
+            Assert.Equal(("M200", 1), (Assert.Single(nochart.Insurances).MemberId, nochart.Insurances.Single().SequenceNumber));
+        }
+    }
+
     [Fact]
     public async Task ReportsCoverageThatCannotBeVerified()
     {
