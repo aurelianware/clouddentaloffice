@@ -13,17 +13,20 @@
 
     private string BgColor => Severity switch
     {
-        AlertSeverity.Critical => "#b71c1c",
-        AlertSeverity.High => "#c62828",
-        AlertSeverity.Medium => "#e65100",
-        AlertSeverity.Low => "#1565c0",
-        _ => "#37474f"
+        AlertSeverity.Critical => "var(--cdo-error)",
+        AlertSeverity.High => "var(--cdo-error-soft)",
+        AlertSeverity.Medium => "var(--cdo-warning-soft)",
+        AlertSeverity.Low => "var(--cdo-info-soft)",
+        _ => "var(--cdo-raised)"
     };
 
     private string TextColor => Severity switch
     {
-        AlertSeverity.Info => "#90a4ae",
-        _ => "#ffffff"
+        AlertSeverity.Critical => "var(--cdo-on-accent)",
+        AlertSeverity.High => "var(--cdo-error)",
+        AlertSeverity.Medium => "var(--cdo-warning)",
+        AlertSeverity.Low => "var(--cdo-info)",
+        _ => "var(--cdo-text-muted)"
     };
 
     private string ChipText => Severity switch

@@ -1,0 +1,71 @@
+/* ============================================================
+   Cloud Dental Office portal: semantic design tokens
+   ------------------------------------------------------------
+   Every color the portal paints comes from one of these tokens.
+   The palette is Cloud Health Office's Enterprise theme
+   (cloudhealthoffice src/portal/.../theme-tokens.css): white and
+   slate surfaces, navy app bar and ink, teal accent, IBM Plex Sans,
+   so the two products read as one family.
+
+   Status colors (success / warning / error / info) carry meaning:
+   "denied" must look like "denied" everywhere. Each has a -soft
+   background and a -line border for alerts, chips and wells.
+
+   New code: use these tokens (or MudBlazor's --mud-palette-* vars).
+   Never hardcode a hex value in a page. Keep the hex values in
+   Theming/CdoTheme.cs in step with this file.
+   ============================================================ */
+
+:root {
+  color-scheme: light;
+
+  /* Surfaces */
+  --cdo-bg: #F5F7FA;            /* page canvas */
+  --cdo-surface: #FFFFFF;       /* cards, tables, dialogs */
+  --cdo-raised: #EEF3F8;        /* chips, table header, wells */
+  --cdo-appbar: #0B2545;        /* navy app bar */
+  --cdo-on-appbar: #FFFFFF;
+  --cdo-on-appbar-muted: #D5E2EE;
+  --cdo-drawer: #FFFFFF;
+
+  /* Text */
+  --cdo-ink: #0B1F33;           /* headings, strong text */
+  --cdo-text: #334155;          /* body */
+  --cdo-text-muted: #475569;    /* secondary, 7.6:1 on white */
+  --cdo-text-subtle: #5B6B80;   /* captions, 5.6:1 on white, 4.9:1 on chips */
+
+  /* Lines */
+  --cdo-line: #D9E1EA;
+  --cdo-line-strong: #B8C4D2;
+
+  /* Brand accent */
+  --cdo-accent: #0E7490;
+  --cdo-accent-hover: #0B5A70;
+  --cdo-accent-soft: #E6F2F5;
+  --cdo-on-accent: #FFFFFF;
+  --cdo-accent-2: #0F766E;
+
+  /* Status */
+  --cdo-success: #15803D;
+  --cdo-success-soft: #EAF6EE;
+  --cdo-success-line: #A8D5B6;
+  --cdo-warning: #B45309;
+  --cdo-warning-soft: #FDF3E7;
+  --cdo-warning-line: #EBC79D;
+  --cdo-error: #B91C1C;
+  --cdo-error-soft: #FCECEC;
+  --cdo-error-line: #EDB1B1;
+  --cdo-info: #0369A1;
+  --cdo-info-soft: #E8F2F9;
+  --cdo-info-line: #A9CCE3;
+
+  /* Effects */
+  --cdo-shadow-sm: 0 1px 2px rgba(11, 31, 51, 0.06);
+  --cdo-shadow-md: 0 12px 28px rgba(11, 31, 51, 0.12);
+  --cdo-focus: #0E7490;
+
+  /* Type */
+  --cdo-font: 'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --cdo-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --cdo-radius: 6px;
+}

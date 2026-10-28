@@ -1,13 +1,13 @@
 @using CloudDentalOffice.Contracts.Vision
 
 <MudPaper Class="pa-3 cursor-pointer" Elevation="0"
-          Style="@($"background-color: #152238; border: 1px solid {_borderColor}; border-radius: 8px; transition: border-color 0.2s;")"
+          Style="@($"background-color: var(--cdo-raised); border: 1px solid {_borderColor}; border-radius: 8px; transition: border-color 0.2s;")"
           @onclick="OnClick">
 
     <div class="d-flex justify-space-between align-center mb-2">
         <div class="d-flex align-center gap-2">
             <MudIcon Icon="@LocationIcon" Size="Size.Small" Style="@($"color: {_locationColor};")" />
-            <MudText Typo="Typo.subtitle2" Style="color: #e0e0e0;">@Device.Name</MudText>
+            <MudText Typo="Typo.subtitle2" Style="color: var(--cdo-text);">@Device.Name</MudText>
         </div>
         <div class="d-flex align-center gap-1">
             <div style="width: 8px; height: 8px; border-radius: 50%; background-color: @_statusDotColor;
@@ -18,17 +18,17 @@
 
     <div class="d-flex gap-1 flex-wrap mb-2">
         <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined"
-                 Style="border-color: #37474f; color: #90a4ae; font-size: 0.6rem;">
+                 Style="border-color: var(--cdo-line); color: var(--cdo-text-muted); font-size: 0.6rem;">
             @Device.Type
         </MudChip>
         <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined"
-                 Style="border-color: #37474f; color: #90a4ae; font-size: 0.6rem;">
+                 Style="border-color: var(--cdo-line); color: var(--cdo-text-muted); font-size: 0.6rem;">
             @Device.Location
         </MudChip>
         @if (Device.SupportsOcr)
         {
             <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined"
-                     Style="border-color: #1b5e20; color: #66bb6a; font-size: 0.6rem;">
+                     Style="border-color: var(--cdo-success-line); color: var(--cdo-success); font-size: 0.6rem;">
                 OCR
             </MudChip>
         }
@@ -36,19 +36,19 @@
 
     @if (LatestEvent != null)
     {
-        <div style="border-top: 1px solid #1e2a3a; padding-top: 6px;">
-            <MudText Typo="Typo.caption" Style="color: #607d8b;">Latest:</MudText>
+        <div style="border-top: 1px solid var(--cdo-line); padding-top: 6px;">
+            <MudText Typo="Typo.caption" Style="color: var(--cdo-text-subtle);">Latest:</MudText>
             <div class="d-flex justify-space-between align-center">
-                <MudText Typo="Typo.caption" Style="color: #90a4ae;">
+                <MudText Typo="Typo.caption" Style="color: var(--cdo-text-muted);">
                     @LatestEvent.EventType — @LatestEvent.Detections.Count detections
                 </MudText>
-                <MudText Typo="Typo.caption" Style="color: #607d8b;">
+                <MudText Typo="Typo.caption" Style="color: var(--cdo-text-subtle);">
                     @FormatTimeAgo(LatestEvent.Timestamp)
                 </MudText>
             </div>
             @if (LatestEvent.AlertSeverity.HasValue && LatestEvent.AlertSeverity >= AlertSeverity.Medium)
             {
-                <MudText Typo="Typo.caption" Style="color: #ef5350; font-weight: 500;">
+                <MudText Typo="Typo.caption" Style="color: var(--cdo-error); font-weight: 500;">
                     ⚠ @LatestEvent.AlertMessage
                 </MudText>
             }
@@ -56,14 +56,14 @@
     }
     else
     {
-        <MudText Typo="Typo.caption" Style="color: #455a64; border-top: 1px solid #1e2a3a; padding-top: 6px;">
+        <MudText Typo="Typo.caption" Style="color: var(--cdo-text-subtle); border-top: 1px solid var(--cdo-line); padding-top: 6px;">
             No recent events
         </MudText>
     }
 
     @if (Device.LastHeartbeat.HasValue)
     {
-        <MudText Typo="Typo.caption" Style="color: #455a64; margin-top: 4px;">
+        <MudText Typo="Typo.caption" Style="color: var(--cdo-text-subtle); margin-top: 4px;">
             Heartbeat: @FormatTimeAgo(Device.LastHeartbeat.Value)
         </MudText>
     }
@@ -76,34 +76,34 @@
 
     private string _borderColor => Device.Status switch
     {
-        DeviceStatus.Online => "#2d3e50",
-        DeviceStatus.Error => "#b71c1c",
-        _ => "#1e2a3a"
+        DeviceStatus.Online => "var(--cdo-raised)",
+        DeviceStatus.Error => "var(--cdo-error-soft)",
+        _ => "var(--cdo-raised)"
     };
 
     private string _statusDotColor => Device.Status switch
     {
-        DeviceStatus.Online => "#66bb6a",
-        DeviceStatus.Error => "#ef5350",
-        DeviceStatus.Maintenance => "#ffa726",
-        _ => "#607d8b"
+        DeviceStatus.Online => "var(--cdo-success)",
+        DeviceStatus.Error => "var(--cdo-error)",
+        DeviceStatus.Maintenance => "var(--cdo-warning)",
+        _ => "var(--cdo-text-subtle)"
     };
 
     private string _statusTextColor => Device.Status switch
     {
-        DeviceStatus.Online => "#66bb6a",
-        DeviceStatus.Error => "#ef5350",
-        _ => "#607d8b"
+        DeviceStatus.Online => "var(--cdo-success)",
+        DeviceStatus.Error => "var(--cdo-error)",
+        _ => "var(--cdo-text-subtle)"
     };
 
     private string _locationColor => Device.Location switch
     {
-        CameraLocation.Operatory => "#42a5f5",
-        CameraLocation.NarcoticsCabinet => "#ef5350",
-        CameraLocation.FrontDesk => "#66bb6a",
-        CameraLocation.WaitingRoom => "#26a69a",
-        CameraLocation.ExteriorEntrance or CameraLocation.ExteriorParking => "#ffa726",
-        _ => "#78909c"
+        CameraLocation.Operatory => "var(--cdo-info)",
+        CameraLocation.NarcoticsCabinet => "var(--cdo-error)",
+        CameraLocation.FrontDesk => "var(--cdo-success)",
+        CameraLocation.WaitingRoom => "var(--cdo-accent-2)",
+        CameraLocation.ExteriorEntrance or CameraLocation.ExteriorParking => "var(--cdo-warning)",
+        _ => "var(--cdo-text-subtle)"
     };
 
     private string LocationIcon => Device.Location switch

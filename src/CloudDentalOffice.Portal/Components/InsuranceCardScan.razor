@@ -8,9 +8,9 @@
 
 @* Reads a dental card photo, finds the clearinghouse payer it means, and hands the
    confirmed details to the coverage form. Nothing is saved until staff add the coverage. *@
-<MudPaper Elevation="0" Class="pa-3 mb-3" Style="background: transparent; border: 1px solid rgba(0,255,255,.3);">
-    <MudText Typo="Typo.subtitle2" Style="color:#00ffff;">Scan the patient's dental card</MudText>
-    <MudText Typo="Typo.caption" Style="color:#b0b0b0;">Photo of the front (and the back, if the payer or phone number is there). You'll confirm everything before it's saved.</MudText>
+<MudPaper Elevation="0" Class="pa-3 mb-3" Style="background: transparent; border: 1px solid var(--cdo-line-strong);">
+    <MudText Typo="Typo.subtitle2" Style="color:var(--cdo-accent);">Scan the patient's dental card</MudText>
+    <MudText Typo="Typo.caption" Style="color:var(--cdo-text-muted);">Photo of the front (and the back, if the payer or phone number is there). You'll confirm everything before it's saved.</MudText>
 
     <MudStack Row="true" Class="mt-2" AlignItems="AlignItems.Center" Wrap="Wrap.Wrap">
         <MudFileUpload T="IBrowserFile" Accept=".jpg,.jpeg,.png" FilesChanged="@(f => _front = f)">
@@ -41,13 +41,13 @@
     {
         <MudSimpleTable Dense="true" Class="mt-2" Style="background:transparent;">
             <tbody>
-                <tr><td style="color:#808080;width:160px;">Company on card</td><td>@(_scan.PayerName ?? "—")</td></tr>
-                <tr><td style="color:#808080;">Payer ID on card</td><td>@(_scan.PayerId ?? "—")</td></tr>
-                <tr><td style="color:#808080;">Member ID</td><td>@(_scan.MemberId ?? "—")</td></tr>
-                <tr><td style="color:#808080;">Group</td><td>@(_scan.GroupNumber ?? "—")</td></tr>
-                <tr><td style="color:#808080;">Name on card</td><td>@(_scan.SubscriberName ?? "—")</td></tr>
-                <tr><td style="color:#808080;">Phone on card</td><td>@(_scan.PhoneNumber ?? "—")</td></tr>
-                <tr><td style="color:#808080;">Patient's state</td><td>@(string.IsNullOrWhiteSpace(Patient.State) ? "—" : Patient.State)</td></tr>
+                <tr><td style="color:var(--cdo-text-subtle);width:160px;">Company on card</td><td>@(_scan.PayerName ?? "—")</td></tr>
+                <tr><td style="color:var(--cdo-text-subtle);">Payer ID on card</td><td>@(_scan.PayerId ?? "—")</td></tr>
+                <tr><td style="color:var(--cdo-text-subtle);">Member ID</td><td>@(_scan.MemberId ?? "—")</td></tr>
+                <tr><td style="color:var(--cdo-text-subtle);">Group</td><td>@(_scan.GroupNumber ?? "—")</td></tr>
+                <tr><td style="color:var(--cdo-text-subtle);">Name on card</td><td>@(_scan.SubscriberName ?? "—")</td></tr>
+                <tr><td style="color:var(--cdo-text-subtle);">Phone on card</td><td>@(_scan.PhoneNumber ?? "—")</td></tr>
+                <tr><td style="color:var(--cdo-text-subtle);">Patient's state</td><td>@(string.IsNullOrWhiteSpace(Patient.State) ? "—" : Patient.State)</td></tr>
             </tbody>
         </MudSimpleTable>
 
@@ -65,7 +65,7 @@
                 {
                     <MudRadio T="CardPayerCandidate" Value="@candidate" Color="Color.Primary" Dense="true">
                         <strong>@candidate.PayerName</strong> (@candidate.PayerId)
-                        <span style="color:#b0b0b0;"> — @candidate.Why@(candidate.InsurancePlanId is null ? " Will be added to your payers." : "")</span>
+                        <span style="color:var(--cdo-text-muted);"> — @candidate.Why@(candidate.InsurancePlanId is null ? " Will be added to your payers." : "")</span>
                     </MudRadio>
                 }
             </MudRadioGroup>

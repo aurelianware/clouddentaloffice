@@ -9,14 +9,14 @@
 <MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-4">
 
     @* ── Header Bar ── *@
-    <MudPaper Class="pa-4 mb-4" Style="background: linear-gradient(135deg, #1a2332 0%, #0d1b2a 100%); border-left: 4px solid #00ffff;">
+    <MudPaper Class="pa-4 mb-4" Style="background: var(--cdo-surface); border-left: 4px solid var(--cdo-accent);">
         <MudGrid Justify="Justify.SpaceBetween">
             <MudItem>
-                <MudText Typo="Typo.h5" Style="color: #e0e0e0;">
-                    <MudIcon Icon="@Icons.Material.Filled.Devices" Class="mr-2" Style="color: #00ffff;" />
+                <MudText Typo="Typo.h5" Style="color: var(--cdo-text);">
+                    <MudIcon Icon="@Icons.Material.Filled.Devices" Class="mr-2" Style="color: var(--cdo-accent);" />
                     Vision Devices
                 </MudText>
-                <MudText Typo="Typo.body2" Style="color: #90a4ae;">
+                <MudText Typo="Typo.body2" Style="color: var(--cdo-text-muted);">
                     Manage privaseeAI cameras and edge devices
                 </MudText>
             </MudItem>
@@ -38,26 +38,26 @@
     }
 
     @* ── Devices Table ── *@
-    <MudPaper Elevation="2" Style="background-color: #1e2a3a; border: 1px solid #2d3e50;">
+    <MudPaper Elevation="2" Style="background-color: var(--cdo-raised); border: 1px solid var(--cdo-line);">
         <MudTable Items="_devices" Hover="true" Dense="true" Elevation="0"
                   Style="background-color: transparent;">
             <HeaderContent>
-                <MudTh Style="color: #90a4ae;">
+                <MudTh Style="color: var(--cdo-text-muted);">
                     <MudTableSortLabel SortBy="new Func<VisionDeviceDto, object>(x => x.Status)">
                         Status
                     </MudTableSortLabel>
                 </MudTh>
-                <MudTh Style="color: #90a4ae;">
+                <MudTh Style="color: var(--cdo-text-muted);">
                     <MudTableSortLabel SortBy="new Func<VisionDeviceDto, object>(x => x.Name)">
                         Name
                     </MudTableSortLabel>
                 </MudTh>
-                <MudTh Style="color: #90a4ae;">Type</MudTh>
-                <MudTh Style="color: #90a4ae;">Location</MudTh>
-                <MudTh Style="color: #90a4ae;">IP Address</MudTh>
-                <MudTh Style="color: #90a4ae;">Model</MudTh>
-                <MudTh Style="color: #90a4ae;">Last Heartbeat</MudTh>
-                <MudTh Style="color: #90a4ae;">Actions</MudTh>
+                <MudTh Style="color: var(--cdo-text-muted);">Type</MudTh>
+                <MudTh Style="color: var(--cdo-text-muted);">Location</MudTh>
+                <MudTh Style="color: var(--cdo-text-muted);">IP Address</MudTh>
+                <MudTh Style="color: var(--cdo-text-muted);">Model</MudTh>
+                <MudTh Style="color: var(--cdo-text-muted);">Last Heartbeat</MudTh>
+                <MudTh Style="color: var(--cdo-text-muted);">Actions</MudTh>
             </HeaderContent>
             <RowTemplate>
                 <MudTd>
@@ -65,50 +65,50 @@
                         @context.Status
                     </MudChip>
                 </MudTd>
-                <MudTd Style="color: #e0e0e0;">
+                <MudTd Style="color: var(--cdo-text);">
                     <div class="d-flex align-center">
                         <MudIcon Icon="@GetDeviceIcon(context.Type)" Size="Size.Small" Class="mr-2"
                                  Style="@($"color: {GetStatusIconColor(context.Status)}")" />
                         @context.Name
                     </div>
                 </MudTd>
-                <MudTd Style="color: #e0e0e0;">@context.Type</MudTd>
-                <MudTd Style="color: #e0e0e0;">
+                <MudTd Style="color: var(--cdo-text);">@context.Type</MudTd>
+                <MudTd Style="color: var(--cdo-text);">
                     <div>
                         <div>@context.Location</div>
                         @if (!string.IsNullOrEmpty(context.LocationName))
                         {
-                            <MudText Typo="Typo.caption" Style="color: #90a4ae;">@context.LocationName</MudText>
+                            <MudText Typo="Typo.caption" Style="color: var(--cdo-text-muted);">@context.LocationName</MudText>
                         }
                     </div>
                 </MudTd>
-                <MudTd Style="color: #e0e0e0;">
+                <MudTd Style="color: var(--cdo-text);">
                     <MudText Typo="Typo.body2">@context.IpAddress</MudText>
                     @if (!string.IsNullOrEmpty(context.MacAddress))
                     {
-                        <MudText Typo="Typo.caption" Style="color: #90a4ae;">@context.MacAddress</MudText>
+                        <MudText Typo="Typo.caption" Style="color: var(--cdo-text-muted);">@context.MacAddress</MudText>
                     }
                 </MudTd>
-                <MudTd Style="color: #e0e0e0;">
+                <MudTd Style="color: var(--cdo-text);">
                     @if (!string.IsNullOrEmpty(context.ActiveModelName))
                     {
                         <div>
                             <div>@context.ActiveModelName</div>
-                            <MudText Typo="Typo.caption" Style="color: #90a4ae;">v@context.ActiveModelVersion</MudText>
+                            <MudText Typo="Typo.caption" Style="color: var(--cdo-text-muted);">v@context.ActiveModelVersion</MudText>
                         </div>
                     }
                     else
                     {
-                        <span style="color: #90a4ae;">—</span>
+                        <span style="color: var(--cdo-text-muted);">—</span>
                     }
                 </MudTd>
-                <MudTd Style="color: #e0e0e0;">
+                <MudTd Style="color: var(--cdo-text);">
                     @if (context.LastHeartbeat.HasValue)
                     {
                         var timeSince = DateTime.UtcNow - context.LastHeartbeat.Value;
                         if (timeSince.TotalMinutes < 5)
                         {
-                            <MudText Typo="Typo.body2" Style="color: #00ff88;">Just now</MudText>
+                            <MudText Typo="Typo.body2" Style="color: var(--cdo-success);">Just now</MudText>
                         }
                         else if (timeSince.TotalHours < 1)
                         {
@@ -120,12 +120,12 @@
                         }
                         else
                         {
-                            <MudText Typo="Typo.body2" Style="color: #ef5350;">@((int)timeSince.TotalDays)d ago</MudText>
+                            <MudText Typo="Typo.body2" Style="color: var(--cdo-error);">@((int)timeSince.TotalDays)d ago</MudText>
                         }
                     }
                     else
                     {
-                        <span style="color: #90a4ae;">Never</span>
+                        <span style="color: var(--cdo-text-muted);">Never</span>
                     }
                 </MudTd>
                 <MudTd>
@@ -224,12 +224,12 @@
 
     private string GetStatusIconColor(DeviceStatus status) => status switch
     {
-        DeviceStatus.Online => "#00ff88",
-        DeviceStatus.Offline => "#78909c",
-        DeviceStatus.Error => "#ef5350",
-        DeviceStatus.Maintenance => "#ffa726",
-        DeviceStatus.Provisioning => "#42a5f5",
-        _ => "#90a4ae"
+        DeviceStatus.Online => "var(--cdo-success)",
+        DeviceStatus.Offline => "var(--cdo-text-subtle)",
+        DeviceStatus.Error => "var(--cdo-error)",
+        DeviceStatus.Maintenance => "var(--cdo-warning)",
+        DeviceStatus.Provisioning => "var(--cdo-info)",
+        _ => "var(--cdo-text-muted)"
     };
 
     private string GetDeviceIcon(DeviceType type) => type switch

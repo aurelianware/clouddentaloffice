@@ -15,18 +15,18 @@
 
 <MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-4">
     <!-- Hero Header -->
-    <MudPaper Class="pa-4 mb-4" Style="background: #0a0a0a; border: 1px solid #00ffff;">
+    <MudPaper Class="pa-4 mb-4" Style="background: var(--cdo-surface); border: 1px solid var(--cdo-line);">
         <MudGrid>
             <MudItem xs="12" md="8">
-                <MudText Typo="Typo.h3" Style="color: #00ffff; font-weight: bold;">
+                <MudText Typo="Typo.h3" Style="color: var(--cdo-ink); font-weight: bold;">
                     Cloud Dental Office
                 </MudText>
-                <MudText Typo="Typo.subtitle1" Style="color: #b0b0b0;">
+                <MudText Typo="Typo.subtitle1" Style="color: var(--cdo-text-muted);">
                     Just emerged from the void - Modern dental practice management with integrated EDI
                 </MudText>
             </MudItem>
             <MudItem xs="12" md="4" Class="d-flex align-end justify-end">
-                <MudText Typo="Typo.caption" Style="color: rgba(0, 255, 255, 0.6);">
+                <MudText Typo="Typo.caption" Style="color: var(--cdo-accent);">
                     v1.0 Production • February 2026
                 </MudText>
             </MudItem>
@@ -41,53 +41,53 @@
     
     <MudGrid>
         <MudItem xs="12" sm="6" md="3">
-            <MudPaper Class="pa-4 cursor-pointer" Style="background: #0a0a0a; border: 1px solid #00ffff;" @onclick="@(() => NavigationManager.NavigateTo("/patients"))">
+            <MudPaper Class="pa-4 cursor-pointer" Style="background: var(--cdo-surface); border: 1px solid var(--cdo-line);" @onclick="@(() => NavigationManager.NavigateTo("/patients"))">
                 <MudStack Row="true" Justify="Justify.SpaceBetween">
                     <div>
-                        <MudText Typo="Typo.subtitle2" Style="color: #b0b0b0;">Total Patients</MudText>
-                        <MudText Typo="Typo.h4" Style="color: #00ffff; font-weight: bold;">@_patientCount</MudText>
-                        <MudText Typo="Typo.caption" Style="color: #808080;">Active records</MudText>
+                        <MudText Typo="Typo.subtitle2" Style="color: var(--cdo-text-muted);">Total Patients</MudText>
+                        <MudText Typo="Typo.h4" Style="color: var(--cdo-ink); font-weight: bold;">@_patientCount</MudText>
+                        <MudText Typo="Typo.caption" Style="color: var(--cdo-text-subtle);">Active records</MudText>
                     </div>
-                    <MudIcon Icon="@Icons.Material.Filled.People" Size="Size.Large" Style="color: #00ffff;" />
+                    <MudIcon Icon="@Icons.Material.Filled.People" Size="Size.Large" Style="color: var(--cdo-accent);" />
                 </MudStack>
             </MudPaper>
         </MudItem>
         
         <MudItem xs="12" sm="6" md="3">
-            <MudPaper Class="pa-4 cursor-pointer" Style="background: #0a0a0a; border: 1px solid #00ff88;" @onclick="@(() => NavigationManager.NavigateTo("/appointments"))">
+            <MudPaper Class="pa-4 cursor-pointer" Style="background: var(--cdo-surface); border: 1px solid var(--cdo-success-line);" @onclick="@(() => NavigationManager.NavigateTo("/appointments"))">
                 <MudStack Row="true" Justify="Justify.SpaceBetween">
                     <div>
-                        <MudText Typo="Typo.subtitle2" Style="color: #b0b0b0;">Today's Appointments</MudText>
-                        <MudText Typo="Typo.h4" Style="color: #00ff88; font-weight: bold;">@_todayAppointmentCount</MudText>
-                        <MudText Typo="Typo.caption" Style="color: #808080;">@_confirmedCount confirmed</MudText>
+                        <MudText Typo="Typo.subtitle2" Style="color: var(--cdo-text-muted);">Today's Appointments</MudText>
+                        <MudText Typo="Typo.h4" Style="color: var(--cdo-success); font-weight: bold;">@_todayAppointmentCount</MudText>
+                        <MudText Typo="Typo.caption" Style="color: var(--cdo-text-subtle);">@_confirmedCount confirmed</MudText>
                     </div>
-                    <MudIcon Icon="@Icons.Material.Filled.Event" Size="Size.Large" Style="color: #00ff88;" />
+                    <MudIcon Icon="@Icons.Material.Filled.Event" Size="Size.Large" Style="color: var(--cdo-success);" />
                 </MudStack>
             </MudPaper>
         </MudItem>
         
         <MudItem xs="12" sm="6" md="3">
-            <MudPaper Class="pa-4 cursor-pointer" Style="background: #0a0a0a; border: 1px solid #ffaa00;" @onclick="@(() => NavigationManager.NavigateTo("/treatmentplans"))">
+            <MudPaper Class="pa-4 cursor-pointer" Style="background: var(--cdo-surface); border: 1px solid var(--cdo-warning-line);" @onclick="@(() => NavigationManager.NavigateTo("/treatmentplans"))">
                 <MudStack Row="true" Justify="Justify.SpaceBetween">
                     <div>
-                        <MudText Typo="Typo.subtitle2" Style="color: #b0b0b0;">Pending Plans</MudText>
-                        <MudText Typo="Typo.h4" Style="color: #ffaa00; font-weight: bold;">@_pendingPlanCount</MudText>
-                        <MudText Typo="Typo.caption" Style="color: #808080;">@_totalPlanValue.ToString("C0") value</MudText>
+                        <MudText Typo="Typo.subtitle2" Style="color: var(--cdo-text-muted);">Pending Plans</MudText>
+                        <MudText Typo="Typo.h4" Style="color: var(--cdo-warning); font-weight: bold;">@_pendingPlanCount</MudText>
+                        <MudText Typo="Typo.caption" Style="color: var(--cdo-text-subtle);">@_totalPlanValue.ToString("C0") value</MudText>
                     </div>
-                    <MudIcon Icon="@Icons.Material.Filled.Assignment" Size="Size.Large" Style="color: #ffaa00;" />
+                    <MudIcon Icon="@Icons.Material.Filled.Assignment" Size="Size.Large" Style="color: var(--cdo-warning);" />
                 </MudStack>
             </MudPaper>
         </MudItem>
         
         <MudItem xs="12" sm="6" md="3">
-            <MudPaper Class="pa-4 cursor-pointer" Style="background: #0a0a0a; border: 1px solid #00ffff;" @onclick="@(() => NavigationManager.NavigateTo("/claims"))">
+            <MudPaper Class="pa-4 cursor-pointer" Style="background: var(--cdo-surface); border: 1px solid var(--cdo-line);" @onclick="@(() => NavigationManager.NavigateTo("/claims"))">
                 <MudStack Row="true" Justify="Justify.SpaceBetween">
                     <div>
-                        <MudText Typo="Typo.subtitle2" Style="color: #b0b0b0;">Pending Claims</MudText>
-                        <MudText Typo="Typo.h4" Style="color: #00ffff; font-weight: bold;">@_pendingClaimCount</MudText>
-                        <MudText Typo="Typo.caption" Style="color: #808080;">@_pendingClaimValue.ToString("C0") amount</MudText>
+                        <MudText Typo="Typo.subtitle2" Style="color: var(--cdo-text-muted);">Pending Claims</MudText>
+                        <MudText Typo="Typo.h4" Style="color: var(--cdo-ink); font-weight: bold;">@_pendingClaimCount</MudText>
+                        <MudText Typo="Typo.caption" Style="color: var(--cdo-text-subtle);">@_pendingClaimValue.ToString("C0") amount</MudText>
                     </div>
-                    <MudIcon Icon="@Icons.Material.Filled.ReceiptLong" Size="Size.Large" Style="color: #00ffff;" />
+                    <MudIcon Icon="@Icons.Material.Filled.ReceiptLong" Size="Size.Large" Style="color: var(--cdo-accent);" />
                 </MudStack>
             </MudPaper>
         </MudItem>
@@ -96,45 +96,45 @@
     <!-- Revenue & Claims Breakdown -->
     <MudGrid Class="mt-4">
         <MudItem xs="12" md="6">
-            <MudPaper Class="pa-4" Style="background: #0a0a0a; border: 1px solid #00ff88;">
-                <MudText Typo="Typo.h6" Style="color: #00ff88; font-weight: bold;" Class="mb-3">
+            <MudPaper Class="pa-4" Style="background: var(--cdo-surface); border: 1px solid var(--cdo-success-line);">
+                <MudText Typo="Typo.h6" Style="color: var(--cdo-success); font-weight: bold;" Class="mb-3">
                     <MudIcon Icon="@Icons.Material.Filled.TrendingUp" Class="mr-2" />
                     Revenue Summary
                 </MudText>
-                <MudDivider Style="background: rgba(0, 255, 136, 0.3);" Class="mb-3" />
+                <MudDivider Style="background: var(--cdo-success-soft);" Class="mb-3" />
                 
                 <MudGrid>
                     <MudItem xs="6">
-                        <MudText Typo="Typo.caption" Style="color: #b0b0b0;">This Month</MudText>
-                        <MudText Typo="Typo.h5" Style="color: #00ff88; font-weight: bold;">@_monthlyRevenue.ToString("C")</MudText>
+                        <MudText Typo="Typo.caption" Style="color: var(--cdo-text-muted);">This Month</MudText>
+                        <MudText Typo="Typo.h5" Style="color: var(--cdo-success); font-weight: bold;">@_monthlyRevenue.ToString("C")</MudText>
                     </MudItem>
                     <MudItem xs="6">
-                        <MudText Typo="Typo.caption" Style="color: #b0b0b0;">Outstanding</MudText>
-                        <MudText Typo="Typo.h5" Style="color: #ffaa00; font-weight: bold;">@_outstandingAmount.ToString("C")</MudText>
+                        <MudText Typo="Typo.caption" Style="color: var(--cdo-text-muted);">Outstanding</MudText>
+                        <MudText Typo="Typo.h5" Style="color: var(--cdo-warning); font-weight: bold;">@_outstandingAmount.ToString("C")</MudText>
                     </MudItem>
                 </MudGrid>
             </MudPaper>
         </MudItem>
 
         <MudItem xs="12" md="6">
-            <MudPaper Class="pa-4" Style="background: #0a0a0a; border: 1px solid #00ffff;">
-                <MudText Typo="Typo.h6" Style="color: #00ffff; font-weight: bold;" Class="mb-3">
+            <MudPaper Class="pa-4" Style="background: var(--cdo-surface); border: 1px solid var(--cdo-line);">
+                <MudText Typo="Typo.h6" Style="color: var(--cdo-ink); font-weight: bold;" Class="mb-3">
                     <MudIcon Icon="@Icons.Material.Filled.Assessment" Class="mr-2" />
                     Claims Status
                 </MudText>
-                <MudDivider Style="background: rgba(0, 255, 255, 0.3);" Class="mb-3" />
+                <MudDivider Style="background: var(--cdo-accent-soft);" Class="mb-3" />
                 
                 <MudStack Spacing="2">
                     <MudStack Row="true" Justify="Justify.SpaceBetween">
-                        <MudText Typo="Typo.body2" Style="color: #b0b0b0;">Draft</MudText>
-                        <MudChip T="string" Size="Size.Small" Style="background: rgba(128, 128, 128, 0.2);">@_draftClaimCount</MudChip>
+                        <MudText Typo="Typo.body2" Style="color: var(--cdo-text-muted);">Draft</MudText>
+                        <MudChip T="string" Size="Size.Small" Style="background: var(--cdo-raised);">@_draftClaimCount</MudChip>
                     </MudStack>
                     <MudStack Row="true" Justify="Justify.SpaceBetween">
-                        <MudText Typo="Typo.body2" Style="color: #b0b0b0;">Submitted</MudText>
+                        <MudText Typo="Typo.body2" Style="color: var(--cdo-text-muted);">Submitted</MudText>
                         <MudChip T="string" Size="Size.Small" Color="Color.Info">@_submittedClaimCount</MudChip>
                     </MudStack>
                     <MudStack Row="true" Justify="Justify.SpaceBetween">
-                        <MudText Typo="Typo.body2" Style="color: #b0b0b0;">Paid</MudText>
+                        <MudText Typo="Typo.body2" Style="color: var(--cdo-text-muted);">Paid</MudText>
                         <MudChip T="string" Size="Size.Small" Color="Color.Success">@_paidClaimCount</MudChip>
                     </MudStack>
                 </MudStack>
@@ -143,8 +143,8 @@
     </MudGrid>
 
     <!-- Quick Actions -->
-    <MudPaper Class="pa-4 mt-4" Style="background: #0a0a0a; border: 1px solid #00ffff;">
-        <MudText Typo="Typo.h6" Style="color: #00ffff; font-weight: bold;" Class="mb-3">
+    <MudPaper Class="pa-4 mt-4" Style="background: var(--cdo-surface); border: 1px solid var(--cdo-line);">
+        <MudText Typo="Typo.h6" Style="color: var(--cdo-ink); font-weight: bold;" Class="mb-3">
             <MudIcon Icon="@Icons.Material.Filled.FlashOn" Class="mr-2" />
             Quick Actions
         </MudText>
@@ -191,9 +191,9 @@
     <!-- Recent Appointments & Treatment Plans -->
     <MudGrid Class="mt-4">
         <MudItem xs="12" md="6">
-            <MudPaper Class="pa-4" Style="background: #0a0a0a; border: 1px solid #00ff88;">
+            <MudPaper Class="pa-4" Style="background: var(--cdo-surface); border: 1px solid var(--cdo-success-line);">
                 <MudStack Row="true" Justify="Justify.SpaceBetween" Class="mb-3">
-                    <MudText Typo="Typo.h6" Style="color: #00ff88; font-weight: bold;">
+                    <MudText Typo="Typo.h6" Style="color: var(--cdo-success); font-weight: bold;">
                         <MudIcon Icon="@Icons.Material.Filled.Schedule" Class="mr-2" />
                         Upcoming Appointments
                     </MudText>
@@ -204,18 +204,18 @@
                         View All
                     </MudButton>
                 </MudStack>
-                <MudDivider Style="background: rgba(0, 255, 136, 0.3);" Class="mb-3" />
+                <MudDivider Style="background: var(--cdo-success-soft);" Class="mb-3" />
                 
                 @if (_recentAppointments.Any())
                 {
                     <MudStack Spacing="2">
                         @foreach (var apt in _recentAppointments.Take(5))
                         {
-                            <MudPaper Class="pa-2" Style="background: rgba(0, 255, 136, 0.05);">
+                            <MudPaper Class="pa-2" Style="background: var(--cdo-success-soft);">
                                 <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center">
                                     <div>
-                                        <MudText Typo="Typo.body2" Style="color: #00ffff;">@GetPatientName(apt.PatientId)</MudText>
-                                        <MudText Typo="Typo.caption" Style="color: #b0b0b0;">
+                                        <MudText Typo="Typo.body2" Style="color: var(--cdo-accent);">@GetPatientName(apt.PatientId)</MudText>
+                                        <MudText Typo="Typo.caption" Style="color: var(--cdo-text-muted);">
                                             @apt.AppointmentDateTime.ToString("MMM dd, h:mm tt") - @apt.AppointmentType
                                         </MudText>
                                     </div>
@@ -229,7 +229,7 @@
                 }
                 else
                 {
-                    <MudText Typo="Typo.body2" Style="color: #808080;" Align="Align.Center" Class="pa-4">
+                    <MudText Typo="Typo.body2" Style="color: var(--cdo-text-subtle);" Align="Align.Center" Class="pa-4">
                         No upcoming appointments
                     </MudText>
                 }
@@ -237,9 +237,9 @@
         </MudItem>
 
         <MudItem xs="12" md="6">
-            <MudPaper Class="pa-4" Style="background: #0a0a0a; border: 1px solid #ffaa00;">
+            <MudPaper Class="pa-4" Style="background: var(--cdo-surface); border: 1px solid var(--cdo-warning-line);">
                 <MudStack Row="true" Justify="Justify.SpaceBetween" Class="mb-3">
-                    <MudText Typo="Typo.h6" Style="color: #ffaa00; font-weight: bold;">
+                    <MudText Typo="Typo.h6" Style="color: var(--cdo-warning); font-weight: bold;">
                         <MudIcon Icon="@Icons.Material.Filled.MedicalServices" Class="mr-2" />
                         Recent Treatment Plans
                     </MudText>
@@ -250,18 +250,18 @@
                         View All
                     </MudButton>
                 </MudStack>
-                <MudDivider Style="background: rgba(255, 170, 0, 0.3);" Class="mb-3" />
+                <MudDivider Style="background: var(--cdo-warning-soft);" Class="mb-3" />
                 
                 @if (_recentTreatmentPlans.Any())
                 {
                     <MudStack Spacing="2">
                         @foreach (var plan in _recentTreatmentPlans.Take(5))
                         {
-                            <MudPaper Class="pa-2" Style="background: rgba(255, 170, 0, 0.05);">
+                            <MudPaper Class="pa-2" Style="background: var(--cdo-warning-soft);">
                                 <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center">
                                     <div>
-                                        <MudText Typo="Typo.body2" Style="color: #00ffff;">@GetPatientName(plan.PatientId)</MudText>
-                                        <MudText Typo="Typo.caption" Style="color: #b0b0b0;">
+                                        <MudText Typo="Typo.body2" Style="color: var(--cdo-accent);">@GetPatientName(plan.PatientId)</MudText>
+                                        <MudText Typo="Typo.caption" Style="color: var(--cdo-text-muted);">
                                             @(plan.Title ?? "Treatment Plan") - @plan.TotalEstimatedCost.ToString("C")
                                         </MudText>
                                     </div>
@@ -275,7 +275,7 @@
                 }
                 else
                 {
-                    <MudText Typo="Typo.body2" Style="color: #808080;" Align="Align.Center" Class="pa-4">
+                    <MudText Typo="Typo.body2" Style="color: var(--cdo-text-subtle);" Align="Align.Center" Class="pa-4">
                         No recent treatment plans
                     </MudText>
                 }
@@ -283,38 +283,38 @@
         </MudItem>
     </MudGrid>
 
-    <MudPaper Class="pa-4 mt-4" Style="background: #0a0a0a; border: 1px solid #00ffff;">
-        <MudText Typo="Typo.h6" GutterBottom="true" Style="color: #00ffff; font-weight: bold;">
+    <MudPaper Class="pa-4 mt-4" Style="background: var(--cdo-surface); border: 1px solid var(--cdo-line);">
+        <MudText Typo="Typo.h6" GutterBottom="true" Style="color: var(--cdo-ink); font-weight: bold;">
             <MudIcon Icon="@Icons.Material.Filled.Timeline" Class="mr-2" />
             Claim lifecycle
         </MudText>
-        <MudDivider Style="background: rgba(0, 255, 255, 0.3);" Class="mb-3" />
-        <MudText Typo="Typo.body2" Style="color: #b0b0b0;" Class="mb-3">
+        <MudDivider Style="background: var(--cdo-accent-soft);" Class="mb-3" />
+        <MudText Typo="Typo.body2" Style="color: var(--cdo-text-muted);" Class="mb-3">
             Status, patient responsibility, and posted payments come from Cloud Health Office claim intelligence.
         </MudText>
         <MudGrid Class="mt-2">
             <MudItem xs="12" sm="6" md="3">
-                <div class="pa-2 text-center" style="background: rgba(0, 255, 255, 0.05); border: 1px solid rgba(0, 255, 255, 0.2); border-radius: 4px;">
-                    <MudText Typo="Typo.h6" Style="color: #00ffff; font-weight: bold;">@_draftClaimCount</MudText>
-                    <MudText Typo="Typo.caption" Style="color: #b0b0b0;">Draft</MudText>
+                <div class="pa-2 text-center" style="background: var(--cdo-accent-soft); border: 1px solid var(--cdo-line); border-radius: 4px;">
+                    <MudText Typo="Typo.h6" Style="color: var(--cdo-ink); font-weight: bold;">@_draftClaimCount</MudText>
+                    <MudText Typo="Typo.caption" Style="color: var(--cdo-text-muted);">Draft</MudText>
                 </div>
             </MudItem>
             <MudItem xs="12" sm="6" md="3">
-                <div class="pa-2 text-center" style="background: rgba(0, 255, 136, 0.05); border: 1px solid rgba(0, 255, 136, 0.2); border-radius: 4px;">
-                    <MudText Typo="Typo.h6" Style="color: #00ff88; font-weight: bold;">@_submittedClaimCount</MudText>
-                    <MudText Typo="Typo.caption" Style="color: #b0b0b0;">In process</MudText>
+                <div class="pa-2 text-center" style="background: var(--cdo-success-soft); border: 1px solid var(--cdo-success-line); border-radius: 4px;">
+                    <MudText Typo="Typo.h6" Style="color: var(--cdo-success); font-weight: bold;">@_submittedClaimCount</MudText>
+                    <MudText Typo="Typo.caption" Style="color: var(--cdo-text-muted);">In process</MudText>
                 </div>
             </MudItem>
             <MudItem xs="12" sm="6" md="3">
-                <div class="pa-2 text-center" style="background: rgba(0, 255, 255, 0.05); border: 1px solid rgba(0, 255, 255, 0.2); border-radius: 4px;">
-                    <MudText Typo="Typo.h6" Style="color: #00ffff; font-weight: bold;">@_paidClaimCount</MudText>
-                    <MudText Typo="Typo.caption" Style="color: #b0b0b0;">Paid</MudText>
+                <div class="pa-2 text-center" style="background: var(--cdo-accent-soft); border: 1px solid var(--cdo-line); border-radius: 4px;">
+                    <MudText Typo="Typo.h6" Style="color: var(--cdo-ink); font-weight: bold;">@_paidClaimCount</MudText>
+                    <MudText Typo="Typo.caption" Style="color: var(--cdo-text-muted);">Paid</MudText>
                 </div>
             </MudItem>
             <MudItem xs="12" sm="6" md="3">
-                <div class="pa-2 text-center" style="background: rgba(255, 165, 0, 0.08); border: 1px solid rgba(255, 165, 0, 0.3); border-radius: 4px;">
-                    <MudText Typo="Typo.h6" Style="color: #ffa500; font-weight: bold;">@_outstandingAmount.ToString("C")</MudText>
-                    <MudText Typo="Typo.caption" Style="color: #b0b0b0;">Patient responsibility outstanding</MudText>
+                <div class="pa-2 text-center" style="background: var(--cdo-warning-soft); border: 1px solid var(--cdo-warning-line); border-radius: 4px;">
+                    <MudText Typo="Typo.h6" Style="color: var(--cdo-warning); font-weight: bold;">@_outstandingAmount.ToString("C")</MudText>
+                    <MudText Typo="Typo.caption" Style="color: var(--cdo-text-muted);">Patient responsibility outstanding</MudText>
                 </div>
             </MudItem>
         </MudGrid>

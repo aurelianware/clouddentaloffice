@@ -5,18 +5,18 @@
 <MudDialog @bind-Visible="IsOpen"
            Options="@(new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true })">
     <TitleContent>
-        <MudText Typo="Typo.h6" Style="color: #e0e0e0;">
-            <MudIcon Icon="@Icons.Material.Filled.AddCircle" Class="mr-2" Style="color: #42a5f5;" />
+        <MudText Typo="Typo.h6" Style="color: var(--cdo-text);">
+            <MudIcon Icon="@Icons.Material.Filled.AddCircle" Class="mr-2" Style="color: var(--cdo-info);" />
             Register privaseeAI Device
         </MudText>
     </TitleContent>
     <DialogContent>
         <MudTextField @bind-Value="_name" Label="Device Name" Variant="Variant.Outlined"
                       Placeholder="e.g., Operatory 1 Camera" Class="mb-3"
-                      Style="color: #e0e0e0;" Required="true" />
+                      Style="color: var(--cdo-text);" Required="true" />
 
         <MudSelect @bind-Value="_type" Label="Device Type" Variant="Variant.Outlined"
-                   Style="color: #e0e0e0;" Class="mb-3">
+                   Style="color: var(--cdo-text);" Class="mb-3">
             <MudSelectItem Value="DeviceType.IpCamera">IP Camera</MudSelectItem>
             <MudSelectItem Value="DeviceType.Tablet">Tablet (PWA)</MudSelectItem>
             <MudSelectItem Value="DeviceType.MobileIos">iPhone</MudSelectItem>
@@ -27,7 +27,7 @@
         </MudSelect>
 
         <MudSelect @bind-Value="_location" Label="Camera Location" Variant="Variant.Outlined"
-                   Style="color: #e0e0e0;" Class="mb-3">
+                   Style="color: var(--cdo-text);" Class="mb-3">
             <MudSelectItem Value="CameraLocation.Operatory">Operatory</MudSelectItem>
             <MudSelectItem Value="CameraLocation.FrontDesk">Front Desk</MudSelectItem>
             <MudSelectItem Value="CameraLocation.WaitingRoom">Waiting Room</MudSelectItem>
@@ -41,18 +41,18 @@
         </MudSelect>
 
         <MudTextField @bind-Value="_locationName" Label="Location Label (optional)" Variant="Variant.Outlined"
-                      Placeholder="e.g., Op 1, Cabinet A" Class="mb-3" Style="color: #e0e0e0;" />
+                      Placeholder="e.g., Op 1, Cabinet A" Class="mb-3" Style="color: var(--cdo-text);" />
 
         <MudTextField @bind-Value="_ipAddress" Label="IP Address (optional)" Variant="Variant.Outlined"
-                      Placeholder="192.168.1.100" Class="mb-3" Style="color: #e0e0e0;" />
+                      Placeholder="192.168.1.100" Class="mb-3" Style="color: var(--cdo-text);" />
 
         <MudCheckBox @bind-Value="_supportsOcr" Label="OCR Capable (insurance card scanning)"
-                     Color="Color.Info" Style="color: #b0bec5;" />
+                     Color="Color.Info" Style="color: var(--cdo-text-muted);" />
 
         @if (_location == CameraLocation.NarcoticsCabinet)
         {
             <MudAlert Severity="Severity.Warning" Dense="true" Class="mt-3"
-                      Style="background-color: #2a1f0d; color: #ffcc80;">
+                      Style="background-color: var(--cdo-warning-soft); color: var(--cdo-warning);">
                 <MudIcon Icon="@Icons.Material.Filled.Security" Size="Size.Small" Class="mr-1" />
                 Cabinet cameras require badge reader integration for DEA compliance.
                 Vision-verified access logs will be cross-referenced with PrescriptionService.
@@ -60,10 +60,9 @@
         }
     </DialogContent>
     <DialogActions>
-        <MudButton OnClick="@(() => IsOpen = false)" Style="color: #78909c;">Cancel</MudButton>
-        <MudButton Variant="Variant.Filled" OnClick="Register"
-                   Disabled="@(string.IsNullOrEmpty(_name) || _registering)"
-                   Style="background-color: #42a5f5;">
+        <MudButton OnClick="@(() => IsOpen = false)" Style="color: var(--cdo-text-subtle);">Cancel</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="Register"
+                   Disabled="@(string.IsNullOrEmpty(_name) || _registering)">
             @if (_registering)
             {
                 <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-1" />

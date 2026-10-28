@@ -9,14 +9,14 @@
 <MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-4">
 
     @* ── Header Bar ── *@
-    <MudPaper Class="pa-4 mb-4" Style="background: linear-gradient(135deg, #1a2332 0%, #0d1b2a 100%); border-left: 4px solid #00ffff;">
+    <MudPaper Class="pa-4 mb-4" Style="background: var(--cdo-surface); border-left: 4px solid var(--cdo-accent);">
         <MudGrid>
             <MudItem xs="12" sm="6">
-                <MudText Typo="Typo.h5" Style="color: #e0e0e0;">
-                    <MudIcon Icon="@Icons.Material.Filled.Videocam" Class="mr-2" Style="color: #00ffff;" />
+                <MudText Typo="Typo.h5" Style="color: var(--cdo-text);">
+                    <MudIcon Icon="@Icons.Material.Filled.Videocam" Class="mr-2" Style="color: var(--cdo-accent);" />
                     Vision Events & Alerts
                 </MudText>
-                <MudText Typo="Typo.body2" Style="color: #90a4ae;">
+                <MudText Typo="Typo.body2" Style="color: var(--cdo-text-muted);">
                     Real-time detection events from privaseeAI devices
                 </MudText>
             </MudItem>
@@ -32,7 +32,7 @@
     </MudPaper>
 
     @* ── Filters ── *@
-    <MudPaper Class="pa-4 mb-4" Elevation="1" Style="background-color: #1e2a3a; border: 1px solid #2d3e50;">
+    <MudPaper Class="pa-4 mb-4" Elevation="1" Style="background-color: var(--cdo-raised); border: 1px solid var(--cdo-line);">
         <MudGrid>
             <MudItem xs="12" sm="3">
                 <MudDatePicker Label="From Date" @bind-Date="_fromDate" />
@@ -71,21 +71,21 @@
     }
 
     @* ── Events List ── *@
-    <MudPaper Elevation="2" Style="background-color: #1e2a3a; border: 1px solid #2d3e50;">
+    <MudPaper Elevation="2" Style="background-color: var(--cdo-raised); border: 1px solid var(--cdo-line);">
         @if (_events.Any())
         {
             <MudList T="string" Dense="false">
                 @foreach (var evt in _events)
                 {
                     <MudListItem T="string" OnClick="@(() => ViewEventDetails(evt.Id))" 
-                                 Style="border-bottom: 1px solid #2d3e50; padding: 16px;">
+                                 Style="border-bottom: 1px solid var(--cdo-line); padding: 16px;">
                         <MudGrid>
                             <MudItem xs="12" sm="2">
                                 <div class="d-flex flex-column">
-                                    <MudText Typo="Typo.body2" Style="color: #e0e0e0;">
+                                    <MudText Typo="Typo.body2" Style="color: var(--cdo-text);">
                                         @evt.Timestamp.ToString("MM/dd/yyyy")
                                     </MudText>
-                                    <MudText Typo="Typo.caption" Style="color: #90a4ae;">
+                                    <MudText Typo="Typo.caption" Style="color: var(--cdo-text-muted);">
                                         @evt.Timestamp.ToString("HH:mm:ss")
                                     </MudText>
                                 </div>
@@ -93,10 +93,10 @@
 
                             <MudItem xs="12" sm="2">
                                 <div class="d-flex flex-column">
-                                    <MudText Typo="Typo.body2" Style="color: #e0e0e0;">
+                                    <MudText Typo="Typo.body2" Style="color: var(--cdo-text);">
                                         @evt.DeviceName
                                     </MudText>
-                                    <MudText Typo="Typo.caption" Style="color: #90a4ae;">
+                                    <MudText Typo="Typo.caption" Style="color: var(--cdo-text-muted);">
                                         @evt.Location
                                     </MudText>
                                 </div>
@@ -112,10 +112,10 @@
                                 @if (evt.PatientName != null)
                                 {
                                     <div class="d-flex flex-column">
-                                        <MudText Typo="Typo.body2" Style="color: #e0e0e0;">
+                                        <MudText Typo="Typo.body2" Style="color: var(--cdo-text);">
                                             @evt.PatientName
                                         </MudText>
-                                        <MudText Typo="Typo.caption" Style="color: #90a4ae;">
+                                        <MudText Typo="Typo.caption" Style="color: var(--cdo-text-muted);">
                                             Patient
                                         </MudText>
                                     </div>

@@ -1,24 +1,24 @@
 @using CloudDentalOffice.Contracts.Vision
 
 <MudPaper Class="@($"pa-2 {Class}")" Elevation="0"
-          Style="@($"background-color: #152238; border-left: 3px solid {_borderColor}; border-radius: 4px;")">
+          Style="@($"background-color: var(--cdo-raised); border-left: 3px solid {_borderColor}; border-radius: 4px;")">
     <div class="d-flex justify-space-between align-center">
         <div class="d-flex align-center gap-1">
             <MudIcon Icon="@EventIcon" Size="Size.Small" Style="@($"color: {_borderColor};")" />
             @if (Compact)
             {
-                <MudText Typo="Typo.caption" Style="color: #b0bec5;">
+                <MudText Typo="Typo.caption" Style="color: var(--cdo-text-muted);">
                     @Event.EventType
                 </MudText>
             }
             else
             {
-                <MudText Typo="Typo.body2" Style="color: #e0e0e0;">
+                <MudText Typo="Typo.body2" Style="color: var(--cdo-text);">
                     @Event.EventType
                 </MudText>
             }
         </div>
-        <MudText Typo="Typo.caption" Style="color: #607d8b;">
+        <MudText Typo="Typo.caption" Style="color: var(--cdo-text-subtle);">
             @FormatTime(Event.Timestamp)
         </MudText>
     </div>
@@ -35,7 +35,7 @@
             }
             @if (Event.Detections.Count > 4)
             {
-                <MudText Typo="Typo.caption" Style="color: #607d8b;">
+                <MudText Typo="Typo.caption" Style="color: var(--cdo-text-subtle);">
                     +@(Event.Detections.Count - 4) more
                 </MudText>
             }
@@ -45,13 +45,13 @@
     @if (Event.AlertMessage != null)
     {
         <MudText Typo="Typo.caption" Class="mt-1"
-                 Style="@($"color: {(Event.AlertSeverity >= AlertSeverity.High ? "#ef5350" : "#ffa726")};")">            @Event.AlertMessage
+                 Style="@($"color: {(Event.AlertSeverity >= AlertSeverity.High ? "var(--cdo-error)" : "var(--cdo-warning)")};")">            @Event.AlertMessage
         </MudText>
     }
 
     @if (!Compact && Event.PatientName != null)
     {
-        <MudText Typo="Typo.caption" Style="color: #78909c;" Class="mt-1">
+        <MudText Typo="Typo.caption" Style="color: var(--cdo-text-subtle);" Class="mt-1">
             Patient: @Event.PatientName · @Event.DeviceName
         </MudText>
     }
@@ -64,11 +64,11 @@
 
     private string _borderColor => Event.AlertSeverity switch
     {
-        AlertSeverity.Critical => "#d32f2f",
-        AlertSeverity.High => "#ef5350",
-        AlertSeverity.Medium => "#ffa726",
-        AlertSeverity.Low => "#42a5f5",
-        _ => "#37474f"
+        AlertSeverity.Critical => "var(--cdo-error)",
+        AlertSeverity.High => "var(--cdo-error)",
+        AlertSeverity.Medium => "var(--cdo-warning)",
+        AlertSeverity.Low => "var(--cdo-info)",
+        _ => "var(--cdo-line-strong)"
     };
 
     private string EventIcon => Event.EventType switch
@@ -86,18 +86,18 @@
 
     private static string GetDetectionColor(DetectionClass cls) => cls switch
     {
-        DetectionClass.Person => "#ef5350",
+        DetectionClass.Person => "var(--cdo-error)",
         DetectionClass.Handpiece or DetectionClass.DentalMirror or DetectionClass.Explorer
-            or DetectionClass.ScalerCurette => "#42a5f5",
-        DetectionClass.ForcepsExtraction or DetectionClass.Elevator => "#ffa726",
-        DetectionClass.SyringeAnesthetic or DetectionClass.SyringeIrrigation => "#ce93d8",
-        DetectionClass.SutureKit => "#f48fb1",
-        DetectionClass.InsuranceCard or DetectionClass.ConsentForm => "#66bb6a",
-        DetectionClass.CabinetDoorOpen => "#ef5350",
-        DetectionClass.CabinetDoorClosed => "#66bb6a",
-        DetectionClass.BadgeScan => "#42a5f5",
-        DetectionClass.MedicationVial => "#ffa726",
-        _ => "#78909c"
+            or DetectionClass.ScalerCurette => "var(--cdo-info)",
+        DetectionClass.ForcepsExtraction or DetectionClass.Elevator => "var(--cdo-warning)",
+        DetectionClass.SyringeAnesthetic or DetectionClass.SyringeIrrigation => "#7E22CE",
+        DetectionClass.SutureKit => "#BE185D",
+        DetectionClass.InsuranceCard or DetectionClass.ConsentForm => "var(--cdo-success)",
+        DetectionClass.CabinetDoorOpen => "var(--cdo-error)",
+        DetectionClass.CabinetDoorClosed => "var(--cdo-success)",
+        DetectionClass.BadgeScan => "var(--cdo-info)",
+        DetectionClass.MedicationVial => "var(--cdo-warning)",
+        _ => "var(--cdo-text-subtle)"
     };
 
     private static string FormatTime(DateTime ts)

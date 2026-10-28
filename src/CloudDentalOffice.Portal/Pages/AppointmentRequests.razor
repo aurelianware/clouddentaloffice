@@ -7,7 +7,7 @@
 <PageTitle>Appointment Requests - Cloud Dental Office</PageTitle>
 
 <MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-4">
-    <MudPaper Class="pa-4" Style="background:#0a0a0a;border:1px solid #00ffff;">
+    <MudPaper Class="pa-4" Style="background:var(--cdo-surface);border:1px solid var(--cdo-line);">
         <MudStack Row Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center">
             <div>
                 <MudText Typo="Typo.h4" Color="Color.Primary"><MudIcon Icon="@Icons.Material.Filled.MarkEmailUnread" /> Appointment Requests</MudText>
@@ -24,7 +24,7 @@
         </MudStack>
     </MudPaper>
 
-    <MudPaper Class="pa-4 mt-4" Style="background:#0a0a0a;border:1px solid rgba(0,255,255,.3);">
+    <MudPaper Class="pa-4 mt-4" Style="background:var(--cdo-surface);border:1px solid var(--cdo-line-strong);">
         @if (_loading) { <MudProgressLinear Indeterminate Color="Color.Primary" /> }
         else
         {

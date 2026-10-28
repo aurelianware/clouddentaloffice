@@ -33,8 +33,8 @@
            })">
     <TitleContent>
         <div class="d-flex align-center gap-2">
-            <MudIcon Icon="@Icons.Material.Filled.Medication" Style="color: #26a69a;" />
-            <MudText Typo="Typo.h6" Style="color: #e0e0e0;">DoseSpot e-Prescribe</MudText>
+            <MudIcon Icon="@Icons.Material.Filled.Medication" Style="color: var(--cdo-accent-2);" />
+            <MudText Typo="Typo.h6" Style="color: var(--cdo-text);">DoseSpot e-Prescribe</MudText>
             <MudSpacer />
             <MudChip T="string" Size="Size.Small" Color="Color.Success" Variant="Variant.Outlined">
                 Surescripts Certified
@@ -46,7 +46,7 @@
                            Size="Size.Small"
                            Title="Open in new window"
                            OnClick="OpenInNewWindow"
-                           Style="color: #78909c;" />
+                           Style="color: var(--cdo-text-subtle);" />
         </div>
     </TitleContent>
     <DialogContent>
@@ -54,7 +54,7 @@
         {
             <div class="d-flex flex-column align-center justify-center" style="height: 600px;">
                 <MudProgressCircular Color="Color.Tertiary" Indeterminate="true" Size="Size.Large" />
-                <MudText Typo="Typo.body1" Class="mt-4" Style="color: #78909c;">
+                <MudText Typo="Typo.body1" Class="mt-4" Style="color: var(--cdo-text-subtle);">
                     Authenticating with DoseSpot...
                 </MudText>
             </div>
@@ -70,7 +70,7 @@
                 }
 
                 <iframe src="@SsoUrl"
-                        style="width: 100%; height: 100%; border: none; border-radius: 4px; background-color: #fff;"
+                        style="width: 100%; height: 100%; border: none; border-radius: 4px; background-color: var(--cdo-surface);"
                         sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox"
                         allow="camera; microphone"
                         title="DoseSpot ePrescribing"
@@ -79,7 +79,7 @@
                 </iframe>
 
                 @* Security notice *@
-                <MudText Typo="Typo.caption" Class="mt-1" Style="color: #546e7a; text-align: center;">
+                <MudText Typo="Typo.caption" Class="mt-1" Style="color: var(--cdo-text-subtle); text-align: center;">
                     <MudIcon Icon="@Icons.Material.Filled.Lock" Size="Size.Small" Style="vertical-align: middle;" />
                     Secure connection to DoseSpot · HIPAA compliant · DEA EPCS certified
                 </MudText>

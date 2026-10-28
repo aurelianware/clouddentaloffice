@@ -9,14 +9,14 @@
 <PageTitle>Patients - Cloud Dental Office</PageTitle>
 
 <MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-4">
-    <MudPaper Class="pa-4" Style="background: #0a0a0a; border: 1px solid #00ffff;">
+    <MudPaper Class="pa-4" Style="background: var(--cdo-surface); border: 1px solid var(--cdo-line);">
         <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center">
             <div>
-                <MudText Typo="Typo.h4" Style="color: #00ffff; font-weight: bold;">
+                <MudText Typo="Typo.h4" Style="color: var(--cdo-ink); font-weight: bold;">
                     <MudIcon Icon="@Icons.Material.Filled.People" Class="mr-2" />
                     Patients
                 </MudText>
-                <MudText Typo="Typo.body2" Style="color: #b0b0b0;">
+                <MudText Typo="Typo.body2" Style="color: var(--cdo-text-muted);">
                     Manage patient demographics and insurance information
                 </MudText>
             </div>
@@ -40,7 +40,7 @@
         </MudAlert>
     }
 
-    <MudPaper Class="pa-4 mt-4" Style="background: #0a0a0a; border: 1px solid rgba(0, 255, 255, 0.3);">
+    <MudPaper Class="pa-4 mt-4" Style="background: var(--cdo-surface); border: 1px solid var(--cdo-line-strong);">
         @if (_loading)
         {
             <MudProgressLinear Color="Color.Primary" Indeterminate="true" aria-label="Loading patients" />
@@ -55,14 +55,14 @@
                                   Immediate="true" Clearable="true" />
                 </ToolBarContent>
                 <HeaderContent>
-                    <MudTh Style="color: #00ffff;">Name</MudTh>
-                    <MudTh Style="color: #00ffff;">Date of Birth</MudTh>
-                    <MudTh Style="color: #00ffff;">Age</MudTh>
-                    <MudTh Style="color: #00ffff;">Phone</MudTh>
-                    <MudTh Style="color: #00ffff;">Email</MudTh>
-                    <MudTh Style="color: #00ffff;">Primary Insurance</MudTh>
-                    <MudTh Style="color: #00ffff;">Status</MudTh>
-                    <MudTh Style="color: #00ffff;">Actions</MudTh>
+                    <MudTh Style="color: var(--cdo-accent);">Name</MudTh>
+                    <MudTh Style="color: var(--cdo-accent);">Date of Birth</MudTh>
+                    <MudTh Style="color: var(--cdo-accent);">Age</MudTh>
+                    <MudTh Style="color: var(--cdo-accent);">Phone</MudTh>
+                    <MudTh Style="color: var(--cdo-accent);">Email</MudTh>
+                    <MudTh Style="color: var(--cdo-accent);">Primary Insurance</MudTh>
+                    <MudTh Style="color: var(--cdo-accent);">Status</MudTh>
+                    <MudTh Style="color: var(--cdo-accent);">Actions</MudTh>
                 </HeaderContent>
                 <RowTemplate>
                     <MudTd DataLabel="Name">@context.FullName</MudTd>
@@ -77,7 +77,7 @@
                         }
                         else
                         {
-                            <span style="color: #808080;">No insurance</span>
+                            <span style="color: var(--cdo-text-subtle);">No insurance</span>
                         }
                     </MudTd>
                     <MudTd DataLabel="Status">
@@ -117,7 +117,7 @@
                     </MudTd>
                 </RowTemplate>
                 <NoRecordsContent>
-                    <MudText Style="color: #b0b0b0;">No patients found</MudText>
+                    <MudText Style="color: var(--cdo-text-muted);">No patients found</MudText>
                 </NoRecordsContent>
             </MudTable>
         }

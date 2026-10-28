@@ -6,7 +6,7 @@
 <PageTitle>Pilot Metrics - Cloud Dental Office</PageTitle>
 
 <MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-4">
-    <MudPaper Class="pa-4" Style="background:#0a0a0a;border:1px solid #00ffff;">
+    <MudPaper Class="pa-4" Style="background:var(--cdo-surface);border:1px solid var(--cdo-line);">
         <MudStack Row Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Wrap="Wrap.Wrap">
             <div>
                 <MudText Typo="Typo.h4" Color="Color.Primary"><MudIcon Icon="@Icons.Material.Filled.Insights" /> Pilot Metrics</MudText>
@@ -33,7 +33,7 @@
     {
         <MudGrid Class="mt-2">
             <MudItem xs="12" md="6">
-                <MudPaper Class="pa-4" Style="background:#0a0a0a;border:1px solid rgba(0,255,255,.3);height:100%">
+                <MudPaper Class="pa-4" Style="background:var(--cdo-surface);border:1px solid var(--cdo-line-strong);height:100%">
                     <MudText Typo="Typo.h6" Color="Color.Primary">Coverage before the visit</MudText>
                     <MudText Typo="Typo.caption">Appointments in the period that have already started.</MudText>
                     <MudSimpleTable Dense Class="mt-2" Style="background:transparent">
@@ -54,7 +54,7 @@
             </MudItem>
 
             <MudItem xs="12" md="6">
-                <MudPaper Class="pa-4" Style="background:#0a0a0a;border:1px solid rgba(0,255,255,.3);height:100%">
+                <MudPaper Class="pa-4" Style="background:var(--cdo-surface);border:1px solid var(--cdo-line-strong);height:100%">
                     <MudText Typo="Typo.h6" Color="Color.Primary">Claims</MudText>
                     <MudText Typo="Typo.caption">Claims submitted in the period.</MudText>
                     @if (m.Claims.Submitted == 0)
@@ -79,7 +79,7 @@
             </MudItem>
 
             <MudItem xs="12" md="6">
-                <MudPaper Class="pa-4" Style="background:#0a0a0a;border:1px solid rgba(0,255,255,.3);height:100%">
+                <MudPaper Class="pa-4" Style="background:var(--cdo-surface);border:1px solid var(--cdo-line-strong);height:100%">
                     <MudText Typo="Typo.h6" Color="Color.Primary">Eligibility checks</MudText>
                     <MudSimpleTable Dense Class="mt-2" Style="background:transparent">
                         <tbody>
@@ -94,7 +94,7 @@
             </MudItem>
 
             <MudItem xs="12" md="6">
-                <MudPaper Class="pa-4" Style="background:#0a0a0a;border:1px solid rgba(0,255,255,.3);height:100%">
+                <MudPaper Class="pa-4" Style="background:var(--cdo-surface);border:1px solid var(--cdo-line-strong);height:100%">
                     <MudText Typo="Typo.h6" Color="Color.Primary">Patient coverage requests</MudText>
                     <MudText Typo="Typo.caption">Links emailed to patients with no dental coverage on file.</MudText>
                     <MudSimpleTable Dense Class="mt-2" Style="background:transparent">
@@ -117,7 +117,7 @@
 
 <style>
     td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
-    td.sub { padding-left: 28px !important; color: #b0b0b0; }
+    td.sub { padding-left: 28px !important; color: var(--cdo-text-muted); }
 </style>
 
 @code {

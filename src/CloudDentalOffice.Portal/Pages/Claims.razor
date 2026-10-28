@@ -9,14 +9,14 @@
 <PageTitle>Claims - Cloud Dental Office</PageTitle>
 
 <MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-4">
-    <MudPaper Class="pa-4" Style="background: #0a0a0a; border: 1px solid #00ffff;">
+    <MudPaper Class="pa-4" Style="background: var(--cdo-surface); border: 1px solid var(--cdo-line);">
         <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center">
             <div>
-                <MudText Typo="Typo.h4" Style="color: #00ffff; font-weight: bold;">
+                <MudText Typo="Typo.h4" Style="color: var(--cdo-ink); font-weight: bold;">
                     <MudIcon Icon="@Icons.Material.Filled.Assignment" Class="mr-2" />
                     Claims
                 </MudText>
-                <MudText Typo="Typo.body2" Style="color: #b0b0b0;">
+                <MudText Typo="Typo.body2" Style="color: var(--cdo-text-muted);">
                     Submit claims and follow payer status, patient responsibility, and posted payments
                 </MudText>
             </div>
@@ -34,7 +34,7 @@
         </MudAlert>
     }
 
-    <MudPaper Class="pa-4 mt-4" Style="background: #0a0a0a; border: 1px solid rgba(0, 255, 255, 0.3);">
+    <MudPaper Class="pa-4 mt-4" Style="background: var(--cdo-surface); border: 1px solid var(--cdo-line-strong);">
         @if (_loading)
         {
             <MudProgressLinear Color="Color.Primary" Indeterminate="true" />
@@ -51,20 +51,20 @@
                     <MudChip T="string" Color="Color.Info" Size="Size.Small">Total: @_claims.Count</MudChip>
                 </ToolBarContent>
                 <HeaderContent>
-                    <MudTh Style="color: #00ffff;">Claim Number</MudTh>
-                    <MudTh Style="color: #00ffff;">Patient</MudTh>
-                    <MudTh Style="color: #00ffff;">Provider</MudTh>
-                    <MudTh Style="color: #00ffff;">Service Date</MudTh>
-                    <MudTh Style="color: #00ffff;">Total Charge</MudTh>
-                    <MudTh Style="color: #00ffff;">Patient resp.</MudTh>
-                    <MudTh Style="color: #00ffff;">Insurance</MudTh>
-                    <MudTh Style="color: #00ffff;">Status</MudTh>
-                    <MudTh Style="color: #00ffff;">Submitted</MudTh>
-                    <MudTh Style="color: #00ffff;">Actions</MudTh>
+                    <MudTh Style="color: var(--cdo-accent);">Claim Number</MudTh>
+                    <MudTh Style="color: var(--cdo-accent);">Patient</MudTh>
+                    <MudTh Style="color: var(--cdo-accent);">Provider</MudTh>
+                    <MudTh Style="color: var(--cdo-accent);">Service Date</MudTh>
+                    <MudTh Style="color: var(--cdo-accent);">Total Charge</MudTh>
+                    <MudTh Style="color: var(--cdo-accent);">Patient resp.</MudTh>
+                    <MudTh Style="color: var(--cdo-accent);">Insurance</MudTh>
+                    <MudTh Style="color: var(--cdo-accent);">Status</MudTh>
+                    <MudTh Style="color: var(--cdo-accent);">Submitted</MudTh>
+                    <MudTh Style="color: var(--cdo-accent);">Actions</MudTh>
                 </HeaderContent>
                 <RowTemplate>
                     <MudTd DataLabel="Claim Number">
-                        <MudText Typo="Typo.body2" Style="color: #00ff88; font-weight: bold;">@context.ClaimNumber</MudText>
+                        <MudText Typo="Typo.body2" Style="color: var(--cdo-success); font-weight: bold;">@context.ClaimNumber</MudText>
                     </MudTd>
                     <MudTd DataLabel="Patient">
                         <MudText Typo="Typo.body2">@context.Patient?.FullName</MudText>
@@ -76,10 +76,10 @@
                         <MudText Typo="Typo.body2">@context.ServiceDateFrom.ToLocalTime().ToString("MM/dd/yyyy")</MudText>
                     </MudTd>
                     <MudTd DataLabel="Total Charge">
-                        <MudText Typo="Typo.body2" Style="color: #00ff88;">@context.TotalChargeAmount.ToString("C")</MudText>
+                        <MudText Typo="Typo.body2" Style="color: var(--cdo-success);">@context.TotalChargeAmount.ToString("C")</MudText>
                     </MudTd>
                     <MudTd DataLabel="Patient resp.">
-                        <MudText Typo="Typo.body2" Style="color: #ffa500;">
+                        <MudText Typo="Typo.body2" Style="color: var(--cdo-warning);">
                             @(context.PatientResponsibility?.ToString("C") ?? "—")
                         </MudText>
                     </MudTd>

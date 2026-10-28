@@ -14,7 +14,7 @@
 <PageTitle>Insurance to Verify - Cloud Dental Office</PageTitle>
 
 <MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-4">
-    <MudPaper Class="pa-4" Style="background:#0a0a0a;border:1px solid #00ffff;">
+    <MudPaper Class="pa-4" Style="background:var(--cdo-surface);border:1px solid var(--cdo-line);">
         <MudStack Row Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center">
             <div>
                 <MudText Typo="Typo.h4" Color="Color.Primary"><MudIcon Icon="@Icons.Material.Filled.VerifiedUser" /> Insurance to Verify</MudText>
@@ -34,7 +34,7 @@
 
     @if (_websiteChecks.Count > 0)
     {
-        <MudPaper Class="pa-4 mt-4" Style="background:#0a0a0a;border:1px solid rgba(0,255,255,.3);">
+        <MudPaper Class="pa-4 mt-4" Style="background:var(--cdo-surface);border:1px solid var(--cdo-line-strong);">
             <MudText Typo="Typo.h6" Color="Color.Primary">From the website</MudText>
             <MudText Typo="Typo.body2" Class="mb-2">Visitors who asked to check their insurance. Match each one to a patient, then email the secure link that asks for their member ID.</MudText>
             <MudTable Items="_websiteChecks" Hover Dense>
@@ -75,7 +75,7 @@
         </MudPaper>
     }
 
-    <MudPaper Class="pa-4 mt-4" Style="background:#0a0a0a;border:1px solid rgba(0,255,255,.3);">
+    <MudPaper Class="pa-4 mt-4" Style="background:var(--cdo-surface);border:1px solid var(--cdo-line-strong);">
         @if (_loading) { <MudProgressLinear Indeterminate Color="Color.Primary" /> }
         else
         {

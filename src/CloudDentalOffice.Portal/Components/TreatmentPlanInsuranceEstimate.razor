@@ -9,11 +9,11 @@
 @inject Microsoft.Extensions.Options.IOptions<CloudHealthOfficeOptions> EstimateOptions
 @inject ILogger<TreatmentPlanInsuranceEstimate> Logger
 
-<MudPaper Class="pa-4 mt-4" Style="background: #101010; border: 1px solid rgba(0, 255, 255, 0.35);">
+<MudPaper Class="pa-4 mt-4" Style="background: var(--cdo-surface); border: 1px solid var(--cdo-line-strong);">
     <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-3">
         <div>
-            <MudText Typo="Typo.h6" Style="color: #00ffff;">Insurance Estimate</MudText>
-            <MudText Typo="Typo.caption" Style="color: #b0b0b0;">Planning estimate only—no claim is created.</MudText>
+            <MudText Typo="Typo.h6" Style="color: var(--cdo-ink);">Insurance Estimate</MudText>
+            <MudText Typo="Typo.caption" Style="color: var(--cdo-text-muted);">Planning estimate only—no claim is created.</MudText>
         </div>
         <MudButton Color="Color.Primary" Variant="Variant.Filled" StartIcon="@Icons.Material.Filled.Calculate"
                    Disabled="@(_estimating || _checkingEligibility)" OnClick="EstimateAsync">
@@ -78,9 +78,9 @@
             @foreach (var total in SummaryTotals(_result))
             {
                 <MudItem xs="6" md="4">
-                    <MudPaper Class="pa-3" Style="background:#181818; height:100%;">
-                        <MudText Typo="Typo.caption" Style="color:#b0b0b0">@total.Label</MudText>
-                        <MudText Typo="Typo.h6" Style="color:#f5f5f5">@CurrencyDisplay.Usd(total.Value)</MudText>
+                    <MudPaper Class="pa-3" Style="background:var(--cdo-surface); height:100%;">
+                        <MudText Typo="Typo.caption" Style="color:var(--cdo-text-muted)">@total.Label</MudText>
+                        <MudText Typo="Typo.h6" Style="color:var(--cdo-text)">@CurrencyDisplay.Usd(total.Value)</MudText>
                     </MudPaper>
                 </MudItem>
             }
@@ -89,7 +89,7 @@
         <MudExpansionPanels MultiExpansion="true">
             @foreach (var line in _result.Lines.OrderBy(x => x.LineNumber))
             {
-                <MudExpansionPanel Style="background:#181818; color:#e0e0e0;">
+                <MudExpansionPanel Style="background:var(--cdo-surface); color:var(--cdo-text);">
                     <TitleContent>
                         <MudGrid AlignItems="AlignItems.Center">
                             <MudItem xs="12" sm="4"><strong>@line.ProcedureCode</strong> @line.Description</MudItem>
@@ -100,7 +100,7 @@
                         </MudGrid>
                     </TitleContent>
                     <ChildContent>
-                        <MudSimpleTable Dense="true" Style="background:transparent; color:#e0e0e0;">
+                        <MudSimpleTable Dense="true" Style="background:transparent; color:var(--cdo-text);">
                             <tbody>
                                 <tr><td>Contract adjustment</td><td>@CurrencyDisplay.Usd(line.ContractAdjustment)</td></tr>
                                 <tr><td>Plan benefit</td><td>@(line.BenefitPercentage.HasValue ? line.BenefitPercentage.Value.ToString("P0") : "Not provided")</td></tr>
