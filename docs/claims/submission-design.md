@@ -123,6 +123,11 @@ and CDO's own claim key for correlation. **No diagnosis codes required** for rou
 **4a. Practice billing profile.** Add to the tenant's organization: legal name, Type 2 NPI, Tax ID (EIN),
 billing address, phone, taxonomy. Required once, validated, shown on a settings page. Replaces every
 hard-coded value in `EdiX12Service`.
+*Built:* a `PracticeBillingProfile` row per practice, edited at Practice setup → Claim billing details
+(`/settings/billing-profile`). The 837D is refused until it's complete; it bills as the practice
+(NM1\*85\*2 with the organization NPI, PRV\*BI, street address with ZIP+4, REF\*EI) and renders as the
+dentist (NM1\*82 with their individual NPI). The submitter ID is the practice EIN until a clearinghouse
+assigns one.
 
 **4b. Appointment → claim.**
 - Link `Procedure` to the SchedulingService appointment by `Guid` (new nullable `SchedulingAppointmentId`;

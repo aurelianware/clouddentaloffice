@@ -1,0 +1,168 @@
+@page "/settings/billing-profile"
+@attribute [Authorize(Roles = CloudDentalOffice.Portal.Services.Auth.StaffRoles.PayerManagers)]
+@using CloudDentalOffice.Portal.Models
+@inject IPracticeBillingProfileService Profiles
+@inject ISnackbar Snackbar
+@inject ILogger<ClaimBillingDetails> Logger
+
+<PageTitle>Claim billing details - Cloud Dental Office</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Large" Class="mt-4">
+    <PageHeader Title="Claim billing details" Subtitle="How the practice appears on every insurance claim. Use the details payers have on file for the practice." Section="Practice setup" />
+
+    @if (_loading)
+    {
+        <MudProgressLinear Color="Color.Primary" Indeterminate="true" Class="mt-4" />
+    }
+    else
+    {
+        @if (_problems.Count > 0)
+        {
+            <MudAlert Severity="Severity.Warning" Class="mt-4">
+                <MudText Typo="Typo.body2"><b>@(_saved ? "Claims can't be sent until these are fixed:" : "Fix these to save:")</b></MudText>
+                <ul class="mt-1 mb-0">
+                    @foreach (var problem in _problems)
+                    {
+                        <li>@problem</li>
+                    }
+                </ul>
+            </MudAlert>
+        }
+        else if (_saved)
+        {
+            <MudAlert Severity="Severity.Success" Class="mt-4">Complete. Claims will carry these details.</MudAlert>
+        }
+
+        <MudPaper Class="pa-4 mt-4" Style="background: var(--cdo-surface); border: 1px solid var(--cdo-line-strong);">
+            <MudText Typo="Typo.h6" Class="mb-2">Practice</MudText>
+            <MudGrid>
+                <MudItem xs="12">
+                    <MudTextField @bind-Value="_profile.LegalName" Label="Legal name" Variant="Variant.Outlined" MaxLength="60"
+                                  HelperText="The name the IRS has for the Tax ID." />
+                </MudItem>
+                <MudItem xs="12" sm="4">
+                    <MudTextField @bind-Value="_profile.Npi" Label="Organization NPI (Type 2)" Variant="Variant.Outlined" MaxLength="10"
+                                  HelperText="The practice's NPI, not a dentist's." />
+                </MudItem>
+                <MudItem xs="12" sm="4">
+                    <MudTextField @bind-Value="_profile.TaxId" Label="Tax ID (EIN)" Variant="Variant.Outlined" MaxLength="10" />
+                </MudItem>
+                <MudItem xs="12" sm="4">
+                    <MudTextField @bind-Value="_profile.TaxonomyCode" Label="Taxonomy code" Variant="Variant.Outlined" MaxLength="10"
+                                  HelperText="1223G0001X for general dentistry." />
+                </MudItem>
+            </MudGrid>
+
+            <MudText Typo="Typo.h6" Class="mt-4 mb-2">Billing address</MudText>
+            <MudGrid>
+                <MudItem xs="12" sm="8">
+                    <MudTextField @bind-Value="_profile.Address1" Label="Street address" Variant="Variant.Outlined" MaxLength="55"
+                                  HelperText="A street address; payers reject a PO box here." />
+                </MudItem>
+                <MudItem xs="12" sm="4">
+                    <MudTextField @bind-Value="_profile.Address2" Label="Suite (optional)" Variant="Variant.Outlined" MaxLength="55" />
+                </MudItem>
+                <MudItem xs="12" sm="5">
+                    <MudTextField @bind-Value="_profile.City" Label="City" Variant="Variant.Outlined" MaxLength="30" />
+                </MudItem>
+                <MudItem xs="4" sm="2">
+                    <MudTextField @bind-Value="_profile.State" Label="State" Variant="Variant.Outlined" MaxLength="2" />
+                </MudItem>
+                <MudItem xs="8" sm="5">
+                    <MudTextField @bind-Value="_profile.ZipCode" Label="ZIP+4" Variant="Variant.Outlined" MaxLength="10"
+                                  HelperText="All nine digits, such as 85281-1234." />
+                </MudItem>
+            </MudGrid>
+
+            <MudText Typo="Typo.h6" Class="mt-4 mb-2">Billing contact</MudText>
+            <MudGrid>
+                <MudItem xs="12" sm="6">
+                    <MudTextField @bind-Value="_profile.ContactName" Label="Contact name" Variant="Variant.Outlined" MaxLength="60"
+                                  HelperText="Who payers ask for about a claim." />
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    <MudTextField @bind-Value="_profile.Phone" Label="Phone" Variant="Variant.Outlined" MaxLength="20" />
+                </MudItem>
+            </MudGrid>
+
+            <div class="d-flex align-center mt-4">
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveAsync" Disabled="_saving">Save</MudButton>
+                @if (_updatedAt is { } updated)
+                {
+                    <MudText Typo="Typo.caption" Class="ml-4" Style="color: var(--cdo-text-muted);">
+                        Last saved @updated.ToLocalTime().ToString("MMM d, yyyy h:mm tt")@(string.IsNullOrEmpty(_updatedBy) ? "" : $" by {_updatedBy}")
+                    </MudText>
+                }
+            </div>
+        </MudPaper>
+    }
+</MudContainer>
+
+@code {
+    private PracticeBillingProfile _profile = new();
+    private IReadOnlyList<string> _problems = [];
+    private bool _loading = true;
+    private bool _saving;
+    private bool _saved;
+    private DateTime? _updatedAt;
+    private string? _updatedBy;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var existing = await Profiles.GetAsync();
+            if (existing is not null)
+            {
+                _profile = existing;
+                _saved = true;
+                _updatedAt = existing.UpdatedAt;
+                _updatedBy = existing.UpdatedBy;
+                _problems = PracticeBillingProfileRules.Problems(existing);
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Couldn't load the practice billing profile");
+            Snackbar.Add("Couldn't load the billing details. Refresh to try again.", Severity.Error);
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task SaveAsync()
+    {
+        _saving = true;
+        try
+        {
+            _problems = await Profiles.SaveAsync(_profile);
+            if (_problems.Count == 0)
+            {
+                var saved = await Profiles.GetAsync();
+                if (saved is not null)
+                {
+                    _profile = saved;
+                    _updatedAt = saved.UpdatedAt;
+                    _updatedBy = saved.UpdatedBy;
+                }
+                _saved = true;
+                Snackbar.Add("Billing details saved.", Severity.Success);
+            }
+            else
+            {
+                _saved = false;
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Couldn't save the practice billing profile");
+            Snackbar.Add("Couldn't save the billing details. Try again.", Severity.Error);
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+}

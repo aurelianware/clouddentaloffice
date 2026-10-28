@@ -50,13 +50,25 @@ public class EdiX12Service : IEdiX12Service
         if (fullClaim.PatientInsurance?.InsurancePlan == null)
             throw new InvalidOperationException($"Claim {claim.ClaimNumber} has no insurance plan");
 
+        // The practice bills the claim; its profile is read for the claim's own practice.
+        var practice = await _context.PracticeBillingProfiles.IgnoreQueryFilters().AsNoTracking()
+            .SingleOrDefaultAsync(p => p.TenantId == fullClaim.TenantId);
+        var practiceProblems = PracticeBillingProfileRules.Problems(practice);
+        if (practiceProblems.Count > 0)
+            throw new InvalidOperationException(
+                $"Claim {claim.ClaimNumber} can't be built until the practice's billing details are complete: {string.Join(" ", practiceProblems)}");
+
+        if (!PracticeBillingProfileRules.IsValidNpi(fullClaim.Provider.NPI))
+            throw new InvalidOperationException(
+                $"Claim {claim.ClaimNumber} needs a valid 10-digit NPI for {fullClaim.Provider.FullName} under Providers.");
+
         var x12 = new StringBuilder();
 
         // Generate unique control numbers
         var interchangeControlNumber = GenerateControlNumber();
         var groupControlNumber = GenerateControlNumber();
         var transactionControlNumber = GenerateControlNumber();
-        var submitterIdentifier = "123456789"; // Practice/submitter tax ID
+        var submitterIdentifier = practice!.TaxId;
         var receiverIdentifier = fullClaim.PatientInsurance.InsurancePlan.EdiPayerId ?? fullClaim.PatientInsurance.InsurancePlan.PayerId;
 
         // ISA - Interchange Control Header
@@ -74,22 +86,24 @@ public class EdiX12Service : IEdiX12Service
         x12.Append($"BHT{ELEMENT_SEPARATOR}0019{ELEMENT_SEPARATOR}00{ELEMENT_SEPARATOR}{fullClaim.ClaimNumber}{ELEMENT_SEPARATOR}{bhtDate}{ELEMENT_SEPARATOR}{bhtTime}{ELEMENT_SEPARATOR}CH{SEGMENT_TERMINATOR}");
 
         // 1000A Loop - Submitter (Dental Office)
-        x12.Append($"NM1{ELEMENT_SEPARATOR}41{ELEMENT_SEPARATOR}2{ELEMENT_SEPARATOR}CLOUD DENTAL OFFICE{ELEMENT_SEPARATOR}{ELEMENT_SEPARATOR}{ELEMENT_SEPARATOR}{ELEMENT_SEPARATOR}{ELEMENT_SEPARATOR}46{ELEMENT_SEPARATOR}{submitterIdentifier}{SEGMENT_TERMINATOR}");
-        x12.Append($"PER{ELEMENT_SEPARATOR}IC{ELEMENT_SEPARATOR}BILLING DEPT{ELEMENT_SEPARATOR}TE{ELEMENT_SEPARATOR}5555551234{SEGMENT_TERMINATOR}");
+        x12.Append($"NM1{ELEMENT_SEPARATOR}41{ELEMENT_SEPARATOR}2{ELEMENT_SEPARATOR}{Value(practice.LegalName)}{ELEMENT_SEPARATOR}{ELEMENT_SEPARATOR}{ELEMENT_SEPARATOR}{ELEMENT_SEPARATOR}{ELEMENT_SEPARATOR}46{ELEMENT_SEPARATOR}{submitterIdentifier}{SEGMENT_TERMINATOR}");
+        x12.Append($"PER{ELEMENT_SEPARATOR}IC{ELEMENT_SEPARATOR}{Value(practice.ContactName)}{ELEMENT_SEPARATOR}TE{ELEMENT_SEPARATOR}{practice.Phone}{SEGMENT_TERMINATOR}");
 
         // 1000B Loop - Receiver (Payer)
         x12.Append($"NM1{ELEMENT_SEPARATOR}40{ELEMENT_SEPARATOR}2{ELEMENT_SEPARATOR}{fullClaim.PatientInsurance.InsurancePlan.PayerName}{ELEMENT_SEPARATOR}{ELEMENT_SEPARATOR}{ELEMENT_SEPARATOR}{ELEMENT_SEPARATOR}{ELEMENT_SEPARATOR}46{ELEMENT_SEPARATOR}{receiverIdentifier}{SEGMENT_TERMINATOR}");
 
         // 2000A Loop - Billing Provider Hierarchical Level
         x12.Append($"HL{ELEMENT_SEPARATOR}1{ELEMENT_SEPARATOR}{ELEMENT_SEPARATOR}20{ELEMENT_SEPARATOR}1{SEGMENT_TERMINATOR}");
-        
-        // 2010AA Loop - Billing Provider Name
-        var providerNPI = fullClaim.Provider.NPI ?? "0000000000";
-        var providerName = $"{fullClaim.Provider.LastName}{ELEMENT_SEPARATOR}{fullClaim.Provider.FirstName}";
-        x12.Append($"NM1{ELEMENT_SEPARATOR}85{ELEMENT_SEPARATOR}1{ELEMENT_SEPARATOR}{providerName}{ELEMENT_SEPARATOR}{ELEMENT_SEPARATOR}{ELEMENT_SEPARATOR}{ELEMENT_SEPARATOR}{ELEMENT_SEPARATOR}XX{ELEMENT_SEPARATOR}{providerNPI}{SEGMENT_TERMINATOR}");
-        x12.Append($"N3{ELEMENT_SEPARATOR}123 DENTAL PLAZA{SEGMENT_TERMINATOR}");
-        x12.Append($"N4{ELEMENT_SEPARATOR}ANYTOWN{ELEMENT_SEPARATOR}CA{ELEMENT_SEPARATOR}90210{SEGMENT_TERMINATOR}");
-        x12.Append($"REF{ELEMENT_SEPARATOR}EI{ELEMENT_SEPARATOR}{submitterIdentifier}{SEGMENT_TERMINATOR}"); // Tax ID
+        x12.Append($"PRV{ELEMENT_SEPARATOR}BI{ELEMENT_SEPARATOR}PXC{ELEMENT_SEPARATOR}{practice.TaxonomyCode}{SEGMENT_TERMINATOR}");
+
+        // 2010AA Loop - Billing Provider (the practice: organization NPI, street address, EIN)
+        x12.Append($"NM1{ELEMENT_SEPARATOR}85{ELEMENT_SEPARATOR}2{ELEMENT_SEPARATOR}{Value(practice.LegalName)}{ELEMENT_SEPARATOR}{ELEMENT_SEPARATOR}{ELEMENT_SEPARATOR}{ELEMENT_SEPARATOR}{ELEMENT_SEPARATOR}XX{ELEMENT_SEPARATOR}{practice.Npi}{SEGMENT_TERMINATOR}");
+        var billingStreet = string.IsNullOrEmpty(practice.Address2)
+            ? Value(practice.Address1)
+            : $"{Value(practice.Address1)}{ELEMENT_SEPARATOR}{Value(practice.Address2)}";
+        x12.Append($"N3{ELEMENT_SEPARATOR}{billingStreet}{SEGMENT_TERMINATOR}");
+        x12.Append($"N4{ELEMENT_SEPARATOR}{Value(practice.City)}{ELEMENT_SEPARATOR}{practice.State}{ELEMENT_SEPARATOR}{practice.ZipCode}{SEGMENT_TERMINATOR}");
+        x12.Append($"REF{ELEMENT_SEPARATOR}EI{ELEMENT_SEPARATOR}{practice.TaxId}{SEGMENT_TERMINATOR}");
 
         // 2000B Loop - Subscriber Hierarchical Level
         x12.Append($"HL{ELEMENT_SEPARATOR}2{ELEMENT_SEPARATOR}1{ELEMENT_SEPARATOR}22{ELEMENT_SEPARATOR}0{SEGMENT_TERMINATOR}");
@@ -113,7 +127,9 @@ public class EdiX12Service : IEdiX12Service
         var serviceDateTo = fullClaim.ServiceDateTo ?? fullClaim.ServiceDateFrom;
         x12.Append($"DTP{ELEMENT_SEPARATOR}472{ELEMENT_SEPARATOR}RD8{ELEMENT_SEPARATOR}{fullClaim.ServiceDateFrom:yyyyMMdd}-{serviceDateTo:yyyyMMdd}{SEGMENT_TERMINATOR}");
 
-        // 2310A Loop - Rendering Provider (same as billing for now)
+        // 2310B Loop - Rendering Provider (the dentist: individual NPI)
+        var providerName = $"{Value(fullClaim.Provider.LastName)}{ELEMENT_SEPARATOR}{Value(fullClaim.Provider.FirstName)}";
+        var providerNPI = fullClaim.Provider.NPI;
         x12.Append($"NM1{ELEMENT_SEPARATOR}82{ELEMENT_SEPARATOR}1{ELEMENT_SEPARATOR}{providerName}{ELEMENT_SEPARATOR}{ELEMENT_SEPARATOR}{ELEMENT_SEPARATOR}{ELEMENT_SEPARATOR}{ELEMENT_SEPARATOR}XX{ELEMENT_SEPARATOR}{providerNPI}{SEGMENT_TERMINATOR}");
 
         // 2400 Loops - Service Lines
@@ -127,8 +143,8 @@ public class EdiX12Service : IEdiX12Service
             lineNumber++;
         }
 
-        // SE - Transaction Set Trailer
-        var segmentCount = x12.ToString().Split('~').Length;
+        // SE - Transaction Set Trailer: counts ST through SE itself, leaving out ISA and GS.
+        var segmentCount = x12.ToString().Count(c => c == '~') - 1;
         x12.Append($"SE{ELEMENT_SEPARATOR}{segmentCount}{ELEMENT_SEPARATOR}{transactionControlNumber}{SEGMENT_TERMINATOR}");
 
         // GE - Functional Group Trailer
@@ -167,6 +183,10 @@ public class EdiX12Service : IEdiX12Service
                $"{ELEMENT_SEPARATOR}{date}{ELEMENT_SEPARATOR}{time}" +
                $"{ELEMENT_SEPARATOR}{controlNumber}{ELEMENT_SEPARATOR}X{ELEMENT_SEPARATOR}005010X224A2{SEGMENT_TERMINATOR}";
     }
+
+    /// <summary>Upper-cases a free-text element and drops the characters X12 uses as delimiters.</summary>
+    private static string Value(string text) =>
+        new(text.ToUpperInvariant().Where(c => c is not ('*' or '~' or ':' or '^' or '>')).ToArray());
 
     private string GenerateControlNumber()
     {

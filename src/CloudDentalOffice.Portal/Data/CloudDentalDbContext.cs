@@ -65,6 +65,7 @@ public class CloudDentalDbContext : DbContext
     public DbSet<CoverageVerification> CoverageVerifications => Set<CoverageVerification>();
     public DbSet<CoverageIntakeRequest> CoverageIntakeRequests => Set<CoverageIntakeRequest>();
     public DbSet<WebsiteInsuranceCheck> WebsiteInsuranceChecks => Set<WebsiteInsuranceCheck>();
+    public DbSet<PracticeBillingProfile> PracticeBillingProfiles => Set<PracticeBillingProfile>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -420,6 +421,26 @@ public class CloudDentalDbContext : DbContext
             entity.Property(x => x.AttributionId).HasMaxLength(200);
             entity.Property(x => x.ClosedBy).HasMaxLength(200);
             entity.HasIndex(x => new { x.TenantId, x.ClosedAt, x.ReceivedAt });
+            entity.HasQueryFilter(x => x.TenantId == CurrentTenantId);
+        });
+
+        // The practice as it appears on claims: one row per practice, written with an explicit tenant.
+        modelBuilder.Entity<PracticeBillingProfile>(entity =>
+        {
+            entity.Property(x => x.TenantId).HasMaxLength(64).IsRequired();
+            entity.Property(x => x.LegalName).HasMaxLength(60).IsRequired();
+            entity.Property(x => x.Npi).HasMaxLength(10).IsRequired();
+            entity.Property(x => x.TaxId).HasMaxLength(9).IsRequired();
+            entity.Property(x => x.TaxonomyCode).HasMaxLength(10).IsRequired();
+            entity.Property(x => x.Address1).HasMaxLength(55).IsRequired();
+            entity.Property(x => x.Address2).HasMaxLength(55);
+            entity.Property(x => x.City).HasMaxLength(30).IsRequired();
+            entity.Property(x => x.State).HasMaxLength(2).IsRequired();
+            entity.Property(x => x.ZipCode).HasMaxLength(9).IsRequired();
+            entity.Property(x => x.ContactName).HasMaxLength(60).IsRequired();
+            entity.Property(x => x.Phone).HasMaxLength(10).IsRequired();
+            entity.Property(x => x.UpdatedBy).HasMaxLength(200);
+            entity.HasIndex(x => x.TenantId).IsUnique();
             entity.HasQueryFilter(x => x.TenantId == CurrentTenantId);
         });
 
@@ -853,7 +874,8 @@ public class CloudDentalDbContext : DbContext
                         throw new InvalidOperationException(
                             "A clearinghouse connection must be saved with an explicit tenant.");
                     }
-                    if (entry.Entity is EligibilityVerification or CoverageVerification or CoverageIntakeRequest or WebsiteInsuranceCheck)
+                    if (entry.Entity is EligibilityVerification or CoverageVerification or CoverageIntakeRequest or WebsiteInsuranceCheck
+                        or PracticeBillingProfile)
                     {
                         throw new InvalidOperationException(
                             "An eligibility verification must be saved with an explicit tenant.");

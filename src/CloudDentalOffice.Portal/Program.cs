@@ -429,6 +429,7 @@ builder.Services.AddScoped<IClinicalChartService, ClinicalChartService>();
 
 // Add EDI submission services
 builder.Services.AddScoped<IEdiX12Service, EdiX12Service>();
+builder.Services.AddScoped<IPracticeBillingProfileService, PracticeBillingProfileService>();
 builder.Services.AddScoped<IEdiSftpService, EdiSftpService>();
 builder.Services.AddScoped<ICloudHealthOfficeApiService, CloudHealthOfficeApiService>();
 builder.Services.Configure<CloudHealthOfficeOptions>(builder.Configuration.GetSection("CloudHealthOffice"));
@@ -545,6 +546,7 @@ using (var scope = app.Services.CreateScope())
         await CoverageIntakeSchemaReconciliation.ApplyAsync(dbContext, databaseProvider, logger);
         await FeeScheduleSchemaReconciliation.ApplyAsync(dbContext, databaseProvider, logger);
         await ImportedRecordLinkSchemaReconciliation.ApplyAsync(dbContext, databaseProvider, logger);
+        await PracticeBillingProfileSchemaReconciliation.ApplyAsync(dbContext, databaseProvider, logger);
 
         await InitialTenantBootstrap.ApplyAsync(dbContext, builder.Configuration);
 
