@@ -99,7 +99,9 @@ hyphens; `__` is the configuration path separator and cannot appear in it.
 
 - validate OAuth credentials and authorized API connectivity with a bounded
   `GET /v1/schedulable_entities` request;
-- retrieve active provider/location data from `GET /v1/schedulable_entities`;
+- retrieve active provider-location entities from `GET /v1/schedulable_entities`
+  (entity `id` is `<provider_id>|<location_id>`), then fill provider names and
+  location addresses from `GET /v1/providers?npis=...` in batches of 50 NPIs;
 - retrieve visit-reason IDs and names from `GET /v1/visit_reasons`;
 - map Zocdoc transport DTOs into channel-neutral provider, location, and visit
   reason entities for the CDO mapping workflow.
@@ -174,7 +176,10 @@ After verification, IntakeService commits a PHI-free event containing only the
 tenant, external event ID, appointment ID, and update type to its isolated durable
 inbox before returning `202`. A background dispatcher publishes that record to
 Service Bus; SchedulingService
-then fetches the current appointment from `GET /v1/appointments/{appointment_id}`,
+then fetches the current appointment from `GET /v1/appointments/{appointment_id}`
+(status is `appointment_status` inside the `data` envelope) and the patient from
+`GET /v1/appointments/{appointment_id}/participants`, which also carries the
+patient's Zocdoc insurance (`insurance_plan_id`, member ID, group number, self-pay),
 resolves tenant-scoped provider/location/visit-reason mappings, safely matches or
 creates the patient through PatientService, revalidates the slot, persists the
 appointment and external reference, and calls `POST /v1/appointments/confirm`
@@ -305,6 +310,11 @@ been associated with Zocdoc but has no reference cannot be inferred safely. Comp
 partner exports during pilot reconciliation instead of guessing from patient data.
 
 ## Sandbox validation
+
+The first sandbox run (27 Oct 2026) confirmed OAuth and every documented fixture,
+and showed the live response shapes the transport DTOs now follow: list endpoints
+page with `page` and `next_url`, and the schedulable-entity feed nests its items
+under `data.schedulable_entities`.
 
 Zocdoc publishes predefined sandbox entities and appointment IDs for endpoint
 testing. External tests are isolated from the normal solution and skip cleanly when

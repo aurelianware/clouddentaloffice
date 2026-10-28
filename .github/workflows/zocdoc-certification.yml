@@ -2,6 +2,10 @@ name: Zocdoc Sandbox Certification
 
 on:
   workflow_dispatch:
+  pull_request:
+    paths:
+      - src/Services/Zocdoc.IntegrationTests/**
+      - .github/workflows/zocdoc-certification.yml
 
 permissions:
   contents: read
@@ -14,6 +18,8 @@ jobs:
   certification:
     name: Zocdoc Sandbox Tests
     runs-on: ubuntu-latest
+    # Fork pull requests never receive the environment secrets.
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
     environment: zocdoc-sandbox
     steps:
       - name: Checkout
@@ -29,7 +35,7 @@ jobs:
       - name: Require sandbox credentials
         env:
           ZOCDOC_SANDBOX_CLIENT_ID: ${{ secrets.ZOCDOC_SANDBOX_CLIENT_ID }}
-          ZOCDOC_SANDBOX_CLIENT_SECRET: ${{ secrets.ZOCDOC_SANDBOX_CLIENT_SECRET }}
+          ZOCDOC_SANDBOX_CLIENT_SECRET: ${{ secrets.ZOCDOC_SANDBOX_CLIENT_SECRET || secrets.ZOCDOC_API_SECRET }}
         shell: bash
         run: |
           if [[ -z "$ZOCDOC_SANDBOX_CLIENT_ID" || -z "$ZOCDOC_SANDBOX_CLIENT_SECRET" ]]; then
@@ -49,13 +55,14 @@ jobs:
       - name: Run certification tests
         env:
           ZOCDOC_SANDBOX_CLIENT_ID: ${{ secrets.ZOCDOC_SANDBOX_CLIENT_ID }}
-          ZOCDOC_SANDBOX_CLIENT_SECRET: ${{ secrets.ZOCDOC_SANDBOX_CLIENT_SECRET }}
+          ZOCDOC_SANDBOX_CLIENT_SECRET: ${{ secrets.ZOCDOC_SANDBOX_CLIENT_SECRET || secrets.ZOCDOC_API_SECRET }}
         run: >-
           dotnet test src/Services/Zocdoc.IntegrationTests/Zocdoc.IntegrationTests.csproj
           --configuration Release
           --no-restore
           --no-build
           --logger "trx;LogFilePrefix=zocdoc-sandbox"
+          --logger "console;verbosity=detailed"
           --results-directory "${{ github.workspace }}/TestResults"
 
       - name: Upload certification results
