@@ -335,6 +335,7 @@ app.MapPost("/api/public/v1/acquisition-events", async (
   .RequireRateLimiting("public-acquisition").WithTags("PatientAcquisition");
 
 app.MapCoverageIntake();
+app.MapWebsiteInsuranceChecks();
 
 app.MapPost("/api/public/booking-requests", async (
     PublicBookingRequest request,

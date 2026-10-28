@@ -4,7 +4,9 @@
 @inject IPatientService PatientService
 @inject IProviderService ProviderService
 @inject IDialogService DialogService
+@inject ICoverageIntakeService CoverageIntake
 @inject ISnackbar Snackbar
+@inject ILogger<BookingRequestReviewDialog> Logger
 
 <MudDialog>
     <DialogContent>
@@ -146,10 +148,27 @@
                 DurationMinutes = _duration, Notes = _staffNotes
             });
             Snackbar.Add("Request approved and appointment scheduled.", Severity.Success);
+            await AskForCoverage(_patient.PatientId, local.ToUniversalTime());
             MudDialog.Close(DialogResult.Ok(Request));
         }
         catch (Exception ex) { Snackbar.Add($"Unable to schedule: {ex.Message}", Severity.Error); }
     }
+    // The secure insurance link goes out now rather than when the visit comes within the
+    // verification window. Never blocks the approval, which has already happened.
+    private async Task AskForCoverage(int patientId, DateTime startUtc)
+    {
+        if (Request.InsuranceIntent == "No") return;
+        try
+        {
+            if (await CoverageIntake.SendForBookingAsync(patientId, startUtc) is { Status: CoverageIntakeStatus.Sent } sent)
+                Snackbar.Add($"Secure insurance link emailed to {sent.RecipientEmail}.", Severity.Info);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Could not send the coverage link after approving booking request {RequestId}", Request.Id);
+        }
+    }
+
     private async Task NeedsFollowUp() { Request = await BookingRequests.ChangeStatusAsync(Request.Id, BookingRequestStatus.NeedsFollowUp, notes: _staffNotes); MudDialog.Close(DialogResult.Ok(Request)); }
     private async Task Reject()
     {

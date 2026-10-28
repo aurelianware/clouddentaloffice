@@ -75,6 +75,40 @@ within 14 days; after that they move to the dead-letter queue.
 Rotating the key invalidates links already sent; patients who haven't answered get a
 fresh link after their current one expires.
 
+## Website insurance checks
+
+The practice website's "Check My Insurance" form posts to IntakeService
+`POST /api/public/insurance-checks` with the same `PublicBooking` key as booking, so the
+key picks the practice. The form collects name, phone or email, carrier, plan and whether
+the visitor also wants an appointment. It never collects member IDs or dates of birth.
+
+```
+website function ── POST /api/public/insurance-checks ──► IntakeService (public)
+IntakeService ── WebsiteInsuranceCheckEvent ──► Service Bus topic coverage-intake
+Service Bus subscription portal ──► Portal CoverageIntakeConsumer ──► WebsiteInsuranceChecks
+```
+
+Responses: `202 { status: "received" }` when relayed, `400` invalid, `401` unknown key,
+`503` when the broker is unavailable (the website then falls back to emailing the office).
+An `Idempotency-Key` (or `requestId`) makes a resubmitted form one request.
+
+On **Insurance to Verify**, staff see a **From the website** list. For each visitor they
+**Match patient** (or create one), then **Email secure link**. The link is the same
+coverage intake link described above, sent without an appointment. The patient's answer
+then shows on that row ("The patient sent their plan"), and **Insurance** opens the
+coverage dialog with **Fill in these details**. Adding the coverage and checking
+eligibility there saves the benefits the treatment plan estimate uses. **Done** closes the
+row.
+
+**Website bookings.** When staff **Approve & Schedule** a website booking whose visitor
+didn't answer "No" to insurance, the link goes out at once, naming the visit date, instead of
+waiting for the visit to come within the verification window. Nothing is sent when the patient
+already has active coverage, has no email, or has already sent a plan or said they have none.
+
+It uses the coverage intake switches above. No new secrets, topics or subscriptions are
+needed; the website needs `CLOUDDENTAL_API_BASE` and `CLOUDDENTAL_API_KEY`, which booking
+already uses.
+
 ## Limits
 
 - Email only; no SMS yet.

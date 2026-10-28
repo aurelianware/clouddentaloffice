@@ -16,8 +16,8 @@ public class CoverageIntakeRequest : ITenantEntity
 
     public int PatientId { get; set; }
 
-    /// <summary>The appointment row that prompted the request.</summary>
-    public long CoverageVerificationId { get; set; }
+    /// <summary>The appointment row that prompted the request; null when staff sent it for a website insurance check.</summary>
+    public long? CoverageVerificationId { get; set; }
 
     public string RecipientEmail { get; set; } = string.Empty;
     public CoverageIntakeStatus Status { get; set; }
