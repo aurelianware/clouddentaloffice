@@ -6,9 +6,13 @@
 <PageTitle>Import patients from Dentrix - Cloud Dental Office</PageTitle>
 <MudContainer MaxWidth="MaxWidth.Large" Class="mt-4">
     <MudText Typo="Typo.h4">Import patients from Dentrix</MudText>
-    <MudText Class="my-3">Upload a Dentrix or Dentrix Ascend patient report as CSV with First Name, Last Name and Birth Date (Chart Number when you have it), plus
-        primary and secondary carrier name, payer ID, subscriber ID, group number, relation to subscriber and subscriber
-        name and birth date. Columns are matched by name, so their order doesn't matter.</MudText>
+    <MudText Class="my-3">Import in two steps, as CSV. Columns are matched by name, so their order doesn't matter.</MudText>
+    <ol class="mb-3" style="padding-left: 1.5rem;">
+        <li><b>Patient list</b>: a Dentrix or Dentrix Ascend patient report with First Name, Last Name and Birth Date
+            (Chart Number when you have it). It may also include primary and secondary insurance columns.</li>
+        <li><b>Insurance</b>: the Ascend Patient Insurance report, one row per plan, with Patient, Birth Date, Insurance Carrier,
+            Payer ID and Subscriber ID #. Add Coverage Order, Relationship, Group Number and Subscriber Birth Date when Ascend offers them.</li>
+    </ol>
     <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Class="mb-3">
         A repeat import updates the same patients, by chart number or, for patients without one, by name and birth date, so you can import again until you switch over.
         Patients already in Cloud Dental Office with the same name and birth date are linked instead of duplicated.
@@ -16,7 +20,7 @@
         them under Claims → Payers before running eligibility.
     </MudAlert>
     <MudPaper Class="pa-4 mb-4">
-        <label for="dentrix-file">Dentrix patient export (CSV, up to 20 MB)</label>
+        <label for="dentrix-file">Dentrix patient or insurance report (CSV, up to 20 MB)</label>
         <InputFile id="dentrix-file" OnChange="ReadFile" accept=".csv" disabled="@_busy" />
         @if (_preview is not null)
         {
@@ -25,7 +29,7 @@
                 <tbody>
                     <tr><td>Patients ready to import</td><td>@_preview.Patients.Count</td></tr>
                     <tr><td>With insurance</td><td>@withCoverage</td></tr>
-                    <tr><td>Rows skipped</td><td>@_preview.Issues.Count(i => i.Message.StartsWith("Skipped"))</td></tr>
+                    <tr><td>Rows skipped</td><td>@Skipped(_preview.Issues)</td></tr>
                 </tbody>
             </MudSimpleTable>
             <MudText Typo="Typo.body2">Recognized columns: @string.Join(", ", _preview.RecognizedColumns)</MudText>
@@ -35,6 +39,24 @@
             }
             <MudButton OnClick="Import" Disabled="@(_busy || _preview.Patients.Count == 0)" Variant="Variant.Filled" Color="Color.Primary" Class="mt-3">
                 Import @_preview.Patients.Count patients
+            </MudButton>
+        }
+        @if (_insurance is not null)
+        {
+            <MudSimpleTable Dense="true" Class="my-3">
+                <tbody>
+                    <tr><td>Insurance plans to match to patients</td><td>@_insurance.Rows.Count</td></tr>
+                    <tr><td>Patients in the report</td><td>@_insurance.Rows.Select(r => (r.PatientLastName.ToLowerInvariant(), r.PatientFirstName.ToLowerInvariant(), r.PatientDateOfBirth)).Distinct().Count()</td></tr>
+                    <tr><td>Rows skipped</td><td>@Skipped(_insurance.Issues)</td></tr>
+                </tbody>
+            </MudSimpleTable>
+            <MudText Typo="Typo.body2">Recognized columns: @string.Join(", ", _insurance.RecognizedColumns)</MudText>
+            @if (_insurance.IgnoredColumns.Count > 0)
+            {
+                <MudText Typo="Typo.body2" Class="mt-1">Not imported: @string.Join(", ", _insurance.IgnoredColumns)</MudText>
+            }
+            <MudButton OnClick="ImportInsurance" Disabled="@(_busy || _insurance.Rows.Count == 0)" Variant="Variant.Filled" Color="Color.Primary" Class="mt-3">
+                Import insurance
             </MudButton>
         }
     </MudPaper>
@@ -52,20 +74,32 @@
 
 @code {
     private PatientImportPreview? _preview;
+    private InsuranceImportPreview? _insurance;
     private List<ImportIssue> _issues = [];
     private string? _message;
     private Severity _severity = Severity.Info;
     private bool _busy;
 
+    private static int Skipped(IEnumerable<ImportIssue> issues) => issues.Count(i => i.Message.StartsWith("Skipped"));
+
     private async Task ReadFile(InputFileChangeEventArgs args)
     {
-        _busy = true; _preview = null; _issues = []; _message = null;
+        _busy = true; _preview = null; _insurance = null; _issues = []; _message = null;
         try
         {
             await using var stream = args.File.OpenReadStream(20 * 1024 * 1024);
             using var reader = new StreamReader(stream);
-            _preview = DentrixPatientCsv.Parse(await reader.ReadToEndAsync(), Importer.Today);
-            _issues = _preview.Issues.ToList();
+            var csv = await reader.ReadToEndAsync();
+            if (DentrixInsuranceCsv.IsInsuranceReport(csv))
+            {
+                _insurance = DentrixInsuranceCsv.Parse(csv, Importer.Today);
+                _issues = _insurance.Issues.ToList();
+            }
+            else
+            {
+                _preview = DentrixPatientCsv.Parse(csv, Importer.Today);
+                _issues = _preview.Issues.ToList();
+            }
         }
         catch (Exception ex) { Fail(ex); }
         finally { _busy = false; }
@@ -88,9 +122,26 @@
         finally { _busy = false; }
     }
 
+    private async Task ImportInsurance()
+    {
+        if (_insurance is null) return;
+        _busy = true;
+        try
+        {
+            var result = await Importer.ImportCoveragesAsync(_insurance);
+            _message = $"Insurance: {result.CoveragesAdded} added, {result.CoveragesUpdated} updated, {result.CoveragesReplaced} replaced, " +
+                $"{result.CoveragesUnchanged} already current. {result.PlansCreated} payers added to your payer list.";
+            _severity = Severity.Success;
+            _issues = _insurance.Issues.Concat(result.Issues).OrderBy(i => i.Row).ToList();
+            _insurance = null;
+        }
+        catch (Exception ex) { Fail(ex); }
+        finally { _busy = false; }
+    }
+
     private void Fail(Exception ex)
     {
-        Logger.LogWarning("Dentrix patient import failed ({ErrorType})", ex.GetType().Name);
+        Logger.LogWarning("Dentrix import failed ({ErrorType})", ex.GetType().Name);
         _message = ex is FormatException ? ex.Message : "Could not complete the import. Nothing was saved. Please retry or contact support.";
         _severity = Severity.Error;
     }

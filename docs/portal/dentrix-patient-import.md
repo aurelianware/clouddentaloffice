@@ -25,8 +25,33 @@ second is secondary), `Mobile Phone`, `Email`, `Address 1`, `Address 2`, `City`,
 `State`, `Zip`/`Postal Code`, `Status`/`Patient Status` (`NEW` and `ACTIVE`
 are active).
 
-The Ascend patient report carries no insurance columns. Insurance needs a
-separate subscriber/insurance export, which is the next step.
+The Ascend patient report carries no insurance columns. Import insurance
+afterwards from the Ascend **Patient Insurance** report (Power Reporting),
+exported as CSV. The page recognizes it by its `Subscriber ID #` and
+`Payer ID` columns.
+
+## Ascend Patient Insurance report
+
+One row per patient plan: `Insurance Carrier`, `Payer ID`, `Insurance Plan`,
+`Plan Address`, `Patient` (`Last, First Middle`), `Subscriber ID #`,
+`Subscriber` (`Last, First`), `Birth Date` (the patient's).
+
+- Rows are matched to imported patients by chart number when the report has
+  one, otherwise by last name, first word of the first name (the report adds
+  middle names) and birth date. Unmatched or ambiguous rows are listed.
+- A patient whose subscriber is someone else is treated as `Other`. The
+  coverage is imported only when the report also gives the subscriber's
+  birth date (`Subscriber Birth Date`).
+- With no order column, a patient with one plan gets it as primary. A
+  patient with several plans is listed for review until the report includes
+  `Coverage Order` (`Primary`/`Secondary`).
+- Optional columns used when present: `Chart Number`, `Coverage Order`,
+  `Relationship`, `Group Number`, `Subscriber Birth Date`.
+
+Against the 3rd Set Smiles export (376 rows) this imports 311 coverages. The
+remaining rows break down as 50 rows for 25 patients with two plans and no order,
+8 dependents without the subscriber's birth date, 3 carriers with no payer ID,
+and 4 patients not in the patient list.
 
 Insurance columns, prefixed with `Prim`/`Primary` or `Sec`/`Secondary`
 (for example `Prim Ins Carrier Name`): `Carrier Name`, `Payor ID`,
@@ -75,7 +100,7 @@ estimates need first.
 | # | Data | Status | Approach |
 |---|------|--------|----------|
 | 1 | Fee schedules | Done (#110) | `/fee-schedules` CSV import, practice default overlays CDT picker |
-| 2 | Patients + primary/secondary dental insurance | This change | `/dentrix-import` |
+| 2 | Patients, then insurance | Done (#117, this change) | `/dentrix-import`: patient report, then the Patient Insurance report |
 | 3 | Providers (NPI, name, license, TIN) | Next | Few records: enter on the Providers page. Every appointment provider needs a 10-digit NPI or eligibility returns Needs info |
 | 4 | Benefits (deductibles, maximums, coverage %) | Not imported | Run a fresh Stedi eligibility check per patient after step 2 rather than copying Dentrix coverage tables, which are often stale |
 | 5 | Future appointments | Planned | Dentrix appointment list export, linked by chart number and provider, so verification runs before visits |
