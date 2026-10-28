@@ -9,11 +9,10 @@
 @inject NavigationManager Navigation
 @inject ISnackbar Snackbar
 
-<PageTitle>Stripe Payments</PageTitle>
+<PageTitle>Stripe Payments - Cloud Dental Office</PageTitle>
 
 <MudContainer MaxWidth="MaxWidth.Medium" Class="mt-4 mb-8">
-    <MudText Typo="Typo.h4">Stripe Payments</MudText>
-    <MudText Color="Color.Secondary" Class="mb-5">Connect the practice directly to Stripe for patient payment settlement.</MudText>
+    <PageHeader Title="Stripe payments" Subtitle="Connect the practice directly to Stripe for patient payment settlement." Section="Practice setup" />
     <MudPaper Class="pa-5" Elevation="2">
         @if (_loading) { <MudProgressLinear Indeterminate="true" /> }
         else if (_status is null) { <MudAlert Severity="Severity.Warning">Stripe is not configured for this practice.</MudAlert> }

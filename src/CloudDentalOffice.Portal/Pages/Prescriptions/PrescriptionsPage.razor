@@ -6,47 +6,35 @@
 @inject ISnackbar Snackbar
 @inject NavigationManager Navigation
 
-<PageTitle>e-Prescribe — Cloud Dental Office</PageTitle>
+<PageTitle>e-Prescribe - Cloud Dental Office</PageTitle>
 
 <MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-4">
 
-    @* ── Header Bar ── *@
-    <MudPaper Class="pa-4 mb-4" Style="background: var(--cdo-surface); border-left: 4px solid var(--cdo-accent-2);">
-        <MudGrid>
-            <MudItem xs="12" sm="6">
-                <MudText Typo="Typo.h5" Style="color: var(--cdo-text);">
-                    <MudIcon Icon="@Icons.Material.Filled.Medication" Class="mr-2" Style="color: var(--cdo-accent-2);" />
-                    e-Prescribe
-                </MudText>
-                <MudText Typo="Typo.body2" Style="color: var(--cdo-text-muted);">
-                    DoseSpot Integration · Surescripts Certified · EPCS Enabled
-                </MudText>
-            </MudItem>
-            <MudItem xs="12" sm="6" Class="d-flex align-center justify-end gap-2">
-                @if (_notifications.Any(n => !n.Acknowledged))
-                {
-                    <MudBadge Content="@_notifications.Count(n => !n.Acknowledged)" Color="Color.Error" Overlap="true">
-                        <MudIconButton Icon="@Icons.Material.Filled.Notifications"
-                                       Color="Color.Default"
-                                       OnClick="@(() => _showNotifications = !_showNotifications)" />
-                    </MudBadge>
-                }
-                <MudButton Variant="Variant.Filled"
-                           Color="Color.Primary"
-                           StartIcon="@Icons.Material.Filled.Add"
-                           OnClick="OpenNewPrescription">
-                    New Prescription
-                </MudButton>
-                <MudButton Variant="Variant.Outlined"
-                           Color="Color.Default"
-                           StartIcon="@Icons.Material.Filled.OpenInNew"
-                           OnClick="LaunchDoseSpot"
-                           Style="border-color: var(--cdo-line); color: var(--cdo-text-muted);">
-                    Open DoseSpot
-                </MudButton>
-            </MudItem>
-        </MudGrid>
-    </MudPaper>
+    <PageHeader Title="e-Prescribe" Subtitle="DoseSpot integration · Surescripts certified · EPCS enabled" Section="Clinical">
+        <Actions>
+            @if (_notifications.Any(n => !n.Acknowledged))
+            {
+                <MudBadge Content="@_notifications.Count(n => !n.Acknowledged)" Color="Color.Error" Overlap="true">
+                    <MudIconButton Icon="@Icons.Material.Filled.Notifications"
+                                   Color="Color.Default"
+                                   OnClick="@(() => _showNotifications = !_showNotifications)" />
+                </MudBadge>
+            }
+            <MudButton Variant="Variant.Filled"
+                       Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.Add"
+                       OnClick="OpenNewPrescription">
+                New Prescription
+            </MudButton>
+            <MudButton Variant="Variant.Outlined"
+                       Color="Color.Default"
+                       StartIcon="@Icons.Material.Filled.OpenInNew"
+                       OnClick="LaunchDoseSpot"
+                       Style="border-color: var(--cdo-line); color: var(--cdo-text-muted);">
+                Open DoseSpot
+            </MudButton>
+        </Actions>
+    </PageHeader>
 
     @* ── Notifications Panel ── *@
     @if (_showNotifications && _notifications.Any())

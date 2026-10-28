@@ -3,19 +3,11 @@
 @inject IVisionService VisionService
 @inject ISnackbar Snackbar
 
-<PageTitle>Insurance Card Scanner — Cloud Dental Office</PageTitle>
+<PageTitle>Insurance Card Scanner - Cloud Dental Office</PageTitle>
 
 <MudContainer MaxWidth="MaxWidth.Large" Class="mt-4">
 
-    <MudPaper Class="pa-4 mb-4" Style="background: var(--cdo-surface); border-left: 4px solid var(--cdo-success);">
-        <MudText Typo="Typo.h5" Style="color: var(--cdo-text);">
-            <MudIcon Icon="@Icons.Material.Filled.CreditCard" Class="mr-2" Style="color: var(--cdo-success);" />
-            Insurance Card Scanner
-        </MudText>
-        <MudText Typo="Typo.body2" Style="color: var(--cdo-text-subtle);">
-            Capture an insurance card and read its fields
-        </MudText>
-    </MudPaper>
+    <PageHeader Title="Insurance card scans" Subtitle="Capture an insurance card and read its fields" Section="AI Vision" />
 
     <MudGrid>
         @* ── Scan Interface ── *@

@@ -4,32 +4,20 @@
 @inject ISnackbar Snackbar
 @inject NavigationManager Navigation
 
-<PageTitle>AI Vision Dashboard — Cloud Dental Office</PageTitle>
+<PageTitle>AI Vision Dashboard - Cloud Dental Office</PageTitle>
 
 <MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-4">
 
-    @* ── Header Bar ── *@
-    <MudPaper Class="pa-4 mb-4" Style="background: var(--cdo-surface); border-left: 4px solid var(--cdo-accent);">
-        <MudGrid>
-            <MudItem xs="12" sm="8">
-                <MudText Typo="Typo.h5" Style="color: var(--cdo-text);">
-                    <MudIcon Icon="@Icons.Material.Filled.RemoveRedEye" Class="mr-2" Style="color: var(--cdo-accent);" />
-                    AI Vision Dashboard
-                </MudText>
-                <MudText Typo="Typo.body2" Style="color: var(--cdo-text-muted);">
-                    privaseeAI Integration · Real-time Detection · Compliance Monitoring
-                </MudText>
-            </MudItem>
-            <MudItem xs="12" sm="4" Class="d-flex align-center justify-end gap-2">
-                <MudButton Variant="Variant.Outlined"
-                           Color="Color.Primary"
-                           StartIcon="@Icons.Material.Filled.Add"
-                           Href="/vision/devices">
-                    Register Device
-                </MudButton>
-            </MudItem>
-        </MudGrid>
-    </MudPaper>
+    <PageHeader Title="AI Vision" Subtitle="privaseeAI integration · Real-time detection · Compliance monitoring" Section="AI Vision">
+        <Actions>
+            <MudButton Variant="Variant.Outlined"
+                       Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.Add"
+                       Href="/vision/devices">
+                Register Device
+            </MudButton>
+        </Actions>
+    </PageHeader>
 
     @* ── Loading State ── *@
     @if (_loading)

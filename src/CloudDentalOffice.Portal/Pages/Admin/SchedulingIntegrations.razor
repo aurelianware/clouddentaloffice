@@ -5,13 +5,10 @@
 @inject ISchedulingIntegrationAdminClient Client
 @inject ISnackbar Snackbar
 
-<PageTitle>Scheduling Integrations</PageTitle>
+<PageTitle>Scheduling Integrations - Cloud Dental Office</PageTitle>
 
 <MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-4 mb-8">
-    <MudText Typo="Typo.h4">Scheduling Integrations</MudText>
-    <MudText Typo="Typo.body1" Color="Color.Secondary" Class="mb-5">
-        Configure external scheduling channels, mappings, availability, and synchronization.
-    </MudText>
+    <PageHeader Title="Scheduling integrations" Subtitle="Configure external scheduling channels, mappings, availability and synchronization." Section="Practice setup" />
 
     @if (_loading)
     {

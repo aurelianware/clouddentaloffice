@@ -14,23 +14,17 @@
 <PageTitle>Insurance to Verify - Cloud Dental Office</PageTitle>
 
 <MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-4">
-    <MudPaper Class="pa-4" Style="background:var(--cdo-surface);border:1px solid var(--cdo-line);">
-        <MudStack Row Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center">
-            <div>
-                <MudText Typo="Typo.h4" Color="Color.Primary"><MudIcon Icon="@Icons.Material.Filled.VerifiedUser" /> Insurance to Verify</MudText>
-                <MudText Typo="Typo.body2">Upcoming appointments whose dental coverage isn't confirmed. Coverage is checked automatically; these need the front desk.</MudText>
-            </div>
-            <MudStack Row AlignItems="AlignItems.Center">
-                <MudSwitch T="bool" Value="_includeVerified" ValueChanged="IncludeVerifiedChanged" Color="Color.Primary" Label="Show verified" />
-                <MudSelect T="int" Value="_days" ValueChanged="DaysChanged" Label="Appointments" Dense Variant="Variant.Outlined">
-                    <MudSelectItem Value="1">Today</MudSelectItem>
-                    <MudSelectItem Value="3">Next 3 days</MudSelectItem>
-                    <MudSelectItem Value="7">Next 7 days</MudSelectItem>
-                    <MudSelectItem Value="14">Next 14 days</MudSelectItem>
-                </MudSelect>
-            </MudStack>
-        </MudStack>
-    </MudPaper>
+    <PageHeader Title="Insurance to verify" Subtitle="Upcoming appointments whose dental coverage isn't confirmed. Coverage is checked automatically; these need the front desk." Section="Front desk">
+        <Actions>
+            <MudSwitch T="bool" Value="_includeVerified" ValueChanged="IncludeVerifiedChanged" Color="Color.Primary" Label="Show verified" />
+            <MudSelect T="int" Value="_days" ValueChanged="DaysChanged" Label="Appointments" Dense Variant="Variant.Outlined">
+                <MudSelectItem Value="1">Today</MudSelectItem>
+                <MudSelectItem Value="3">Next 3 days</MudSelectItem>
+                <MudSelectItem Value="7">Next 7 days</MudSelectItem>
+                <MudSelectItem Value="14">Next 14 days</MudSelectItem>
+            </MudSelect>
+        </Actions>
+    </PageHeader>
 
     @if (_websiteChecks.Count > 0)
     {

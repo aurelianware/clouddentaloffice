@@ -3,18 +3,10 @@
 @inject IVisionService VisionService
 @inject ISnackbar Snackbar
 
-<PageTitle>Clinical Notes — Cloud Dental Office</PageTitle>
+<PageTitle>Clinical Notes - Cloud Dental Office</PageTitle>
 
 <MudContainer MaxWidth="MaxWidth.Large" Class="mt-4">
-    <MudPaper Class="pa-4 mb-4" Style="background: var(--cdo-surface); border-left: 4px solid var(--cdo-warning);">
-        <MudText Typo="Typo.h5" Style="color: var(--cdo-text);">
-            <MudIcon Icon="@Icons.Material.Filled.EditNote" Class="mr-2" Style="color: var(--cdo-warning);" />
-            AI-Assisted Clinical Notes
-        </MudText>
-        <MudText Typo="Typo.body2" Style="color: var(--cdo-text-subtle);">
-            Vision-observed procedures · LLM-drafted notes · Provider review required
-        </MudText>
-    </MudPaper>
+    <PageHeader Title="Clinical notes" Subtitle="Vision-observed procedures · AI-drafted notes · Provider review required" Section="AI Vision" />
 
     @* ── Notes List ── *@
     <MudGrid>

@@ -3,36 +3,25 @@
 @inject IVisionService VisionService
 @inject ISnackbar Snackbar
 
-<PageTitle>Narcotics Cabinet — Cloud Dental Office</PageTitle>
+<PageTitle>Narcotics Cabinet - Cloud Dental Office</PageTitle>
 
 <MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-4">
 
-    @* ── Header ── *@
-    <MudPaper Class="pa-4 mb-4" Style="background: var(--cdo-surface); border-left: 4px solid var(--cdo-error);">
-        <MudGrid>
-            <MudItem xs="12" sm="6">
-                <MudText Typo="Typo.h5" Style="color: var(--cdo-text);">
-                    <MudIcon Icon="@Icons.Material.Filled.MedicalServices" Class="mr-2" Style="color: var(--cdo-error);" />
-                    Controlled Substance Access Log
-                </MudText>
-                <MudText Typo="Typo.body2" Style="color: var(--cdo-text-muted);">
-                    DEA Compliance · 21 CFR 1304 · Vision-Verified Access Control
-                </MudText>
-            </MudItem>
-            <MudItem xs="12" sm="6" Class="d-flex align-center justify-end gap-2">
-                <MudButton Variant="Variant.Outlined" Size="Size.Small"
-                           StartIcon="@Icons.Material.Filled.FileDownload"
-                           Style="border-color: var(--cdo-line); color: var(--cdo-text-muted);"
-                           OnClick="ExportAuditLog">
-                    Export for DEA
-                </MudButton>
-                <MudDateRangePicker @bind-DateRange="_dateRange"\n                                    @bind-DateRange:after="OnDateRangeChanged"
-                                    Variant="Variant.Outlined"
-                                    Dense="true"
-                                    Style="max-width: 280px; color: var(--cdo-text);" />
-            </MudItem>
-        </MudGrid>
-    </MudPaper>
+    <PageHeader Title="Cabinet access" Subtitle="Controlled substance access log · DEA 21 CFR 1304 · Vision-verified access control" Section="AI Vision">
+        <Actions>
+            <MudButton Variant="Variant.Outlined" Size="Size.Small"
+                       StartIcon="@Icons.Material.Filled.FileDownload"
+                       Style="border-color: var(--cdo-line); color: var(--cdo-text-muted);"
+                       OnClick="ExportAuditLog">
+                Export for DEA
+            </MudButton>
+            <MudDateRangePicker @bind-DateRange="_dateRange"
+                                @bind-DateRange:after="OnDateRangeChanged"
+                                Variant="Variant.Outlined"
+                                Dense="true"
+                                Style="max-width: 280px; color: var(--cdo-text);" />
+        </Actions>
+    </PageHeader>
 
     @* ── Summary Cards ── *@
     <MudGrid Class="mb-4">

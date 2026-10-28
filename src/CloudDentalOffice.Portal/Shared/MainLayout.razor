@@ -22,9 +22,20 @@
 
         <MudSpacer />
 
-        <MudIconButton Icon="@Icons.Material.Filled.Notifications" Color="Color.Inherit" aria-label="Notifications" />
-        <MudIconButton Icon="@Icons.Material.Filled.AccountCircle" Color="Color.Inherit" aria-label="User account" />
-        <MudIconButton Icon="@Icons.Material.Filled.Logout" Color="Color.Inherit" OnClick="Logout" aria-label="Log out" title="Log out" />
+        <AuthorizeView>
+            <MudMenu Icon="@Icons.Material.Filled.AccountCircle" Color="Color.Inherit" aria-label="Account"
+                     AnchorOrigin="Origin.BottomRight" TransformOrigin="Origin.TopRight">
+                <div class="cdo-menu-signedin">
+                    <MudText Typo="Typo.caption">Signed in as</MudText>
+                    <MudText Typo="Typo.body2">@(context.User.Identity?.Name ?? "Unknown user")</MudText>
+                </div>
+                @if (StaffRoles.CanManagePayers(context.User))
+                {
+                    <MudMenuItem Icon="@Icons.Material.Filled.Tune" Href="/settings">Practice settings</MudMenuItem>
+                }
+                <MudMenuItem Icon="@Icons.Material.Filled.Logout" OnClick="Logout">Sign out</MudMenuItem>
+            </MudMenu>
+        </AuthorizeView>
     </MudAppBar>
     
     <MudDrawer @bind-Open="_drawerOpen" Elevation="0" Class="cdo-drawer">
@@ -35,115 +46,64 @@
                     <MudNavLink Href="/patient/billing" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.ReceiptLong">Billing</MudNavLink>
                 </MudNavGroup>
             </AuthorizeView>
-            <!-- Dashboard -->
-            <MudNavLink Href="/" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.Dashboard">
-                Dashboard
-            </MudNavLink>
-            
-            <!-- Practice Management -->
-            <MudNavGroup Title="Practice Management" Icon="@Icons.Material.Filled.Business" Expanded="true">
-                <MudNavLink Href="/patients" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.People">
-                    Patients
-                </MudNavLink>
-                <MudNavLink Href="/appointments" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Event">
-                    Appointments
-                </MudNavLink>
-                <MudNavLink Href="/appointment-requests" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.MarkEmailUnread">
-                    Appointment Requests
-                </MudNavLink>
-                <MudNavLink Href="/insurance-to-verify" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.VerifiedUser">
-                    Insurance to Verify
-                </MudNavLink>
-                <MudNavLink Href="/pilot-metrics" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Insights">
-                    Pilot Metrics
-                </MudNavLink>
-                <MudNavLink Href="/treatment-plans" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Assignment">
-                    Treatment Plans
-                </MudNavLink>
-                <MudNavLink Href="/chart" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Medication">
-                    Clinical Chart
-                </MudNavLink>
-                <MudNavLink Href="/prescriptions" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.LocalPharmacy">
-                    e-Prescribe
-                </MudNavLink>
-            </MudNavGroup>
-            
-            <!-- AI Vision -->
-            <MudNavGroup Title="AI Vision" Icon="@Icons.Material.Filled.RemoveRedEye" Expanded="false">
-                <MudNavLink Href="/vision" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Dashboard">
-                    Vision Dashboard
-                </MudNavLink>
-                <MudNavLink Href="/vision/devices" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Devices">
-                    Devices
-                </MudNavLink>
-                <MudNavLink Href="/vision/events" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Videocam">
-                    Events & Alerts
-                </MudNavLink>
-                <MudNavLink Href="/vision/insurance-scans" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.CreditCard">
-                    Insurance Card OCR
-                </MudNavLink>
-                <MudNavLink Href="/vision/consent" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Assignment">
-                    Consent Recordings
-                </MudNavLink>
-                <MudNavLink Href="/vision/cabinet" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Lock">
-                    Cabinet Access
-                </MudNavLink>
-                <MudNavLink Href="/vision/clinical-notes" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.EditNote">
-                    Clinical Notes
-                </MudNavLink>
-            </MudNavGroup>
-            
-            <!-- Claims -->
-            <MudNavGroup Title="Claims" Icon="@Icons.Material.Filled.CloudSync" Expanded="false">
-                <MudNavLink Href="/claims" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Assignment">
-                    Claims
-                </MudNavLink>
-                <MudNavLink Href="/payers" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Business">
-                    Insurance Payers
-                </MudNavLink>
-            </MudNavGroup>
-            
-            <AuthorizeView Roles="Admin,BillingAdmin,BillingStaff">
-                <MudNavLink Href="/billing" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Receipt">Billing & Payments</MudNavLink>
-            </AuthorizeView>
-            
-            <!-- Reports -->
-            <MudNavLink Href="/reports" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.BarChart">
-                Reports
-            </MudNavLink>
-            <AuthorizeView Roles="Admin">
-                <MudNavLink Href="/analytics/patient-acquisition" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Insights">Patient Acquisition</MudNavLink>
-            </AuthorizeView>
-            
-            <!-- Providers -->
-            <MudNavLink Href="/providers" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.MedicalServices">
-                Providers
-            </MudNavLink>
-            
-            <!-- Admin (for Admin role only) -->
-            <AuthorizeView Roles="Admin">
-                <MudNavGroup Title="Administration" Icon="@Icons.Material.Filled.AdminPanelSettings" Expanded="false">
-                    <MudNavLink Href="/admin/organization/settings" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Business">
-                        Organization Settings
-                    </MudNavLink>
-                    <MudNavLink Href="/admin/users" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.People">
-                        User Management
-                    </MudNavLink>
+
+            @* Grouped by the job at hand, the way Cloud Health Office's navigation is: the
+               front desk, the operatory, insurance, money, then running the practice. *@
+            <AuthorizeView Roles="@StaffRoles.PayerManagers">
+                <MudNavLink Href="/" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.Home">Home</MudNavLink>
+
+                <MudNavGroup Title="Front desk" Icon="@Icons.Material.Filled.Badge" Expanded="true">
+                    <MudNavLink Href="/patients" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.People">Patients</MudNavLink>
+                    <MudNavLink Href="/appointments" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Event">Appointments</MudNavLink>
+                    <MudNavLink Href="/appointment-requests" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.MarkEmailUnread">Appointment requests</MudNavLink>
+                    <MudNavLink Href="/insurance-to-verify" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.VerifiedUser">Insurance to verify</MudNavLink>
+                </MudNavGroup>
+
+                <MudNavGroup Title="Clinical" Icon="@Icons.Material.Filled.MedicalServices" Expanded="true">
+                    <MudNavLink Href="/chart" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Medication">Clinical chart</MudNavLink>
+                    <MudNavLink Href="/treatment-plans" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Assignment">Treatment plans</MudNavLink>
+                    <MudNavLink Href="/prescriptions" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.LocalPharmacy">e-Prescribe</MudNavLink>
+                </MudNavGroup>
+
+                <MudNavGroup Title="Insurance & claims" Icon="@Icons.Material.Filled.CloudSync" Expanded="true">
+                    <MudNavLink Href="/claims" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.ReceiptLong">Claims</MudNavLink>
+                    <MudNavLink Href="/payers" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.AccountBalance">Insurance payers</MudNavLink>
+                    <MudNavLink Href="/fee-schedules" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.RequestQuote">Fee schedules</MudNavLink>
+                </MudNavGroup>
+
+                <AuthorizeView Roles="Admin,BillingAdmin,BillingStaff" Context="billing">
+                    <MudNavLink Href="/billing" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Payments">Billing &amp; payments</MudNavLink>
+                </AuthorizeView>
+
+                <MudNavGroup Title="Insights" Icon="@Icons.Material.Filled.Insights" Expanded="false">
+                    <MudNavLink Href="/pilot-metrics" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Speed">Pilot metrics</MudNavLink>
+                    <AuthorizeView Roles="Admin" Context="admin">
+                        <MudNavLink Href="/analytics/patient-acquisition" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.TrendingUp">Patient acquisition</MudNavLink>
+                    </AuthorizeView>
+                </MudNavGroup>
+
+                <MudNavGroup Title="AI Vision" Icon="@Icons.Material.Filled.RemoveRedEye" Expanded="false">
+                    <MudNavLink Href="/vision" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.Dashboard">Overview</MudNavLink>
+                    <MudNavLink Href="/vision/events" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Videocam">Events &amp; alerts</MudNavLink>
+                    <MudNavLink Href="/vision/insurance-scans" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.CreditCard">Insurance card scans</MudNavLink>
+                    <MudNavLink Href="/vision/consent" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Assignment">Consent recordings</MudNavLink>
+                    <MudNavLink Href="/vision/clinical-notes" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.EditNote">Clinical notes</MudNavLink>
+                    <MudNavLink Href="/vision/cabinet" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Lock">Cabinet access</MudNavLink>
+                    <MudNavLink Href="/vision/devices" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Devices">Devices</MudNavLink>
+                </MudNavGroup>
+
+                <MudNavGroup Title="Practice setup" Icon="@Icons.Material.Filled.Settings" Expanded="false">
+                    <MudNavLink Href="/settings" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.Tune">Practice settings</MudNavLink>
+                    <MudNavLink Href="/providers" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.MedicalInformation">Providers</MudNavLink>
+                    <MudNavLink Href="/dentrix-import" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.UploadFile">Import from Dentrix</MudNavLink>
+                    <AuthorizeView Roles="Admin" Context="admin">
+                        <MudNavLink Href="/admin/organization/settings" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Business">Organization</MudNavLink>
+                        <MudNavLink Href="/admin/users" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.ManageAccounts">Users</MudNavLink>
+                        <MudNavLink Href="/settings/integrations/scheduling" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.EventAvailable">Scheduling integrations</MudNavLink>
+                        <MudNavLink Href="/settings/payments/stripe" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.CreditScore">Stripe payments</MudNavLink>
+                    </AuthorizeView>
                 </MudNavGroup>
             </AuthorizeView>
-            
-            <!-- Settings -->
-            <MudNavGroup Title="Settings" Icon="@Icons.Material.Filled.Settings" Expanded="false">
-                <MudNavLink Href="/settings" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.Tune">Practice Settings</MudNavLink>
-                <AuthorizeView Roles="Admin">
-                    <MudNavGroup Title="Integrations" Icon="@Icons.Material.Filled.Extension" Expanded="false">
-                        <MudNavLink Href="/settings/integrations/scheduling" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.EventAvailable">Scheduling</MudNavLink>
-                    </MudNavGroup>
-                    <MudNavGroup Title="Payments" Icon="@Icons.Material.Filled.Payments" Expanded="false">
-                        <MudNavLink Href="/settings/payments/stripe" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.AccountBalance">Stripe</MudNavLink>
-                    </MudNavGroup>
-                </AuthorizeView>
-            </MudNavGroup>
         </MudNavMenu>
         
         <div class="cdo-drawer-footer">Cloud Dental Office</div>
