@@ -406,6 +406,8 @@ public sealed class DentrixPatientImportService(
             .ToDictionary(x => x.ExternalId, x => x.p, StringComparer.OrdinalIgnoreCase);
         var byName = patients.ToLookup(p => (p.LastName.Trim().ToLowerInvariant(),
             DentrixInsuranceCsv.FirstWord(p.FirstName).ToLowerInvariant(), p.DateOfBirth.Date));
+        // A dependent's subscriber is often a patient too; their record supplies the birth date the report lacks.
+        var byPersonName = patients.ToLookup(p => (p.LastName.Trim().ToLowerInvariant(), DentrixInsuranceCsv.FirstWord(p.FirstName).ToLowerInvariant()));
         var plans = await db.InsurancePlans.ToListAsync(cancellationToken);
         var planCount = plans.Count;
 
@@ -446,7 +448,11 @@ public sealed class DentrixPatientImportService(
                     continue;
                 }
                 var row = slot.Single();
-                var (outcome, problem) = await UpsertCoverageAsync(db, patient, row.Coverage, plans, now, today, cancellationToken);
+                var coverage = row.Coverage;
+                if (coverage is { Relationship: not CoverageRelationships.Self, SubscriberDateOfBirth: null, SubscriberLastName: { } subscriberLast, SubscriberFirstName: { } subscriberFirst } &&
+                    byPersonName[(subscriberLast.Trim().ToLowerInvariant(), DentrixInsuranceCsv.FirstWord(subscriberFirst).ToLowerInvariant())].ToList() is [var subscriber])
+                    coverage = coverage with { SubscriberDateOfBirth = subscriber.DateOfBirth.Date };
+                var (outcome, problem) = await UpsertCoverageAsync(db, patient, coverage, plans, now, today, cancellationToken);
                 if (problem is not null) issues.Add(new(row.Row, row.ChartNumber, problem));
                 if (outcome == CoverageOutcome.Unchanged) unchanged++;
                 Count(outcome, ref added, ref changed, ref replaced);

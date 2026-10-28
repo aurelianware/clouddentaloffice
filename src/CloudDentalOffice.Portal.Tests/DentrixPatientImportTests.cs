@@ -208,6 +208,43 @@ public class DentrixPatientImportTests
         }
     }
 
+    // Later Ascend layout with plan order and coverage dates; synthetic values.
+    private const string AscendOrderedInsuranceCsv = """
+        Insurance Carrier,Payer ID,Insurance Plan,Insurance Plan Order,Plan Order Start Date,Plan Order End Date,Patient,Subscriber ID #,Subscriber,Birth Date,Date (Cov. End),Patient Status
+        Delta Dental of Test,DDTST,Plan,2,2026-01-01,Not Available,"Testone, Nochart Ann",M200,"Testone, Nochart",06/07/1985,Not Available,NEW
+        Test Mutual,TMUT1,Plan,1,2026-01-01,Not Available,"Testone, Nochart Ann",M201,"Testone, Nochart",06/07/1985,Not Available,NEW
+        Old Carrier,OLDC1,Plan,1,2020-01-01,2025-12-31,"Testone, Nochart Ann",M100,"Testone, Nochart",06/07/1985,Not Available,NEW
+        Test Mutual,TMUT1,Plan,1,2026-02-01,Not Available,"Testtwo, Kid",M300,"Testtwo, Haschart",01/01/2015,Not Available,ACTIVE
+        """;
+
+    [Fact]
+    public async Task UsesPlanOrderSkipsEndedPlansAndFindsSubscriberBirthDatesAmongPatients()
+    {
+        var preview = DentrixInsuranceCsv.Parse(AscendOrderedInsuranceCsv, Today);
+        Assert.Equal((3, 1), (preview.Rows.Count, preview.EndedRows));
+        Assert.Equal(new DateTime(2026, 1, 1), preview.Rows[0].Coverage.EffectiveDate);
+        Assert.DoesNotContain("Patient Status", preview.RecognizedColumns);
+
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = new DbContextOptionsBuilder<CloudDentalDbContext>().UseSqlite(connection).Options;
+        var tenant = new Tenant("practice-a");
+        await using (var db = new CloudDentalDbContext(options, tenant)) await db.Database.EnsureCreatedAsync();
+        var service = Service(options, tenant);
+        await service.ImportAsync(DentrixPatientCsv.Parse(AscendCsv, Today));
+        await service.ImportAsync(DentrixPatientCsv.Parse("Chart Number,First Name,Last Name,Birth Date\nK2,Kid,Testtwo,01/01/2015", Today));
+
+        var result = await service.ImportCoveragesAsync(preview);
+        Assert.Equal(3, result.CoveragesAdded);
+        Assert.Empty(result.Issues);
+        await using var check = new CloudDentalDbContext(options, tenant);
+        var nochart = await check.Patients.Include(p => p.Insurances).SingleAsync(p => p.FirstName == "Nochart");
+        Assert.Equal(["M201", "M200"], nochart.Insurances.OrderBy(i => i.SequenceNumber).Select(i => i.MemberId));
+        var kid = await check.PatientInsurances.SingleAsync(i => i.MemberId == "M300");
+        // The subscriber is the Haschart patient, whose record holds the birth date.
+        Assert.Equal(("Other", new DateTime(1970, 1, 31)), (kid.RelationshipToSubscriber, kid.SubscriberDateOfBirth));
+    }
+
     [Fact]
     public async Task ReportsCoverageThatCannotBeVerified()
     {
