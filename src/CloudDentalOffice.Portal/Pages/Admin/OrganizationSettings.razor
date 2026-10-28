@@ -6,10 +6,10 @@
 @inject ISnackbar Snackbar
 @inject AuthenticationStateProvider AuthStateProvider
 
-<PageTitle>Organization Settings</PageTitle>
+<PageTitle>Organization Settings - Cloud Dental Office</PageTitle>
 
 <MudContainer MaxWidth="MaxWidth.Large" Class="mt-4">
-    <MudText Typo="Typo.h4" Class="mb-6">Organization Settings</MudText>
+    <PageHeader Title="Organization" Subtitle="Your organization's details and subscription" Section="Practice setup" />
 
     @if (organization == null)
     {

@@ -4,32 +4,20 @@
 @inject ISnackbar Snackbar
 @inject IDialogService DialogService
 
-<PageTitle>Vision Devices — Cloud Dental Office</PageTitle>
+<PageTitle>Vision Devices - Cloud Dental Office</PageTitle>
 
 <MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-4">
 
-    @* ── Header Bar ── *@
-    <MudPaper Class="pa-4 mb-4" Style="background: var(--cdo-surface); border-left: 4px solid var(--cdo-accent);">
-        <MudGrid Justify="Justify.SpaceBetween">
-            <MudItem>
-                <MudText Typo="Typo.h5" Style="color: var(--cdo-text);">
-                    <MudIcon Icon="@Icons.Material.Filled.Devices" Class="mr-2" Style="color: var(--cdo-accent);" />
-                    Vision Devices
-                </MudText>
-                <MudText Typo="Typo.body2" Style="color: var(--cdo-text-muted);">
-                    Manage privaseeAI cameras and edge devices
-                </MudText>
-            </MudItem>
-            <MudItem>
-                <MudButton Variant="Variant.Filled"
-                           Color="Color.Primary"
-                           StartIcon="@Icons.Material.Filled.Add"
-                           OnClick="OpenRegisterDialog">
-                    Register New Device
-                </MudButton>
-            </MudItem>
-        </MudGrid>
-    </MudPaper>
+    <PageHeader Title="Devices" Subtitle="Manage privaseeAI cameras and edge devices" Section="AI Vision">
+        <Actions>
+            <MudButton Variant="Variant.Filled"
+                       Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.Add"
+                       OnClick="OpenRegisterDialog">
+                Register New Device
+            </MudButton>
+        </Actions>
+    </PageHeader>
 
     @* ── Loading State ── *@
     @if (_loading)

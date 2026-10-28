@@ -6,20 +6,16 @@
 <PageTitle>Pilot Metrics - Cloud Dental Office</PageTitle>
 
 <MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-4">
-    <MudPaper Class="pa-4" Style="background:var(--cdo-surface);border:1px solid var(--cdo-line);">
-        <MudStack Row Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Wrap="Wrap.Wrap">
-            <div>
-                <MudText Typo="Typo.h4" Color="Color.Primary"><MudIcon Icon="@Icons.Material.Filled.Insights" /> Pilot Metrics</MudText>
-                <MudText Typo="Typo.body2">How coverage checks, intake and claims are doing for this practice, from what the Portal records.</MudText>
-            </div>
+    <PageHeader Title="Pilot metrics" Subtitle="How coverage checks, intake and claims are doing for this practice, from what the portal records." Section="Insights">
+        <Actions>
             <MudSelect T="int" Value="_days" ValueChanged="DaysChanged" Label="Period" Dense Variant="Variant.Outlined" Style="min-width:160px">
                 <MudSelectItem Value="7">Last 7 days</MudSelectItem>
                 <MudSelectItem Value="30">Last 30 days</MudSelectItem>
                 <MudSelectItem Value="90">Last 90 days</MudSelectItem>
                 <MudSelectItem Value="365">Last 12 months</MudSelectItem>
             </MudSelect>
-        </MudStack>
-    </MudPaper>
+        </Actions>
+    </PageHeader>
 
     @if (_loading)
     {

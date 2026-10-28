@@ -3,18 +3,10 @@
 @inject IVisionService VisionService
 @inject ISnackbar Snackbar
 
-<PageTitle>Consent Recordings — Cloud Dental Office</PageTitle>
+<PageTitle>Consent Recordings - Cloud Dental Office</PageTitle>
 
 <MudContainer MaxWidth="MaxWidth.Large" Class="mt-4">
-    <MudPaper Class="pa-4 mb-4" Style="background: var(--cdo-surface); border-left: 4px solid var(--cdo-info);">
-        <MudText Typo="Typo.h5" Style="color: var(--cdo-text);">
-            <MudIcon Icon="@Icons.Material.Filled.Verified" Class="mr-2" Style="color: var(--cdo-info);" />
-            Consent Recordings
-        </MudText>
-        <MudText Typo="Typo.body2" Style="color: var(--cdo-text-subtle);">
-            Video-verified informed consent · Tamper-evident · Patient chart linked
-        </MudText>
-    </MudPaper>
+    <PageHeader Title="Consent recordings" Subtitle="Video-verified informed consent · Tamper-evident · Linked to the patient chart" Section="AI Vision" />
 
     <MudTable Items="_recordings" Hover="true" Dense="true"
               Style="background-color: var(--cdo-raised); border: 1px solid var(--cdo-line);"

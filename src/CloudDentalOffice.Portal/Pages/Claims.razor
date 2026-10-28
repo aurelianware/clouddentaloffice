@@ -9,23 +9,14 @@
 <PageTitle>Claims - Cloud Dental Office</PageTitle>
 
 <MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-4">
-    <MudPaper Class="pa-4" Style="background: var(--cdo-surface); border: 1px solid var(--cdo-line);">
-        <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center">
-            <div>
-                <MudText Typo="Typo.h4" Style="color: var(--cdo-ink); font-weight: bold;">
-                    <MudIcon Icon="@Icons.Material.Filled.Assignment" Class="mr-2" />
-                    Claims
-                </MudText>
-                <MudText Typo="Typo.body2" Style="color: var(--cdo-text-muted);">
-                    Submit claims and follow payer status, patient responsibility, and posted payments
-                </MudText>
-            </div>
+    <PageHeader Title="Claims" Subtitle="Submit claims and follow payer status, patient responsibility and posted payments" Section="Insurance & claims">
+        <Actions>
             <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="OpenClaimWizard"
                        StartIcon="@Icons.Material.Filled.Add">
                 Create Claim
             </MudButton>
-        </MudStack>
-    </MudPaper>
+        </Actions>
+    </PageHeader>
 
     @if (!string.IsNullOrEmpty(_errorMessage))
     {

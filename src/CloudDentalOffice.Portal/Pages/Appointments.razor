@@ -15,42 +15,33 @@
 <PageTitle>Appointments - Cloud Dental Office</PageTitle>
 
 <MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-4">
-    <MudPaper Class="pa-4" Style="background: var(--cdo-surface); border: 1px solid var(--cdo-line);">
-        <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center">
-            <div>
-                <MudText Typo="Typo.h4" Style="color: var(--cdo-ink); font-weight: bold;">
-                    <MudIcon Icon="@Icons.Material.Filled.Event" Class="mr-2" />
-                    Appointments @(_selectedPatient != null ? $"- {_selectedPatient.FullName}" : "")
-                </MudText>
-                <MudText Typo="Typo.body2" Style="color: var(--cdo-text-muted);">
-                    @(_selectedPatient != null ? $"Viewing appointments for {_selectedPatient.FullName}" : "Schedule and manage patient appointments")
-                </MudText>
-                @if (_selectedPatient != null)
-                {
-                    <MudButton Variant="Variant.Text" Color="Color.Default" Size="Size.Small"
-                               OnClick="ClearPatientSelection" StartIcon="@Icons.Material.Filled.Clear" Class="mt-1">
-                        Change Patient
-                    </MudButton>
-                }
-                else
-                {
-                    <MudAutocomplete T="Patient" Value="_selectedPatient" Label="Select Patient (optional)"
-                                     SearchFunc="@SearchPatients" ToStringFunc="@(p => p?.FullName ?? "")"
-                                     Variant="Variant.Outlined" Dense="true" Clearable="true"
-                                     ValueChanged="@OnPatientSelected" Class="mt-2" />
-                }
-            </div>
-            <MudStack Row="true" Spacing="2">
-                <MudDatePicker Date="_selectedDate" Label="Select Date" 
-                               Color="Color.Primary" Variant="Variant.Outlined"
-                               DateChanged="@OnDateChanged" />
-                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="OpenAddAppointmentDialog"
-                           StartIcon="@Icons.Material.Filled.Add">
-                    New Appointment
+    <PageHeader Title="@(_selectedPatient != null ? $"Appointments for {_selectedPatient.FullName}" : "Appointments")" Subtitle="Schedule and manage patient appointments" Section="Front desk">
+        <Details>
+            @if (_selectedPatient != null)
+            {
+                <MudButton Variant="Variant.Text" Color="Color.Default" Size="Size.Small"
+                           OnClick="ClearPatientSelection" StartIcon="@Icons.Material.Filled.Clear" Class="mt-1">
+                    Change Patient
                 </MudButton>
-            </MudStack>
-        </MudStack>
-    </MudPaper>
+            }
+            else
+            {
+                <MudAutocomplete T="Patient" Value="_selectedPatient" Label="Select Patient (optional)"
+                                 SearchFunc="@SearchPatients" ToStringFunc="@(p => p?.FullName ?? "")"
+                                 Variant="Variant.Outlined" Dense="true" Clearable="true"
+                                 ValueChanged="@OnPatientSelected" Class="mt-2" />
+            }
+        </Details>
+        <Actions>
+            <MudDatePicker Date="_selectedDate" Label="Select Date" 
+                           Color="Color.Primary" Variant="Variant.Outlined"
+                           DateChanged="@OnDateChanged" />
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="OpenAddAppointmentDialog"
+                       StartIcon="@Icons.Material.Filled.Add">
+                New Appointment
+            </MudButton>
+        </Actions>
+    </PageHeader>
 
     @if (!string.IsNullOrEmpty(_errorMessage))
     {

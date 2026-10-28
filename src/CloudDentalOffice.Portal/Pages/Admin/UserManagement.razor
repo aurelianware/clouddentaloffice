@@ -6,19 +6,20 @@
 @inject ISnackbar Snackbar
 @inject AuthenticationStateProvider AuthStateProvider
 
-<PageTitle>User Management</PageTitle>
+<PageTitle>User Management - Cloud Dental Office</PageTitle>
 
 <MudContainer MaxWidth="MaxWidth.Large" Class="mt-4">
-    <div class="d-flex justify-space-between align-center mb-6">
-        <MudText Typo="Typo.h4">User Management</MudText>
-        @if (canInvite)
-        {
-            <MudButton Variant="Variant.Filled" Color="Color.Primary" 
-                      OnClick="OpenInviteDialog" StartIcon="@Icons.Material.Filled.PersonAdd">
-                Invite User
-            </MudButton>
-        }
-    </div>
+    <PageHeader Title="Users" Subtitle="Who can sign in to this practice, and their roles" Section="Practice setup">
+        <Actions>
+            @if (canInvite)
+            {
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" 
+                          OnClick="OpenInviteDialog" StartIcon="@Icons.Material.Filled.PersonAdd">
+                    Invite User
+                </MudButton>
+            }
+        </Actions>
+    </PageHeader>
 
     @if (organization == null || users == null)
     {

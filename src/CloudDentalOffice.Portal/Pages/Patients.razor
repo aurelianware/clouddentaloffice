@@ -9,29 +9,18 @@
 <PageTitle>Patients - Cloud Dental Office</PageTitle>
 
 <MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-4">
-    <MudPaper Class="pa-4" Style="background: var(--cdo-surface); border: 1px solid var(--cdo-line);">
-        <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center">
-            <div>
-                <MudText Typo="Typo.h4" Style="color: var(--cdo-ink); font-weight: bold;">
-                    <MudIcon Icon="@Icons.Material.Filled.People" Class="mr-2" />
-                    Patients
-                </MudText>
-                <MudText Typo="Typo.body2" Style="color: var(--cdo-text-muted);">
-                    Manage patient demographics and insurance information
-                </MudText>
-            </div>
-            <div>
-                <MudButton Href="/dentrix-import" Variant="Variant.Outlined" Class="mr-2"
-                           StartIcon="@Icons.Material.Filled.UploadFile">
-                    Import from Dentrix
-                </MudButton>
-                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="OpenAddPatientDialog"
-                           StartIcon="@Icons.Material.Filled.Add">
-                    Add Patient
-                </MudButton>
-            </div>
-        </MudStack>
-    </MudPaper>
+    <PageHeader Title="Patients" Subtitle="Patient demographics and insurance" Section="Front desk">
+        <Actions>
+            <MudButton Href="/dentrix-import" Variant="Variant.Outlined" Class="mr-2"
+                       StartIcon="@Icons.Material.Filled.UploadFile">
+                Import from Dentrix
+            </MudButton>
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="OpenAddPatientDialog"
+                       StartIcon="@Icons.Material.Filled.Add">
+                Add Patient
+            </MudButton>
+        </Actions>
+    </PageHeader>
 
     @if (!string.IsNullOrEmpty(_errorMessage))
     {

@@ -7,12 +7,8 @@
 <PageTitle>Appointment Requests - Cloud Dental Office</PageTitle>
 
 <MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-4">
-    <MudPaper Class="pa-4" Style="background:var(--cdo-surface);border:1px solid var(--cdo-line);">
-        <MudStack Row Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center">
-            <div>
-                <MudText Typo="Typo.h4" Color="Color.Primary"><MudIcon Icon="@Icons.Material.Filled.MarkEmailUnread" /> Appointment Requests</MudText>
-                <MudText Typo="Typo.body2">Review online requests before creating appointments.</MudText>
-            </div>
+    <PageHeader Title="Appointment requests" Subtitle="Review online requests before creating appointments." Section="Front desk">
+        <Actions>
             <MudSelect T="string" Value="_filter" ValueChanged="FilterChanged" Label="Status" Dense Variant="Variant.Outlined">
                 <MudSelectItem Value='@("Unresolved")'>Unresolved</MudSelectItem>
                 <MudSelectItem Value='@(nameof(BookingRequestStatus.New))'>New</MudSelectItem>
@@ -21,8 +17,8 @@
                 <MudSelectItem Value='@(nameof(BookingRequestStatus.Rejected))'>Rejected</MudSelectItem>
                 <MudSelectItem Value='@("All")'>All</MudSelectItem>
             </MudSelect>
-        </MudStack>
-    </MudPaper>
+        </Actions>
+    </PageHeader>
 
     <MudPaper Class="pa-4 mt-4" Style="background:var(--cdo-surface);border:1px solid var(--cdo-line-strong);">
         @if (_loading) { <MudProgressLinear Indeterminate Color="Color.Primary" /> }

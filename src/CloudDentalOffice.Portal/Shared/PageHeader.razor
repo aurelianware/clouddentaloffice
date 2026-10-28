@@ -1,0 +1,39 @@
+@* The one header every page uses: section, title, subtitle and the page's actions.
+   The title is the page's only <h1>, so FocusOnNavigate (App.razor) moves keyboard and
+   screen reader focus to it on every navigation. *@
+<header class="cdo-page-header">
+    <div class="cdo-page-header-text">
+        @if (!string.IsNullOrEmpty(Section))
+        {
+            <div class="cdo-page-header-section">@Section</div>
+        }
+        <h1 class="cdo-page-header-title" tabindex="-1">
+            @if (!string.IsNullOrEmpty(Icon))
+            {
+                <MudIcon Icon="@Icon" Class="cdo-page-header-icon" aria-hidden="true" />
+            }
+            @Title
+        </h1>
+        @if (!string.IsNullOrEmpty(Subtitle))
+        {
+            <p class="cdo-page-header-subtitle">@Subtitle</p>
+        }
+        @Details
+    </div>
+    @if (Actions is not null)
+    {
+        <div class="cdo-page-header-actions">@Actions</div>
+    }
+</header>
+
+@code {
+    [Parameter, EditorRequired] public string Title { get; set; } = string.Empty;
+    [Parameter] public string? Subtitle { get; set; }
+    /// <summary>The navigation group the page sits in, shown above the title.</summary>
+    [Parameter] public string? Section { get; set; }
+    [Parameter] public string? Icon { get; set; }
+    /// <summary>Extra lines under the subtitle, such as a status chip.</summary>
+    [Parameter] public RenderFragment? Details { get; set; }
+    /// <summary>Buttons for the page's main actions, right-aligned.</summary>
+    [Parameter] public RenderFragment? Actions { get; set; }
+}

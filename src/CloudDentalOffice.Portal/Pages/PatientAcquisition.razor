@@ -4,10 +4,9 @@
 @using CloudDentalOffice.Portal.Services
 @inject IPatientAcquisitionClient Client
 
-<PageTitle>Patient Acquisition</PageTitle>
+<PageTitle>Patient Acquisition - Cloud Dental Office</PageTitle>
 <MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-4 mb-8">
-    <MudText Typo="Typo.h4">Patient Acquisition</MudText>
-    <MudText Color="Color.Secondary">Privacy-safe marketing → booking request → scheduled appointment reporting.</MudText>
+    <PageHeader Title="Patient acquisition" Subtitle="Privacy-safe marketing to booking request to scheduled appointment reporting." Section="Insights" />
     <MudSelect T="int" Label="Date range" Value="_days" ValueChanged="LoadDays" Class="mt-4 patient-acquisition-date-range" Style="max-width:220px">
         <MudSelectItem Value="7">Last 7 days</MudSelectItem><MudSelectItem Value="30">Last 30 days</MudSelectItem><MudSelectItem Value="90">Last 90 days</MudSelectItem>
     </MudSelect>
