@@ -5,25 +5,25 @@
 @inject IProviderService ProviderService
 @inject ISnackbar Snackbar
 
-<MudDialog Style="background: #0a0a0a; border: 1px solid #00ffff;">
+<MudDialog Style="background: var(--cdo-surface); border: 1px solid var(--cdo-line);">
     <DialogContent>
         <MudContainer Style="max-width: 700px;">
             <MudGrid>
                 <!-- Title Section -->
                 <MudItem xs="12">
-                    <MudText Typo="Typo.h5" Style="color: #00ffff; font-weight: bold;" Class="mb-3">
+                    <MudText Typo="Typo.h5" Style="color: var(--cdo-ink); font-weight: bold;" Class="mb-3">
                         <MudIcon Icon="@Icons.Material.Filled.Event" Size="Size.Medium" />
                         @(IsEditMode ? "Edit Appointment" : "Schedule New Appointment")
                     </MudText>
-                    <MudDivider Style="background: rgba(0, 255, 255, 0.3);" />
+                    <MudDivider Style="background: var(--cdo-accent-soft);" />
                 </MudItem>
 
                 <!-- Patient Selection -->
                 <MudItem xs="12">
                     @if (PreselectedPatientId.HasValue)
                     {
-                        <MudPaper Class="pa-3" Style="background: #1a1a1a; border: 1px solid rgba(0, 255, 255, 0.2);">
-                            <MudText Typo="Typo.body1" Style="color: #b0b0b0;">
+                        <MudPaper Class="pa-3" Style="background: var(--cdo-surface); border: 1px solid var(--cdo-line);">
+                            <MudText Typo="Typo.body1" Style="color: var(--cdo-text-muted);">
                                 <strong>Patient:</strong> @_selectedPatient?.FullName
                             </MudText>
                         </MudPaper>

@@ -54,8 +54,8 @@
 
     private static string GetStatusStyle(PrescriptionStatus status) => status switch
     {
-        PrescriptionStatus.Draft => "border-color: #455a64; color: #90a4ae; font-size: 0.75rem;",
-        PrescriptionStatus.Expired => "border-color: #37474f; color: #607d8b; font-size: 0.75rem;",
+        PrescriptionStatus.Draft => "border-color: var(--cdo-line); color: var(--cdo-text-muted); font-size: 0.75rem;",
+        PrescriptionStatus.Expired => "border-color: var(--cdo-line); color: var(--cdo-text-subtle); font-size: 0.75rem;",
         _ => "font-size: 0.75rem;"
     };
 }

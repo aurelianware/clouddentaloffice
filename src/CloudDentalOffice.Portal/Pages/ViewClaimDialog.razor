@@ -4,45 +4,45 @@
 @inject IClaimService ClaimService
 @inject ISnackbar Snackbar
 
-<MudDialog Style="background: #0a0a0a; border: 1px solid #00ffff;">
+<MudDialog Style="background: var(--cdo-surface); border: 1px solid var(--cdo-line);">
     <DialogContent>
         <MudContainer Style="max-width: 1000px;">
             <MudGrid>
                 <!-- Header Section -->
                 <MudItem xs="12">
-                    <MudText Typo="Typo.h5" Style="color: #00ffff; font-weight: bold;" Class="mb-2">
+                    <MudText Typo="Typo.h5" Style="color: var(--cdo-ink); font-weight: bold;" Class="mb-2">
                         Claim #@Claim.ClaimNumber
                     </MudText>
-                    <MudDivider Style="background: rgba(0, 255, 255, 0.3);" />
+                    <MudDivider Style="background: var(--cdo-accent-soft);" />
                 </MudItem>
 
                 <!-- Patient and Provider Info -->
                 <MudItem xs="12" md="6">
-                    <MudPaper Class="pa-3" Style="background: #1a1a1a; border: 1px solid rgba(0, 255, 255, 0.2);">
-                        <MudText Typo="Typo.h6" Style="color: #00ffff;" Class="mb-2">
+                    <MudPaper Class="pa-3" Style="background: var(--cdo-surface); border: 1px solid var(--cdo-line);">
+                        <MudText Typo="Typo.h6" Style="color: var(--cdo-ink);" Class="mb-2">
                             <MudIcon Icon="@Icons.Material.Filled.Person" Size="Size.Small" /> Patient Information
                         </MudText>
-                        <MudText Typo="Typo.body2" Style="color: #b0b0b0;">
+                        <MudText Typo="Typo.body2" Style="color: var(--cdo-text-muted);">
                             <strong>Name:</strong> @Claim.Patient?.FullName
                         </MudText>
-                        <MudText Typo="Typo.body2" Style="color: #b0b0b0;">
+                        <MudText Typo="Typo.body2" Style="color: var(--cdo-text-muted);">
                             <strong>Patient ID:</strong> @Claim.PatientId
                         </MudText>
-                        <MudText Typo="Typo.body2" Style="color: #b0b0b0;">
+                        <MudText Typo="Typo.body2" Style="color: var(--cdo-text-muted);">
                             <strong>DOB:</strong> @Claim.Patient?.DateOfBirth.ToLocalTime().ToString("MM/dd/yyyy")
                         </MudText>
                     </MudPaper>
                 </MudItem>
 
                 <MudItem xs="12" md="6">
-                    <MudPaper Class="pa-3" Style="background: #1a1a1a; border: 1px solid rgba(0, 255, 255, 0.2);">
-                        <MudText Typo="Typo.h6" Style="color: #00ffff;" Class="mb-2">
+                    <MudPaper Class="pa-3" Style="background: var(--cdo-surface); border: 1px solid var(--cdo-line);">
+                        <MudText Typo="Typo.h6" Style="color: var(--cdo-ink);" Class="mb-2">
                             <MudIcon Icon="@Icons.Material.Filled.MedicalServices" Size="Size.Small" /> Provider Information
                         </MudText>
-                        <MudText Typo="Typo.body2" Style="color: #b0b0b0;">
+                        <MudText Typo="Typo.body2" Style="color: var(--cdo-text-muted);">
                             <strong>Provider:</strong> @(Claim.Provider?.FullName ?? "Not Assigned")
                         </MudText>
-                        <MudText Typo="Typo.body2" Style="color: #b0b0b0;">
+                        <MudText Typo="Typo.body2" Style="color: var(--cdo-text-muted);">
                             <strong>NPI:</strong> @(Claim.Provider?.NPI ?? "N/A")
                         </MudText>
                     </MudPaper>
@@ -50,13 +50,13 @@
 
                 <!-- Claim Details -->
                 <MudItem xs="12">
-                    <MudPaper Class="pa-3" Style="background: #1a1a1a; border: 1px solid rgba(0, 255, 255, 0.2);">
-                        <MudText Typo="Typo.h6" Style="color: #00ffff;" Class="mb-2">
+                    <MudPaper Class="pa-3" Style="background: var(--cdo-surface); border: 1px solid var(--cdo-line);">
+                        <MudText Typo="Typo.h6" Style="color: var(--cdo-ink);" Class="mb-2">
                             <MudIcon Icon="@Icons.Material.Filled.Assignment" Size="Size.Small" /> Claim Details
                         </MudText>
                         <MudGrid>
                             <MudItem xs="12" md="3">
-                                <MudText Typo="Typo.body2" Style="color: #b0b0b0;">
+                                <MudText Typo="Typo.body2" Style="color: var(--cdo-text-muted);">
                                     <strong>Status:</strong>
                                 </MudText>
                                 <MudChip T="string" Color="@GetStatusColor(_lifecycle?.StatusCode ?? Claim.Status)" Size="Size.Small" Class="mt-1">
@@ -64,17 +64,17 @@
                                 </MudChip>
                             </MudItem>
                             <MudItem xs="12" md="3">
-                                <MudText Typo="Typo.body2" Style="color: #b0b0b0;">
+                                <MudText Typo="Typo.body2" Style="color: var(--cdo-text-muted);">
                                     <strong>Claim Type:</strong> @Claim.ClaimType
                                 </MudText>
                             </MudItem>
                             <MudItem xs="12" md="3">
-                                <MudText Typo="Typo.body2" Style="color: #b0b0b0;">
+                                <MudText Typo="Typo.body2" Style="color: var(--cdo-text-muted);">
                                     <strong>Service Date:</strong> @Claim.ServiceDateFrom.ToLocalTime().ToString("MM/dd/yyyy")
                                 </MudText>
                             </MudItem>
                             <MudItem xs="12" md="3">
-                                <MudText Typo="Typo.body2" Style="color: #b0b0b0;">
+                                <MudText Typo="Typo.body2" Style="color: var(--cdo-text-muted);">
                                     <strong>Created:</strong> @Claim.CreatedDate.ToString("MM/dd/yyyy")
                                 </MudText>
                             </MudItem>
@@ -84,24 +84,24 @@
 
                 <!-- Insurance Information -->
                 <MudItem xs="12">
-                    <MudPaper Class="pa-3" Style="background: #1a1a1a; border: 1px solid rgba(0, 255, 255, 0.2);">
-                        <MudText Typo="Typo.h6" Style="color: #00ffff;" Class="mb-2">
+                    <MudPaper Class="pa-3" Style="background: var(--cdo-surface); border: 1px solid var(--cdo-line);">
+                        <MudText Typo="Typo.h6" Style="color: var(--cdo-ink);" Class="mb-2">
                             <MudIcon Icon="@Icons.Material.Filled.HealthAndSafety" Size="Size.Small" /> Insurance Information
                         </MudText>
                         <MudGrid>
                             <MudItem xs="12" md="6">
-                                <MudText Typo="Typo.body2" Style="color: #b0b0b0;">
+                                <MudText Typo="Typo.body2" Style="color: var(--cdo-text-muted);">
                                     <strong>Payer:</strong> @(Claim.PatientInsurance?.InsurancePlan?.PayerName ?? "N/A")
                                 </MudText>
-                                <MudText Typo="Typo.body2" Style="color: #b0b0b0;">
+                                <MudText Typo="Typo.body2" Style="color: var(--cdo-text-muted);">
                                     <strong>Payer ID:</strong> @(Claim.PatientInsurance?.InsurancePlan?.PayerId ?? "N/A")
                                 </MudText>
                             </MudItem>
                             <MudItem xs="12" md="6">
-                                <MudText Typo="Typo.body2" Style="color: #b0b0b0;">
+                                <MudText Typo="Typo.body2" Style="color: var(--cdo-text-muted);">
                                     <strong>Member ID:</strong> @(Claim.PatientInsurance?.MemberId ?? "N/A")
                                 </MudText>
-                                <MudText Typo="Typo.body2" Style="color: #b0b0b0;">
+                                <MudText Typo="Typo.body2" Style="color: var(--cdo-text-muted);">
                                     <strong>Group Number:</strong> @(Claim.PatientInsurance?.GroupNumber ?? "N/A")
                                 </MudText>
                             </MudItem>
@@ -111,8 +111,8 @@
 
                 <!-- Procedures -->
                 <MudItem xs="12">
-                    <MudPaper Class="pa-3" Style="background: #1a1a1a; border: 1px solid rgba(0, 255, 255, 0.2);">
-                        <MudText Typo="Typo.h6" Style="color: #00ffff;" Class="mb-3">
+                    <MudPaper Class="pa-3" Style="background: var(--cdo-surface); border: 1px solid var(--cdo-line);">
+                        <MudText Typo="Typo.h6" Style="color: var(--cdo-ink);" Class="mb-3">
                             <MudIcon Icon="@Icons.Material.Filled.ListAlt" Size="Size.Small" /> 
                             Procedures (@Claim.Procedures.Count)
                         </MudText>
@@ -121,15 +121,15 @@
                         {
                             <MudTable Items="@Claim.Procedures" Dense="true" Hover="true" Striped="true">
                                 <HeaderContent>
-                                    <MudTh Style="color: #00ffff;">Line</MudTh>
-                                    <MudTh Style="color: #00ffff;">CDT Code</MudTh>
-                                    <MudTh Style="color: #00ffff;">Description</MudTh>
-                                    <MudTh Style="color: #00ffff;">Date</MudTh>
-                                    <MudTh Style="color: #00ffff;">Tooth</MudTh>
-                                    <MudTh Style="color: #00ffff;">Surface</MudTh>
-                                    <MudTh Style="color: #00ffff;">Charge</MudTh>
-                                    <MudTh Style="color: #00ffff;">Allowed</MudTh>
-                                    <MudTh Style="color: #00ffff;">Paid</MudTh>
+                                    <MudTh Style="color: var(--cdo-accent);">Line</MudTh>
+                                    <MudTh Style="color: var(--cdo-accent);">CDT Code</MudTh>
+                                    <MudTh Style="color: var(--cdo-accent);">Description</MudTh>
+                                    <MudTh Style="color: var(--cdo-accent);">Date</MudTh>
+                                    <MudTh Style="color: var(--cdo-accent);">Tooth</MudTh>
+                                    <MudTh Style="color: var(--cdo-accent);">Surface</MudTh>
+                                    <MudTh Style="color: var(--cdo-accent);">Charge</MudTh>
+                                    <MudTh Style="color: var(--cdo-accent);">Allowed</MudTh>
+                                    <MudTh Style="color: var(--cdo-accent);">Paid</MudTh>
                                 </HeaderContent>
                                 <RowTemplate>
                                     <MudTd DataLabel="Line">@context.LineNumber</MudTd>
@@ -143,7 +143,7 @@
                                     <MudTd DataLabel="Tooth">@(context.ToothNumber ?? "N/A")</MudTd>
                                     <MudTd DataLabel="Surface">@(context.Surface ?? "N/A")</MudTd>
                                     <MudTd DataLabel="Charge">
-                                        <MudText Typo="Typo.body2" Style="color: #00ff88;">
+                                        <MudText Typo="Typo.body2" Style="color: var(--cdo-success);">
                                             @context.ChargeAmount.ToString("C")
                                         </MudText>
                                     </MudTd>
@@ -158,7 +158,7 @@
                         }
                         else
                         {
-                            <MudText Typo="Typo.body2" Style="color: #b0b0b0;" Class="pa-4 text-center">
+                            <MudText Typo="Typo.body2" Style="color: var(--cdo-text-muted);" Class="pa-4 text-center">
                                 No procedures in this claim
                             </MudText>
                         }
@@ -167,40 +167,40 @@
 
                 <!-- Financial Summary -->
                 <MudItem xs="12">
-                    <MudPaper Class="pa-3" Style="background: #1a1a1a; border: 1px solid rgba(0, 255, 255, 0.2);">
-                        <MudText Typo="Typo.h6" Style="color: #00ffff;" Class="mb-2">
+                    <MudPaper Class="pa-3" Style="background: var(--cdo-surface); border: 1px solid var(--cdo-line);">
+                        <MudText Typo="Typo.h6" Style="color: var(--cdo-ink);" Class="mb-2">
                             <MudIcon Icon="@Icons.Material.Filled.AttachMoney" Size="Size.Small" /> Financial Summary
                         </MudText>
                         <MudGrid>
                             <MudItem xs="12" md="3">
-                                <MudText Typo="Typo.body2" Style="color: #b0b0b0;">
+                                <MudText Typo="Typo.body2" Style="color: var(--cdo-text-muted);">
                                     <strong>Billed:</strong>
                                 </MudText>
-                                <MudText Typo="Typo.h5" Style="color: #00ff88;" Class="mt-1">
+                                <MudText Typo="Typo.h5" Style="color: var(--cdo-success);" Class="mt-1">
                                     @((_lifecycle?.SubmittedAmount ?? Claim.TotalChargeAmount).ToString("C"))
                                 </MudText>
                             </MudItem>
                             <MudItem xs="12" md="3">
-                                <MudText Typo="Typo.body2" Style="color: #b0b0b0;">
+                                <MudText Typo="Typo.body2" Style="color: var(--cdo-text-muted);">
                                     <strong>Allowed:</strong>
                                 </MudText>
-                                <MudText Typo="Typo.h5" Style="color: #00ffff;" Class="mt-1">
+                                <MudText Typo="Typo.h5" Style="color: var(--cdo-ink);" Class="mt-1">
                                     @(_lifecycle?.AllowedAmount?.ToString("C") ?? "—")
                                 </MudText>
                             </MudItem>
                             <MudItem xs="12" md="3">
-                                <MudText Typo="Typo.body2" Style="color: #b0b0b0;">
+                                <MudText Typo="Typo.body2" Style="color: var(--cdo-text-muted);">
                                     <strong>Insurance paid:</strong>
                                 </MudText>
-                                <MudText Typo="Typo.h5" Style="color: #00ffff;" Class="mt-1">
+                                <MudText Typo="Typo.h5" Style="color: var(--cdo-ink);" Class="mt-1">
                                     @((_lifecycle?.PaidAmount ?? Claim.PaidAmount)?.ToString("C") ?? "$0.00")
                                 </MudText>
                             </MudItem>
                             <MudItem xs="12" md="3">
-                                <MudText Typo="Typo.body2" Style="color: #b0b0b0;">
+                                <MudText Typo="Typo.body2" Style="color: var(--cdo-text-muted);">
                                     <strong>Patient responsibility:</strong>
                                 </MudText>
-                                <MudText Typo="Typo.h5" Style="color: #ffa500;" Class="mt-1">
+                                <MudText Typo="Typo.h5" Style="color: var(--cdo-warning);" Class="mt-1">
                                     @((_lifecycle?.PatientResponsibility ?? Claim.PatientResponsibility)?.ToString("C") ?? "$0.00")
                                 </MudText>
                             </MudItem>
@@ -216,9 +216,9 @@
 
                 <!-- Claim timeline -->
                 <MudItem xs="12">
-                    <MudPaper Class="pa-3" Style="background: #1a1a1a; border: 1px solid rgba(0, 255, 255, 0.2);">
+                    <MudPaper Class="pa-3" Style="background: var(--cdo-surface); border: 1px solid var(--cdo-line);">
                         <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-2">
-                            <MudText Typo="Typo.h6" Style="color: #00ffff;">
+                            <MudText Typo="Typo.h6" Style="color: var(--cdo-ink);">
                                 <MudIcon Icon="@Icons.Material.Filled.Timeline" Size="Size.Small" /> Claim timeline
                             </MudText>
                             <MudButton Variant="Variant.Text" Color="Color.Primary" Size="Size.Small"
@@ -238,12 +238,12 @@
                                 {
                                     <MudTimelineItem Color="Color.Primary" Size="Size.Small">
                                         <ItemContent>
-                                            <MudText Typo="Typo.subtitle2" Style="color: #e0e0e0;">@evt.Title</MudText>
+                                            <MudText Typo="Typo.subtitle2" Style="color: var(--cdo-text);">@evt.Title</MudText>
                                             @if (!string.IsNullOrWhiteSpace(evt.Detail))
                                             {
-                                                <MudText Typo="Typo.caption" Style="color: #b0b0b0;">@evt.Detail</MudText>
+                                                <MudText Typo="Typo.caption" Style="color: var(--cdo-text-muted);">@evt.Detail</MudText>
                                             }
-                                            <MudText Typo="Typo.caption" Style="color: #808080;">
+                                            <MudText Typo="Typo.caption" Style="color: var(--cdo-text-subtle);">
                                                 @evt.Timestamp.ToLocalTime().ToString("MM/dd/yyyy h:mm tt")
                                             </MudText>
                                         </ItemContent>
@@ -253,7 +253,7 @@
                         }
                         else
                         {
-                            <MudText Typo="Typo.body2" Style="color: #b0b0b0;">
+                            <MudText Typo="Typo.body2" Style="color: var(--cdo-text-muted);">
                                 @(Claim.SubmittedDate.HasValue
                                     ? "No payer updates yet. Refresh to check for the latest status."
                                     : "Submit the claim to start tracking payer status.")
@@ -266,17 +266,17 @@
                 @if (_lifecycle?.PostedFinancials.Count > 0 || Claim.FinancialsPostedAt.HasValue)
                 {
                     <MudItem xs="12">
-                        <MudPaper Class="pa-3" Style="background: #1a1a1a; border: 1px solid rgba(0, 255, 255, 0.2);">
-                            <MudText Typo="Typo.h6" Style="color: #00ffff;" Class="mb-2">
+                        <MudPaper Class="pa-3" Style="background: var(--cdo-surface); border: 1px solid var(--cdo-line);">
+                            <MudText Typo="Typo.h6" Style="color: var(--cdo-ink);" Class="mb-2">
                                 <MudIcon Icon="@Icons.Material.Filled.AccountBalance" Size="Size.Small" /> Posted to patient account
                             </MudText>
                             @if (_lifecycle?.PostedFinancials.Count > 0)
                             {
                                 <MudTable Items="@_lifecycle.PostedFinancials" Dense="true" Hover="true">
                                     <HeaderContent>
-                                        <MudTh Style="color: #00ffff;">Type</MudTh>
-                                        <MudTh Style="color: #00ffff;">Amount</MudTh>
-                                        <MudTh Style="color: #00ffff;">Posted</MudTh>
+                                        <MudTh Style="color: var(--cdo-accent);">Type</MudTh>
+                                        <MudTh Style="color: var(--cdo-accent);">Amount</MudTh>
+                                        <MudTh Style="color: var(--cdo-accent);">Posted</MudTh>
                                     </HeaderContent>
                                     <RowTemplate>
                                         <MudTd DataLabel="Type">@context.Type</MudTd>
@@ -287,7 +287,7 @@
                             }
                             else
                             {
-                                <MudText Typo="Typo.body2" Style="color: #00ff88;">
+                                <MudText Typo="Typo.body2" Style="color: var(--cdo-success);">
                                     Posted @Claim.FinancialsPostedAt!.Value.ToLocalTime().ToString("MM/dd/yyyy h:mm tt")
                                 </MudText>
                             }
@@ -298,8 +298,8 @@
                 @if (Claim.SubmittedDate.HasValue)
                 {
                     <MudItem xs="12">
-                        <MudPaper Class="pa-3" Style="background: #1a1a1a; border: 1px solid rgba(0, 255, 255, 0.2);">
-                            <MudText Typo="Typo.body2" Style="color: #b0b0b0;">
+                        <MudPaper Class="pa-3" Style="background: var(--cdo-surface); border: 1px solid var(--cdo-line);">
+                            <MudText Typo="Typo.body2" Style="color: var(--cdo-text-muted);">
                                 Submitted @(Claim.SubmittedDate?.ToString("MM/dd/yyyy h:mm tt"))
                                 @if (!string.IsNullOrWhiteSpace(Claim.SubmittedBy))
                                 {
@@ -314,11 +314,11 @@
                 @if (!string.IsNullOrEmpty(Claim.ResponseNotes))
                 {
                     <MudItem xs="12">
-                        <MudPaper Class="pa-3" Style="background: #1a1a1a; border: 1px solid rgba(0, 255, 255, 0.2);">
-                            <MudText Typo="Typo.h6" Style="color: #00ffff;" Class="mb-2">
+                        <MudPaper Class="pa-3" Style="background: var(--cdo-surface); border: 1px solid var(--cdo-line);">
+                            <MudText Typo="Typo.h6" Style="color: var(--cdo-ink);" Class="mb-2">
                                 <MudIcon Icon="@Icons.Material.Filled.Notes" Size="Size.Small" /> Response Notes
                             </MudText>
-                            <MudText Typo="Typo.body2" Style="color: #b0b0b0; white-space: pre-wrap;">
+                            <MudText Typo="Typo.body2" Style="color: var(--cdo-text-muted); white-space: pre-wrap;">
                                 @Claim.ResponseNotes
                             </MudText>
                         </MudPaper>
@@ -329,9 +329,9 @@
                 @if (Claim.Status == "Draft" || Claim.Status == "Ready")
                 {
                     <MudItem xs="12">
-                        <MudPaper Class="pa-3" Style="background: #1a1a1a; border: 1px solid rgba(76, 175, 80, 0.3);">
+                        <MudPaper Class="pa-3" Style="background: var(--cdo-surface); border: 1px solid var(--cdo-success-line);">
                             <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center">
-                                <MudText Typo="Typo.h6" Style="color: #4caf50;">
+                                <MudText Typo="Typo.h6" Style="color: var(--cdo-success);">
                                     <MudIcon Icon="@Icons.Material.Filled.Send" Size="Size.Small" /> Submit Claim
                                 </MudText>
                                 <MudButton Variant="Variant.Filled" Color="Color.Success" 

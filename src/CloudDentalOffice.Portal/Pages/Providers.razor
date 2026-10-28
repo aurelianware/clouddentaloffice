@@ -7,14 +7,14 @@
 <PageTitle>Providers - Cloud Dental Office</PageTitle>
 
 <MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-4">
-    <MudPaper Class="pa-4" Style="background: #0a0a0a; border: 1px solid #00ffff;">
+    <MudPaper Class="pa-4" Style="background: var(--cdo-surface); border: 1px solid var(--cdo-line);">
         <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center">
             <div>
-                <MudText Typo="Typo.h4" Style="color: #00ffff; font-weight: bold;">
+                <MudText Typo="Typo.h4" Style="color: var(--cdo-ink); font-weight: bold;">
                     <MudIcon Icon="@Icons.Material.Filled.MedicalServices" Class="mr-2" />
                     Providers
                 </MudText>
-                <MudText Typo="Typo.body2" Style="color: #b0b0b0;">
+                <MudText Typo="Typo.body2" Style="color: var(--cdo-text-muted);">
                     Manage dental providers and credentials
                 </MudText>
             </div>
@@ -32,7 +32,7 @@
         </MudAlert>
     }
 
-    <MudPaper Class="pa-4 mt-4" Style="background: #0a0a0a; border: 1px solid rgba(0, 255, 255, 0.3);">
+    <MudPaper Class="pa-4 mt-4" Style="background: var(--cdo-surface); border: 1px solid var(--cdo-line-strong);">
         @if (_loading)
         {
             <MudProgressLinear Color="Color.Primary" Indeterminate="true" />
@@ -47,14 +47,14 @@
                                   Immediate="true" Clearable="true" />
                 </ToolBarContent>
                 <HeaderContent>
-                    <MudTh Style="color: #00ffff;">Name</MudTh>
-                    <MudTh Style="color: #00ffff;">Specialty</MudTh>
-                    <MudTh Style="color: #00ffff;">NPI</MudTh>
-                    <MudTh Style="color: #00ffff;">License Number</MudTh>
-                    <MudTh Style="color: #00ffff;">Phone</MudTh>
-                    <MudTh Style="color: #00ffff;">Email</MudTh>
-                    <MudTh Style="color: #00ffff;">Status</MudTh>
-                    <MudTh Style="color: #00ffff;">Actions</MudTh>
+                    <MudTh Style="color: var(--cdo-accent);">Name</MudTh>
+                    <MudTh Style="color: var(--cdo-accent);">Specialty</MudTh>
+                    <MudTh Style="color: var(--cdo-accent);">NPI</MudTh>
+                    <MudTh Style="color: var(--cdo-accent);">License Number</MudTh>
+                    <MudTh Style="color: var(--cdo-accent);">Phone</MudTh>
+                    <MudTh Style="color: var(--cdo-accent);">Email</MudTh>
+                    <MudTh Style="color: var(--cdo-accent);">Status</MudTh>
+                    <MudTh Style="color: var(--cdo-accent);">Actions</MudTh>
                 </HeaderContent>
                 <RowTemplate>
                     <MudTd DataLabel="Name">
@@ -64,7 +64,7 @@
                         <MudText Typo="Typo.body2">@(context.Specialty ?? "General Dentistry")</MudText>
                     </MudTd>
                     <MudTd DataLabel="NPI">
-                        <MudText Typo="Typo.body2" Style="color: #00ff88;">@context.NPI</MudText>
+                        <MudText Typo="Typo.body2" Style="color: var(--cdo-success);">@context.NPI</MudText>
                     </MudTd>
                     <MudTd DataLabel="License">
                         <MudText Typo="Typo.body2">@context.LicenseNumber</MudText>
@@ -89,7 +89,7 @@
                     </MudTd>
                 </RowTemplate>
                 <NoRecordsContent>
-                    <MudText Style="color: #b0b0b0;">No providers found</MudText>
+                    <MudText Style="color: var(--cdo-text-muted);">No providers found</MudText>
                 </NoRecordsContent>
             </MudTable>
         }

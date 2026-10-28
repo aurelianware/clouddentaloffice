@@ -9,14 +9,14 @@
 <MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-4">
 
     @* ── Header Bar ── *@
-    <MudPaper Class="pa-4 mb-4" Style="background: linear-gradient(135deg, #1a2332 0%, #0d1b2a 100%); border-left: 4px solid #00ffff;">
+    <MudPaper Class="pa-4 mb-4" Style="background: var(--cdo-surface); border-left: 4px solid var(--cdo-accent);">
         <MudGrid>
             <MudItem xs="12" sm="8">
-                <MudText Typo="Typo.h5" Style="color: #e0e0e0;">
-                    <MudIcon Icon="@Icons.Material.Filled.RemoveRedEye" Class="mr-2" Style="color: #00ffff;" />
+                <MudText Typo="Typo.h5" Style="color: var(--cdo-text);">
+                    <MudIcon Icon="@Icons.Material.Filled.RemoveRedEye" Class="mr-2" Style="color: var(--cdo-accent);" />
                     AI Vision Dashboard
                 </MudText>
-                <MudText Typo="Typo.body2" Style="color: #90a4ae;">
+                <MudText Typo="Typo.body2" Style="color: var(--cdo-text-muted);">
                     privaseeAI Integration · Real-time Detection · Compliance Monitoring
                 </MudText>
             </MudItem>
@@ -40,14 +40,14 @@
     @* ── Stats Cards ── *@
     <MudGrid Class="mb-4">
         <MudItem xs="12" sm="6" md="3">
-            <MudCard Elevation="2" Style="background-color: #1e2a3a; border: 1px solid #2d3e50;">
+            <MudCard Elevation="2" Style="background-color: var(--cdo-raised); border: 1px solid var(--cdo-line);">
                 <MudCardContent>
                     <div class="d-flex align-center mb-2">
-                        <MudIcon Icon="@Icons.Material.Filled.Devices" Style="color: #00ffff;" Class="mr-2" />
-                        <MudText Typo="Typo.h6" Style="color: #e0e0e0;">Devices</MudText>
+                        <MudIcon Icon="@Icons.Material.Filled.Devices" Style="color: var(--cdo-accent);" Class="mr-2" />
+                        <MudText Typo="Typo.h6" Style="color: var(--cdo-text);">Devices</MudText>
                     </div>
-                    <MudText Typo="Typo.h3" Style="color: #00ffff;">@_totalDevices</MudText>
-                    <MudText Typo="Typo.body2" Style="color: #90a4ae;">
+                    <MudText Typo="Typo.h3" Style="color: var(--cdo-ink);">@_totalDevices</MudText>
+                    <MudText Typo="Typo.body2" Style="color: var(--cdo-text-muted);">
                         @_onlineDevices Online · @_offlineDevices Offline
                     </MudText>
                 </MudCardContent>
@@ -55,14 +55,14 @@
         </MudItem>
 
         <MudItem xs="12" sm="6" md="3">
-            <MudCard Elevation="2" Style="background-color: #1e2a3a; border: 1px solid #2d3e50;">
+            <MudCard Elevation="2" Style="background-color: var(--cdo-raised); border: 1px solid var(--cdo-line);">
                 <MudCardContent>
                     <div class="d-flex align-center mb-2">
-                        <MudIcon Icon="@Icons.Material.Filled.Videocam" Style="color: #00ff88;" Class="mr-2" />
-                        <MudText Typo="Typo.h6" Style="color: #e0e0e0;">Events Today</MudText>
+                        <MudIcon Icon="@Icons.Material.Filled.Videocam" Style="color: var(--cdo-success);" Class="mr-2" />
+                        <MudText Typo="Typo.h6" Style="color: var(--cdo-text);">Events Today</MudText>
                     </div>
-                    <MudText Typo="Typo.h3" Style="color: #00ff88;">@_eventsToday</MudText>
-                    <MudText Typo="Typo.body2" Style="color: #90a4ae;">
+                    <MudText Typo="Typo.h3" Style="color: var(--cdo-success);">@_eventsToday</MudText>
+                    <MudText Typo="Typo.body2" Style="color: var(--cdo-text-muted);">
                         @_alertsToday Alerts
                     </MudText>
                 </MudCardContent>
@@ -70,14 +70,14 @@
         </MudItem>
 
         <MudItem xs="12" sm="6" md="3">
-            <MudCard Elevation="2" Style="background-color: #1e2a3a; border: 1px solid #2d3e50;">
+            <MudCard Elevation="2" Style="background-color: var(--cdo-raised); border: 1px solid var(--cdo-line);">
                 <MudCardContent>
                     <div class="d-flex align-center mb-2">
-                        <MudIcon Icon="@Icons.Material.Filled.CreditCard" Style="color: #ffa726;" Class="mr-2" />
-                        <MudText Typo="Typo.h6" Style="color: #e0e0e0;">Insurance Scans</MudText>
+                        <MudIcon Icon="@Icons.Material.Filled.CreditCard" Style="color: var(--cdo-warning);" Class="mr-2" />
+                        <MudText Typo="Typo.h6" Style="color: var(--cdo-text);">Insurance Scans</MudText>
                     </div>
-                    <MudText Typo="Typo.h3" Style="color: #ffa726;">@_insuranceScans</MudText>
-                    <MudText Typo="Typo.body2" Style="color: #90a4ae;">
+                    <MudText Typo="Typo.h3" Style="color: var(--cdo-warning);">@_insuranceScans</MudText>
+                    <MudText Typo="Typo.body2" Style="color: var(--cdo-text-muted);">
                         Last 7 days
                     </MudText>
                 </MudCardContent>
@@ -85,14 +85,14 @@
         </MudItem>
 
         <MudItem xs="12" sm="6" md="3">
-            <MudCard Elevation="2" Style="background-color: #1e2a3a; border: 1px solid #2d3e50;">
+            <MudCard Elevation="2" Style="background-color: var(--cdo-raised); border: 1px solid var(--cdo-line);">
                 <MudCardContent>
                     <div class="d-flex align-center mb-2">
-                        <MudIcon Icon="@Icons.Material.Filled.Lock" Style="color: #ef5350;" Class="mr-2" />
-                        <MudText Typo="Typo.h6" Style="color: #e0e0e0;">Cabinet Access</MudText>
+                        <MudIcon Icon="@Icons.Material.Filled.Lock" Style="color: var(--cdo-error);" Class="mr-2" />
+                        <MudText Typo="Typo.h6" Style="color: var(--cdo-text);">Cabinet Access</MudText>
                     </div>
-                    <MudText Typo="Typo.h3" Style="color: #ef5350;">@_cabinetAccess</MudText>
-                    <MudText Typo="Typo.body2" Style="color: #90a4ae;">
+                    <MudText Typo="Typo.h3" Style="color: var(--cdo-error);">@_cabinetAccess</MudText>
+                    <MudText Typo="Typo.body2" Style="color: var(--cdo-text-muted);">
                         @_cabinetAlerts Compliance Issues
                     </MudText>
                 </MudCardContent>
@@ -103,9 +103,9 @@
     @* ── Recent Events ── *@
     <MudGrid>
         <MudItem xs="12" md="8">
-            <MudPaper Class="pa-4" Elevation="2" Style="background-color: #1e2a3a; border: 1px solid #2d3e50;">
+            <MudPaper Class="pa-4" Elevation="2" Style="background-color: var(--cdo-raised); border: 1px solid var(--cdo-line);">
                 <div class="d-flex align-center justify-space-between mb-4">
-                    <MudText Typo="Typo.h6" Style="color: #e0e0e0;">Recent Events</MudText>
+                    <MudText Typo="Typo.h6" Style="color: var(--cdo-text);">Recent Events</MudText>
                     <MudButton Variant="Variant.Text" Color="Color.Primary" Href="/vision/events">View All</MudButton>
                 </div>
 
@@ -114,16 +114,16 @@
                     <MudTable Items="_recentEvents" Hover="true" Dense="true" Elevation="0"
                               Style="background-color: transparent;">
                         <HeaderContent>
-                            <MudTh Style="color: #90a4ae;">Time</MudTh>
-                            <MudTh Style="color: #90a4ae;">Location</MudTh>
-                            <MudTh Style="color: #90a4ae;">Event Type</MudTh>
-                            <MudTh Style="color: #90a4ae;">Alert</MudTh>
-                            <MudTh Style="color: #90a4ae;">Actions</MudTh>
+                            <MudTh Style="color: var(--cdo-text-muted);">Time</MudTh>
+                            <MudTh Style="color: var(--cdo-text-muted);">Location</MudTh>
+                            <MudTh Style="color: var(--cdo-text-muted);">Event Type</MudTh>
+                            <MudTh Style="color: var(--cdo-text-muted);">Alert</MudTh>
+                            <MudTh Style="color: var(--cdo-text-muted);">Actions</MudTh>
                         </HeaderContent>
                         <RowTemplate>
-                            <MudTd Style="color: #e0e0e0;">@context.Timestamp.ToString("MM/dd HH:mm")</MudTd>
-                            <MudTd Style="color: #e0e0e0;">@context.Location</MudTd>
-                            <MudTd Style="color: #e0e0e0;">@context.EventType</MudTd>
+                            <MudTd Style="color: var(--cdo-text);">@context.Timestamp.ToString("MM/dd HH:mm")</MudTd>
+                            <MudTd Style="color: var(--cdo-text);">@context.Location</MudTd>
+                            <MudTd Style="color: var(--cdo-text);">@context.EventType</MudTd>
                             <MudTd>
                                 @if (context.AlertSeverity.HasValue)
                                 {
@@ -150,9 +150,9 @@
 
         @* ── Device Status ── *@
         <MudItem xs="12" md="4">
-            <MudPaper Class="pa-4" Elevation="2" Style="background-color: #1e2a3a; border: 1px solid #2d3e50;">
+            <MudPaper Class="pa-4" Elevation="2" Style="background-color: var(--cdo-raised); border: 1px solid var(--cdo-line);">
                 <div class="d-flex align-center justify-space-between mb-4">
-                    <MudText Typo="Typo.h6" Style="color: #e0e0e0;">Device Status</MudText>
+                    <MudText Typo="Typo.h6" Style="color: var(--cdo-text);">Device Status</MudText>
                     <MudButton Variant="Variant.Text" Color="Color.Primary" Href="/vision/devices">Manage</MudButton>
                 </div>
 
@@ -167,8 +167,8 @@
                                         <MudIcon Icon="GetDeviceIcon(device.Type)" Size="Size.Small" Class="mr-2"
                                                  Style="@($"color: {GetStatusColor(device.Status)}")" />
                                         <div>
-                                            <MudText Typo="Typo.body2" Style="color: #e0e0e0;">@device.Name</MudText>
-                                            <MudText Typo="Typo.caption" Style="color: #90a4ae;">@device.Location</MudText>
+                                            <MudText Typo="Typo.body2" Style="color: var(--cdo-text);">@device.Name</MudText>
+                                            <MudText Typo="Typo.caption" Style="color: var(--cdo-text-muted);">@device.Location</MudText>
                                         </div>
                                     </div>
                                     <MudChip T="string" Size="Size.Small" Color="GetStatusChipColor(device.Status)">
@@ -270,11 +270,11 @@
 
     private string GetStatusColor(DeviceStatus status) => status switch
     {
-        DeviceStatus.Online => "#00ff88",
-        DeviceStatus.Offline => "#78909c",
-        DeviceStatus.Error => "#ef5350",
-        DeviceStatus.Maintenance => "#ffa726",
-        _ => "#90a4ae"
+        DeviceStatus.Online => "var(--cdo-success)",
+        DeviceStatus.Offline => "var(--cdo-text-subtle)",
+        DeviceStatus.Error => "var(--cdo-error)",
+        DeviceStatus.Maintenance => "var(--cdo-warning)",
+        _ => "var(--cdo-text-muted)"
     };
 
     private string GetDeviceIcon(DeviceType type) => type switch

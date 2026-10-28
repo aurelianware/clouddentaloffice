@@ -3,17 +3,17 @@
 @inject IProviderService ProviderService
 @inject ISnackbar Snackbar
 
-<MudDialog Style="background: #0a0a0a; border: 1px solid #00ffff;">
+<MudDialog Style="background: var(--cdo-surface); border: 1px solid var(--cdo-line);">
     <DialogContent>
         <MudContainer Style="max-width: 800px;">
             <MudGrid>
                 <!-- Title Section -->
                 <MudItem xs="12">
-                    <MudText Typo="Typo.h5" Style="color: #00ffff; font-weight: bold;" Class="mb-3">
+                    <MudText Typo="Typo.h5" Style="color: var(--cdo-ink); font-weight: bold;" Class="mb-3">
                         <MudIcon Icon="@Icons.Material.Filled.MedicalServices" Size="Size.Medium" />
                         @(IsEditMode ? "Edit Provider" : "Add New Provider")
                     </MudText>
-                    <MudDivider Style="background: rgba(0, 255, 255, 0.3);" />
+                    <MudDivider Style="background: var(--cdo-accent-soft);" />
                 </MudItem>
 
                 @if (!string.IsNullOrEmpty(_validationMessage))
@@ -25,7 +25,7 @@
 
                 <!-- Basic Information -->
                 <MudItem xs="12">
-                    <MudText Typo="Typo.h6" Style="color: #00ffff;" Class="mb-2">
+                    <MudText Typo="Typo.h6" Style="color: var(--cdo-ink);" Class="mb-2">
                         <MudIcon Icon="@Icons.Material.Filled.Person" Size="Size.Small" />
                         Basic Information
                     </MudText>
@@ -67,7 +67,7 @@
 
                 <!-- Professional Credentials -->
                 <MudItem xs="12">
-                    <MudText Typo="Typo.h6" Style="color: #00ffff;" Class="mb-2 mt-3">
+                    <MudText Typo="Typo.h6" Style="color: var(--cdo-ink);" Class="mb-2 mt-3">
                         <MudIcon Icon="@Icons.Material.Filled.Badge" Size="Size.Small" />
                         Professional Credentials
                     </MudText>
@@ -108,7 +108,7 @@
 
                 <!-- Contact Information -->
                 <MudItem xs="12">
-                    <MudText Typo="Typo.h6" Style="color: #00ffff;" Class="mb-2 mt-3">
+                    <MudText Typo="Typo.h6" Style="color: var(--cdo-ink);" Class="mb-2 mt-3">
                         <MudIcon Icon="@Icons.Material.Filled.ContactPhone" Size="Size.Small" />
                         Contact Information
                     </MudText>

@@ -143,7 +143,7 @@ public class ClinicalChartService : IClinicalChartService
                     CDTCode = p.CDTCode,
                     Description = p.Description,
                     Status = "Completed",
-                    Color = "#00ff00",
+                    Color = "#15803D",
                     ServiceDate = p.ServiceDate
                 }).ToList()
             })
@@ -169,7 +169,7 @@ public class ClinicalChartService : IClinicalChartService
                     CDTCode = pp.CDTCode,
                     Description = pp.Description,
                     Status = "Planned",
-                    Color = "#ffff00",
+                    Color = "#B45309",
                     ServiceDate = null
                 }).ToList()
             })

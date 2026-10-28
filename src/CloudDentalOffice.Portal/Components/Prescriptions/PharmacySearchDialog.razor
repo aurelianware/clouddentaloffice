@@ -4,8 +4,8 @@
 
 <MudDialog @bind-Visible="IsOpen" Options="@(new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true })">
     <TitleContent>
-        <MudText Typo="Typo.h6" Style="color: #e0e0e0;">
-            <MudIcon Icon="@Icons.Material.Filled.LocalPharmacy" Class="mr-2" Style="color: #26a69a;" />
+        <MudText Typo="Typo.h6" Style="color: var(--cdo-text);">
+            <MudIcon Icon="@Icons.Material.Filled.LocalPharmacy" Class="mr-2" Style="color: var(--cdo-accent-2);" />
             Find Pharmacy
         </MudText>
     </TitleContent>
@@ -19,7 +19,7 @@
                               Placeholder="CVS, Walgreens, etc."
                               Adornment="Adornment.Start"
                               AdornmentIcon="@Icons.Material.Filled.Search"
-                              Style="color: #e0e0e0;"
+                              Style="color: var(--cdo-text);"
                               Dense="true" />
             </MudItem>
             <MudItem xs="12" sm="3">
@@ -27,7 +27,7 @@
                               Label="ZIP Code"
                               Variant="Variant.Outlined"
                               Placeholder="75201"
-                              Style="color: #e0e0e0;"
+                              Style="color: var(--cdo-text);"
                               Dense="true" />
             </MudItem>
             <MudItem xs="12" sm="2">
@@ -35,7 +35,7 @@
                                  Label="Miles"
                                  Variant="Variant.Outlined"
                                  Min="1" Max="50"
-                                 Style="color: #e0e0e0;"
+                                 Style="color: var(--cdo-text);"
                                  Dense="true" />
             </MudItem>
             <MudItem xs="12" sm="2" Class="d-flex align-end">
@@ -43,7 +43,7 @@
                            FullWidth="true"
                            OnClick="SearchPharmacies"
                            Disabled="_searching"
-                           Style="background-color: #26a69a; height: 40px;">
+                           Color="Color.Primary" Style="height: 40px;">
                     @if (_searching)
                     {
                         <MudProgressCircular Size="Size.Small" Indeterminate="true" />
@@ -62,14 +62,14 @@
                      Color="@(_filterEpcs ? Color.Success : Color.Default)"
                      Variant="@(_filterEpcs ? Variant.Filled : Variant.Outlined)"
                      OnClick="@(() => { _filterEpcs = !_filterEpcs; })"
-                     Style="@(!_filterEpcs ? "border-color: #455a64; color: #90a4ae;" : "")">
+                     Style="@(!_filterEpcs ? "border-color: var(--cdo-line); color: var(--cdo-text-muted);" : "")">
                 EPCS Enabled
             </MudChip>
             <MudChip T="string" Size="Size.Small"
                      Color="@(_filter24Hr ? Color.Info : Color.Default)"
                      Variant="@(_filter24Hr ? Variant.Filled : Variant.Outlined)"
                      OnClick="@(() => { _filter24Hr = !_filter24Hr; })"
-                     Style="@(!_filter24Hr ? "border-color: #455a64; color: #90a4ae;" : "")">
+                     Style="@(!_filter24Hr ? "border-color: var(--cdo-line); color: var(--cdo-text-muted);" : "")">
                 24 Hour
             </MudChip>
             @foreach (var type in new[] { PharmacyType.Retail, PharmacyType.MailOrder, PharmacyType.Compounding })
@@ -78,7 +78,7 @@
                          Color="@(_filterType == type ? Color.Tertiary : Color.Default)"
                          Variant="@(_filterType == type ? Variant.Filled : Variant.Outlined)"
                          OnClick="@(() => _filterType = _filterType == type ? null : type)"
-                         Style="@(_filterType != type ? "border-color: #455a64; color: #90a4ae;" : "")">
+                         Style="@(_filterType != type ? "border-color: var(--cdo-line); color: var(--cdo-text-muted);" : "")">
                     @type
                 </MudChip>
             }
@@ -91,17 +91,17 @@
                 @foreach (var pharmacy in FilteredPharmacies)
                 {
                     <MudListItem OnClick="@(() => SelectPharmacy(pharmacy))"
-                                 Style="border-bottom: 1px solid #2d3e50; cursor: pointer;"
+                                 Style="border-bottom: 1px solid var(--cdo-line); cursor: pointer;"
                                  Class="pharmacy-list-item">
                         <div class="d-flex justify-space-between align-center" style="width: 100%;">
                             <div>
-                                <MudText Typo="Typo.body1" Style="color: #e0e0e0; font-weight: 500;">
+                                <MudText Typo="Typo.body1" Style="color: var(--cdo-text); font-weight: 500;">
                                     @pharmacy.Name
                                 </MudText>
-                                <MudText Typo="Typo.body2" Style="color: #90a4ae;">
+                                <MudText Typo="Typo.body2" Style="color: var(--cdo-text-muted);">
                                     @pharmacy.Address, @pharmacy.City, @pharmacy.State @pharmacy.ZipCode
                                 </MudText>
-                                <MudText Typo="Typo.caption" Style="color: #78909c;">
+                                <MudText Typo="Typo.caption" Style="color: var(--cdo-text-subtle);">
                                     @pharmacy.Phone
                                 </MudText>
                                 <div class="d-flex gap-1 mt-1">
@@ -121,7 +121,7 @@
                                     }
                                     <MudChip T="string" Size="Size.Small" Color="Color.Default"
                                              Variant="Variant.Outlined"
-                                             Style="font-size: 0.7rem; border-color: #455a64; color: #78909c;">
+                                             Style="font-size: 0.7rem; border-color: var(--cdo-line); color: var(--cdo-text-subtle);">
                                         @pharmacy.PharmacyType
                                     </MudChip>
                                 </div>
@@ -129,11 +129,11 @@
                             <div style="text-align: right; min-width: 80px;">
                                 @if (pharmacy.DistanceMiles.HasValue)
                                 {
-                                    <MudText Typo="Typo.body2" Style="color: #26a69a; font-weight: 500;">
+                                    <MudText Typo="Typo.body2" Style="color: var(--cdo-accent-2); font-weight: 500;">
                                         @pharmacy.DistanceMiles.Value.ToString("F1") mi
                                     </MudText>
                                 }
-                                <MudText Typo="Typo.caption" Style="color: #607d8b;">
+                                <MudText Typo="Typo.caption" Style="color: var(--cdo-text-subtle);">
                                     NCPDP: @pharmacy.NcpdpId
                                 </MudText>
                             </div>
@@ -142,20 +142,20 @@
                 }
             </MudList>
 
-            <MudText Typo="Typo.caption" Class="mt-2" Style="color: #607d8b;">
+            <MudText Typo="Typo.caption" Class="mt-2" Style="color: var(--cdo-text-subtle);">
                 @FilteredPharmacies.Count() of @_pharmacies.Count results shown
             </MudText>
         }
         else if (_hasSearched)
         {
             <MudAlert Severity="Severity.Info" Dense="true" Class="mt-3"
-                      Style="background-color: #0d2137; color: #90caf9;">
+                      Style="background-color: var(--cdo-raised); color: var(--cdo-info);">
                 No pharmacies found. Try expanding your search radius or changing filters.
             </MudAlert>
         }
     </DialogContent>
     <DialogActions>
-        <MudButton OnClick="@(() => IsOpen = false)" Style="color: #78909c;">Close</MudButton>
+        <MudButton OnClick="@(() => IsOpen = false)" Style="color: var(--cdo-text-subtle);">Close</MudButton>
     </DialogActions>
 </MudDialog>
 

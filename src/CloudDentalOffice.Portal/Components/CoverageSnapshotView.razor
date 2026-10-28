@@ -13,22 +13,22 @@ else if (Compact)
     </MudTooltip>
     @if (Snapshot.Benefits is { } compact)
     {
-        <MudText Typo="Typo.caption" Style="color: #b0b0b0; display: block;">@BenefitLine(compact)</MudText>
+        <MudText Typo="Typo.caption" Style="color: var(--cdo-text-muted); display: block;">@BenefitLine(compact)</MudText>
     }
 }
 else
 {
     <MudStack Spacing="0">
         <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center">
-            <MudText Typo="Typo.body2" Style="color: #e0e0e0;">@(Snapshot.PayerName ?? "Insurance")</MudText>
+            <MudText Typo="Typo.body2" Style="color: var(--cdo-text);">@(Snapshot.PayerName ?? "Insurance")</MudText>
             <MudChip T="string" Size="Size.Small" Color="@StateColor(Snapshot.State)">@Headline(Snapshot)</MudChip>
         </MudStack>
         @if (Snapshot.Benefits is { } benefits)
         {
-            <MudText Typo="Typo.body2" Style="color: #b0b0b0;">@BenefitLine(benefits)</MudText>
+            <MudText Typo="Typo.body2" Style="color: var(--cdo-text-muted);">@BenefitLine(benefits)</MudText>
             @if (!benefits.IsComplete)
             {
-                <MudText Typo="Typo.caption" Style="color: #ffcc66;">Confirm with the payer: @string.Join(", ", benefits.MissingFields)</MudText>
+                <MudText Typo="Typo.caption" Style="color: var(--cdo-warning);">Confirm with the payer: @string.Join(", ", benefits.MissingFields)</MudText>
             }
         }
     </MudStack>

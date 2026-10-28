@@ -19,12 +19,12 @@
         }
         else
         {
-            <MudText Typo="Typo.h6" Style="color: #00ffff;">Coverage</MudText>
+            <MudText Typo="Typo.h6" Style="color: var(--cdo-ink);">Coverage</MudText>
             <MudDivider Class="my-2" />
 
             @if (_coverages.Count == 0)
             {
-                <MudText Style="color: #b0b0b0;">No insurance on file.</MudText>
+                <MudText Style="color: var(--cdo-text-muted);">No insurance on file.</MudText>
             }
             else
             {
@@ -36,7 +36,7 @@
                         @foreach (var c in _coverages)
                         {
                             <tr>
-                                <td>@c.InsurancePlan?.PayerName <span style="color:#808080;">(@c.InsurancePlan?.PayerId)</span></td>
+                                <td>@c.InsurancePlan?.PayerName <span style="color:var(--cdo-text-subtle);">(@c.InsurancePlan?.PayerId)</span></td>
                                 <td>@(c.SequenceNumber == 1 ? "Primary" : "Secondary")</td>
                                 <td>@c.MemberId</td>
                                 <td>@(IsSelf(c) ? "Patient" : $"{c.SubscriberFirstName} {c.SubscriberLastName} ({c.RelationshipToSubscriber})")</td>
@@ -91,7 +91,7 @@
             }
 
             <MudStack Row="true" Class="mt-6" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center">
-                <MudText Typo="Typo.h6" Style="color: #00ffff;">@(_editingId is null ? "Add coverage" : "Edit coverage")</MudText>
+                <MudText Typo="Typo.h6" Style="color: var(--cdo-ink);">@(_editingId is null ? "Add coverage" : "Edit coverage")</MudText>
                 @if (_editingId is null)
                 {
                     <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Info" StartIcon="@Icons.Material.Filled.DocumentScanner"
@@ -124,7 +124,7 @@
 
             @if (_plans.Count == 0)
             {
-                @* Outlined: the theme's filled info colour (#00ffff) makes filled alert text unreadable. *@
+                @* Outlined: the theme's filled info colour (var(--cdo-line)) makes filled alert text unreadable. *@
                 <MudAlert Severity="Severity.Info" Variant="Variant.Outlined">
                     No insurance plans yet. Add the payers this practice works with under <strong>Claims → Payers</strong>,
                     using each insurer's clearinghouse payer ID, then come back here to add coverage.

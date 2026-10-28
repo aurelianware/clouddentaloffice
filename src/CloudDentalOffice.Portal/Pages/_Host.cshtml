@@ -9,10 +9,14 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <base href="~/" />
-    <title>Cloud Dental Office - The Sentinel</title>
-    <link href="https://fonts.googleapis.com/css?family=Roboto:300,400,500,700&display=swap" rel="stylesheet" />
+    <title>Cloud Dental Office</title>
+    <meta name="theme-color" content="#0B2545" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
     <link href="_content/MudBlazor/MudBlazor.min.css" rel="stylesheet" />
-    <link href="css/sentinel.css" rel="stylesheet" />
+    <link href="css/theme-tokens.css" rel="stylesheet" />
+    <link href="css/portal.css" rel="stylesheet" />
 </head>
 <body>
     <component type="typeof(App)" render-mode="ServerPrerendered" />
@@ -28,41 +32,20 @@
         <button type="button" class="dismiss" aria-label="Dismiss error message">&#x2715;</button>
     </div>
 
-    <div id="components-reconnect-modal" role="alertdialog" aria-modal="true" aria-labelledby="reconnect-title"
-         aria-live="assertive" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.7); z-index: 9999; align-items: center; justify-content: center;">
-        <div style="background: #0a0a0a; border: 2px solid #00ffff; padding: 2rem; border-radius: 8px; text-align: center; color: #00ffff; max-width: 90%;">
-            <h3 id="reconnect-title">Connection Lost</h3>
+    <div id="components-reconnect-modal" class="cdo-reconnect-overlay" role="alertdialog" aria-modal="true" aria-labelledby="reconnect-title"
+         aria-live="assertive" style="display: none;">
+        <div class="cdo-reconnect-card">
+            <h3 id="reconnect-title">Connection lost</h3>
             <div data-reconnect-state="retrying">
                 <p>Reconnecting&hellip; your work is being kept.</p>
-                <div style="margin-top: 1rem;">
-                    <div class="spinner"></div>
-                </div>
+                <div class="cdo-spinner"></div>
             </div>
             <div data-reconnect-state="failed" style="display: none;">
                 <p>We couldn't restore your session. Please reload to continue.</p>
-                <button type="button" onclick="location.reload()"
-                        style="margin-top: 1rem; background: #00ffff; color: #0a0a0a; border: none; padding: 0.6rem 1.4rem; border-radius: 6px; font-weight: bold; cursor: pointer;">
-                    Reload
-                </button>
+                <button type="button" onclick="location.reload()">Reload</button>
             </div>
         </div>
     </div>
-
-    <style>
-        .spinner {
-            border: 3px solid rgba(0, 255, 255, 0.3);
-            border-radius: 50%;
-            border-top: 3px solid #00ffff;
-            width: 40px;
-            height: 40px;
-            animation: spin 1s linear infinite;
-            margin: 0 auto;
-        }
-        @@keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-    </style>
 
     <script src="_framework/blazor.server.js" autostart="false"></script>
     <script>

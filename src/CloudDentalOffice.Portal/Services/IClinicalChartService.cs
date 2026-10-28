@@ -51,6 +51,6 @@ public class ToothProcedureDto
     public string CDTCode { get; set; } = string.Empty;
     public string Description { get; set; } = string.Empty;
     public string Status { get; set; } = string.Empty; // Completed, Planned, Existing
-    public string Color { get; set; } = "#00ffff"; // Color code for display
+    public string Color { get; set; } = "#0E7490"; // Color code for display
     public DateTime? ServiceDate { get; set; }
 }

@@ -12,14 +12,14 @@
 <PageTitle>Treatment Plans - Cloud Dental Office</PageTitle>
 
 <MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-4">
-    <MudPaper Class="pa-4" Style="background: #0a0a0a; border: 1px solid #00ffff;">
+    <MudPaper Class="pa-4" Style="background: var(--cdo-surface); border: 1px solid var(--cdo-line);">
         <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center">
             <div>
-                <MudText Typo="Typo.h4" Style="color: #00ffff; font-weight: bold;">
+                <MudText Typo="Typo.h4" Style="color: var(--cdo-ink); font-weight: bold;">
                     <MudIcon Icon="@Icons.Material.Filled.Assignment" Class="mr-2" />
                     Treatment Plans
                 </MudText>
-                <MudText Typo="Typo.body2" Style="color: #b0b0b0;">
+                <MudText Typo="Typo.body2" Style="color: var(--cdo-text-muted);">
                     Create and manage patient treatment plans
                 </MudText>
             </div>
@@ -37,7 +37,7 @@
         </MudAlert>
     }
 
-    <MudPaper Class="pa-4 mt-4" Style="background: #0a0a0a; border: 1px solid rgba(0, 255, 255, 0.3);">
+    <MudPaper Class="pa-4 mt-4" Style="background: var(--cdo-surface); border: 1px solid var(--cdo-line-strong);">
         @if (_loading)
         {
             <MudProgressLinear Color="Color.Primary" Indeterminate="true" />
@@ -45,8 +45,8 @@
         else if (_selectedPatient == null)
         {
             <MudStack Spacing="3" AlignItems="AlignItems.Center" Class="py-8">
-                <MudIcon Icon="@Icons.Material.Filled.Assignment" Size="Size.Large" Style="color: #00ffff;" />
-                <MudText Typo="Typo.h6" Style="color: #b0b0b0;">
+                <MudIcon Icon="@Icons.Material.Filled.Assignment" Size="Size.Large" Style="color: var(--cdo-accent);" />
+                <MudText Typo="Typo.h6" Style="color: var(--cdo-text-muted);">
                     Select a patient to view treatment plans
                 </MudText>
                 <MudAutocomplete T="Patient" Value="_selectedPatient" Label="Search Patient"
@@ -60,7 +60,7 @@
         {
             <MudTable Items="@_treatmentPlans" Hover="true" Striped="true" Dense="true">
                 <ToolBarContent>
-                    <MudText Typo="Typo.h6" Style="color: #00ffff;">
+                    <MudText Typo="Typo.h6" Style="color: var(--cdo-ink);">
                         Treatment Plans for @_selectedPatient.FullName
                     </MudText>
                     <MudSpacer />
@@ -71,15 +71,15 @@
                     <MudChip T="string" Color="Color.Info" Size="Size.Small">Total: @_treatmentPlans.Count</MudChip>
                 </ToolBarContent>
                 <HeaderContent>
-                    <MudTh Style="color: #00ffff;">Title</MudTh>
-                    <MudTh Style="color: #00ffff;">Provider</MudTh>
-                    <MudTh Style="color: #00ffff;">Status</MudTh>
-                    <MudTh Style="color: #00ffff;">Created Date</MudTh>
-                    <MudTh Style="color: #00ffff;">Presented Date</MudTh>
-                    <MudTh Style="color: #00ffff;">Accepted Date</MudTh>
-                    <MudTh Style="color: #00ffff;">Procedures</MudTh>
-                    <MudTh Style="color: #00ffff;">Est. Cost</MudTh>
-                    <MudTh Style="color: #00ffff;">Actions</MudTh>
+                    <MudTh Style="color: var(--cdo-accent);">Title</MudTh>
+                    <MudTh Style="color: var(--cdo-accent);">Provider</MudTh>
+                    <MudTh Style="color: var(--cdo-accent);">Status</MudTh>
+                    <MudTh Style="color: var(--cdo-accent);">Created Date</MudTh>
+                    <MudTh Style="color: var(--cdo-accent);">Presented Date</MudTh>
+                    <MudTh Style="color: var(--cdo-accent);">Accepted Date</MudTh>
+                    <MudTh Style="color: var(--cdo-accent);">Procedures</MudTh>
+                    <MudTh Style="color: var(--cdo-accent);">Est. Cost</MudTh>
+                    <MudTh Style="color: var(--cdo-accent);">Actions</MudTh>
                 </HeaderContent>
                 <RowTemplate>
                     <MudTd DataLabel="Title">
@@ -122,7 +122,7 @@
                         <MudText Typo="Typo.body2">@context.PlannedProcedures.Count</MudText>
                     </MudTd>
                     <MudTd DataLabel="Est. Cost">
-                        <MudText Typo="Typo.body2" Style="color: #00ff88;">
+                        <MudText Typo="Typo.body2" Style="color: var(--cdo-success);">
                             @context.TotalEstimatedCost.ToString("C")
                         </MudText>
                     </MudTd>
@@ -134,7 +134,7 @@
                     </MudTd>
                 </RowTemplate>
                 <NoRecordsContent>
-                    <MudText Style="color: #b0b0b0;">No treatment plans found for this patient</MudText>
+                    <MudText Style="color: var(--cdo-text-muted);">No treatment plans found for this patient</MudText>
                 </NoRecordsContent>
             </MudTable>
         }

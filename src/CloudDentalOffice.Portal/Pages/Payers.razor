@@ -9,12 +9,12 @@
 <PageTitle>Insurance Payers - Cloud Dental Office</PageTitle>
 
 <MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-4">
-    <MudText Typo="Typo.h4" Class="mb-4" Style="color: #00ffff;">
+    <MudText Typo="Typo.h4" Class="mb-4" Style="color: var(--cdo-ink);">
         <MudIcon Icon="@Icons.Material.Filled.Business" Class="mr-2" />
         Insurance Payers
     </MudText>
 
-    <MudPaper Class="pa-4 mb-4" Elevation="3" Style="background: rgba(0, 255, 255, 0.05); border: 1px solid rgba(0, 255, 255, 0.2);">
+    <MudPaper Class="pa-4 mb-4" Elevation="3" Style="background: var(--cdo-accent-soft); border: 1px solid var(--cdo-line);">
         <div class="d-flex justify-space-between align-center mb-3">
             <MudTextField @bind-Value="searchText" 
                           Placeholder="Search payers..." 
@@ -36,7 +36,7 @@
                        Color="Color.Primary" 
                        StartIcon="@Icons.Material.Filled.Add"
                        OnClick="OpenCreateDialog"
-                       Style="background: linear-gradient(135deg, #00ffff 0%, #00ff88 100%); color: #000000;">
+                       Style="background: var(--cdo-accent); color: var(--cdo-on-accent);">
                 Add New Payer
             </MudButton>
         </div>
@@ -48,35 +48,35 @@
                   Dense="true"
                   Style="background: transparent;">
             <HeaderContent>
-                <MudTh Style="color: #00ffff;">Payer ID</MudTh>
-                <MudTh Style="color: #00ffff;">Payer Name</MudTh>
-                <MudTh Style="color: #00ffff;">Plan Type</MudTh>
-                <MudTh Style="color: #00ffff;">EDI Status</MudTh>
-                <MudTh Style="color: #00ffff;">Submission Type</MudTh>
-                <MudTh Style="color: #00ffff;">Active</MudTh>
-                <MudTh Style="color: #00ffff; text-align: center;">Actions</MudTh>
+                <MudTh Style="color: var(--cdo-accent);">Payer ID</MudTh>
+                <MudTh Style="color: var(--cdo-accent);">Payer Name</MudTh>
+                <MudTh Style="color: var(--cdo-accent);">Plan Type</MudTh>
+                <MudTh Style="color: var(--cdo-accent);">EDI Status</MudTh>
+                <MudTh Style="color: var(--cdo-accent);">Submission Type</MudTh>
+                <MudTh Style="color: var(--cdo-accent);">Active</MudTh>
+                <MudTh Style="color: var(--cdo-accent); text-align: center;">Actions</MudTh>
             </HeaderContent>
             <RowTemplate>
                 <MudTd DataLabel="Payer ID">@context.PayerId</MudTd>
                 <MudTd DataLabel="Payer Name">
-                    <strong style="color: #00ff88;">@context.PayerName</strong>
+                    <strong style="color: var(--cdo-ink);">@context.PayerName</strong>
                     @if (!string.IsNullOrEmpty(context.PlanName))
                     {
-                        <br/><small style="color: #ffffff80;">@context.PlanName</small>
+                        <br/><small style="color: var(--cdo-text-muted);">@context.PlanName</small>
                     }
                 </MudTd>
                 <MudTd DataLabel="Plan Type">@context.PlanType</MudTd>
                 <MudTd DataLabel="EDI Status">
                     @if (context.EdiEnabled)
                     {
-                        <MudChip T="string" Size="Size.Small" Color="Color.Success" Style="background: rgba(0, 255, 136, 0.2); color: #00ff88;">
+                        <MudChip T="string" Size="Size.Small" Color="Color.Success" Style="background: var(--cdo-success-soft); color: var(--cdo-success);">
                             <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Size="Size.Small" Class="mr-1" />
                             Enabled
                         </MudChip>
                     }
                     else
                     {
-                        <MudChip T="string" Size="Size.Small" Color="Color.Default" Style="background: rgba(255, 255, 255, 0.1); color: #ffffff80;">
+                        <MudChip T="string" Size="Size.Small" Color="Color.Default" Style="background: var(--cdo-raised); color: var(--cdo-text-muted);">
                             <MudIcon Icon="@Icons.Material.Filled.Cancel" Size="Size.Small" Class="mr-1" />
                             Disabled
                         </MudChip>
@@ -85,7 +85,7 @@
                 <MudTd DataLabel="Submission Type">
                     @if (context.EdiEnabled && !string.IsNullOrEmpty(context.EdiSubmissionType))
                     {
-                        <MudChip T="string" Size="Size.Small" Style="background: rgba(0, 255, 255, 0.2); color: #00ffff;">
+                        <MudChip T="string" Size="Size.Small" Style="background: var(--cdo-accent-soft); color: var(--cdo-accent);">
                             @if (context.EdiSubmissionType == "SFTP")
                             {
                                 <MudIcon Icon="@Icons.Material.Filled.Upload" Size="Size.Small" Class="mr-1" />
@@ -109,7 +109,7 @@
                     }
                     else
                     {
-                        <span style="color: #ffffff40;">—</span>
+                        <span style="color: var(--cdo-text-subtle);">—</span>
                     }
                 </MudTd>
                 <MudTd DataLabel="Active">
@@ -142,7 +142,7 @@
                 </MudTd>
             </RowTemplate>
             <NoRecordsContent>
-                <MudText Typo="Typo.body1" Align="Align.Center" Style="color: #ffffff60; padding: 2rem;">
+                <MudText Typo="Typo.body1" Align="Align.Center" Style="color: var(--cdo-text-subtle); padding: 2rem;">
                     No insurance payers found. Add your first payer to get started.
                 </MudText>
             </NoRecordsContent>

@@ -6,7 +6,7 @@
 @* Search the clearinghouse payer directory with the practice's own connection and add payers as insurance plans. *@
 <MudDialog>
     <DialogContent>
-        <MudText Typo="Typo.body2" Class="mb-3" Style="color: #b0b0b0;">
+        <MudText Typo="Typo.body2" Class="mb-3" Style="color: var(--cdo-text-muted);">
             Search the clearinghouse payer directory by insurer name or payer ID, then add the payers your practice works with.
             Added payers use the directory's payer ID, so eligibility checks route correctly.
         </MudText>
@@ -46,7 +46,7 @@
         {
             @if (_results.Count == 0)
             {
-                <MudText Class="mt-4" Style="color: #b0b0b0;">No matching payers. Try a shorter name, another state, or fewer filters.</MudText>
+                <MudText Class="mt-4" Style="color: var(--cdo-text-muted);">No matching payers. Try a shorter name, another state, or fewer filters.</MudText>
             }
             else
             {

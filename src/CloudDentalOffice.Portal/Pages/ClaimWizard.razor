@@ -45,11 +45,11 @@
                     }
                     else if (_selectedPatient != null)
                     {
-                        <MudAlert Severity="Severity.Warning" Class="mt-4" Style="background: #332800; border: 1px solid #ff9800; color: #ffffff;">
-                            <MudText Style="color: #ffffff; font-weight: bold;">
+                        <MudAlert Severity="Severity.Warning" Class="mt-4" Style="background: var(--cdo-warning-soft); border: 1px solid var(--cdo-warning-line); color: var(--cdo-text);">
+                            <MudText Style="color: var(--cdo-text); font-weight: bold;">
                                 ⚠️ This patient has no active insurance coverage.
                             </MudText>
-                            <MudText Style="color: #ffcc80;" Class="mt-2">
+                            <MudText Style="color: var(--cdo-warning);" Class="mt-2">
                                 Please add insurance to this patient before creating a claim. 
                                 You can do this from the Patients page.
                             </MudText>
@@ -89,7 +89,7 @@
                 
                 <MudGrid>
                     <MudItem xs="12">
-                        <MudPaper Class="pa-4" Style="background: #0a0a0a; border: 1px solid rgba(0, 255, 255, 0.3);">
+                        <MudPaper Class="pa-4" Style="background: var(--cdo-surface); border: 1px solid var(--cdo-line-strong);">
                             <MudStack Row="true" Spacing="2" Class="mb-4">
                                 <MudTextField @bind-Value="_newProcedureCode" Label="CDT Code" 
                                               Variant="Variant.Outlined" Style="max-width: 150px;" />
@@ -107,7 +107,7 @@
                             </MudStack>
 
                             <!-- Common Procedures Quick Add -->
-                            <MudText Typo="Typo.subtitle2" Class="mb-2" Style="color: #00ffff;">Common Procedures:</MudText>
+                            <MudText Typo="Typo.subtitle2" Class="mb-2" Style="color: var(--cdo-accent);">Common Procedures:</MudText>
                             <MudStack Row="true" Spacing="1">
                                 <MudChip T="string" Size="Size.Small" OnClick="@(() => QuickAddProcedure("D0120", "Periodic Oral Evaluation", 75))">D0120 - Exam</MudChip>
                                 <MudChip T="string" Size="Size.Small" OnClick="@(() => QuickAddProcedure("D1110", "Adult Prophylaxis", 120))">D1110 - Cleaning</MudChip>
@@ -133,7 +133,7 @@
                                     <MudTd>@context.ProcedureCode</MudTd>
                                     <MudTd>@context.Description</MudTd>
                                     <MudTd>@context.ToothNumber</MudTd>
-                                    <MudTd Style="color: #00ff88;">@context.Fee.ToString("C")</MudTd>
+                                    <MudTd Style="color: var(--cdo-success);">@context.Fee.ToString("C")</MudTd>
                                     <MudTd>
                                         <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" 
                                                        Size="Size.Small" OnClick="@(() => RemoveProcedure(context))" />
@@ -141,8 +141,8 @@
                                 </RowTemplate>
                             </MudTable>
                             
-                            <MudPaper Class="pa-3 mt-2" Style="background: #0a0a0a;">
-                                <MudText Typo="Typo.h6" Style="color: #00ff88;">
+                            <MudPaper Class="pa-3 mt-2" Style="background: var(--cdo-surface);">
+                                <MudText Typo="Typo.h6" Style="color: var(--cdo-success);">
                                     Total Charge: @_procedures.Sum(p => p.Fee).ToString("C")
                                 </MudText>
                             </MudPaper>
@@ -163,8 +163,8 @@
                 
                 <MudGrid>
                     <MudItem xs="12" md="6">
-                        <MudPaper Class="pa-4" Style="background: #0a0a0a; border: 1px solid rgba(0, 255, 255, 0.3);">
-                            <MudText Typo="Typo.subtitle1" Style="color: #00ffff;" Class="mb-2">Patient Information</MudText>
+                        <MudPaper Class="pa-4" Style="background: var(--cdo-surface); border: 1px solid var(--cdo-line-strong);">
+                            <MudText Typo="Typo.subtitle1" Style="color: var(--cdo-accent);" Class="mb-2">Patient Information</MudText>
                             <MudText Typo="Typo.body2">Name: @_selectedPatient?.FullName</MudText>
                             <MudText Typo="Typo.body2">DOB: @_selectedPatient?.DateOfBirth.ToString("MM/dd/yyyy")</MudText>
                             <MudText Typo="Typo.body2">Insurance: @_selectedInsurance?.InsurancePlan?.PayerName</MudText>
@@ -173,8 +173,8 @@
                     </MudItem>
 
                     <MudItem xs="12" md="6">
-                        <MudPaper Class="pa-4" Style="background: #0a0a0a; border: 1px solid rgba(0, 255, 255, 0.3);">
-                            <MudText Typo="Typo.subtitle1" Style="color: #00ffff;" Class="mb-2">Provider Information</MudText>
+                        <MudPaper Class="pa-4" Style="background: var(--cdo-surface); border: 1px solid var(--cdo-line-strong);">
+                            <MudText Typo="Typo.subtitle1" Style="color: var(--cdo-accent);" Class="mb-2">Provider Information</MudText>
                             <MudText Typo="Typo.body2">Provider: Dr. @_selectedProvider?.FullName</MudText>
                             <MudText Typo="Typo.body2">NPI: @_selectedProvider?.NPI</MudText>
                             <MudText Typo="Typo.body2">Specialty: @_selectedProvider?.Specialty</MudText>
@@ -183,8 +183,8 @@
                     </MudItem>
 
                     <MudItem xs="12">
-                        <MudPaper Class="pa-4" Style="background: #0a0a0a; border: 1px solid rgba(0, 255, 255, 0.3);">
-                            <MudText Typo="Typo.subtitle1" Style="color: #00ffff;" Class="mb-2">Procedures (@_procedures.Count)</MudText>
+                        <MudPaper Class="pa-4" Style="background: var(--cdo-surface); border: 1px solid var(--cdo-line-strong);">
+                            <MudText Typo="Typo.subtitle1" Style="color: var(--cdo-accent);" Class="mb-2">Procedures (@_procedures.Count)</MudText>
                             @foreach (var proc in _procedures)
                             {
                                 <MudText Typo="Typo.body2">
@@ -194,7 +194,7 @@
                                 </MudText>
                             }
                             <MudDivider Class="my-2" />
-                            <MudText Typo="Typo.h6" Style="color: #00ff88;">
+                            <MudText Typo="Typo.h6" Style="color: var(--cdo-success);">
                                 Total: @_procedures.Sum(p => p.Fee).ToString("C")
                             </MudText>
                         </MudPaper>
@@ -205,8 +205,8 @@
         </MudTabs>
     </DialogContent>
     <DialogActions>
-        <MudButton OnClick="Cancel" Variant="Variant.Text" Style="color: #00ffff;">Cancel</MudButton>
-        <MudButton OnClick="PreviousStep" Variant="Variant.Text" Disabled="@(_activeStep == 0)" Style="color: #00ffff;">
+        <MudButton OnClick="Cancel" Variant="Variant.Text" Style="color: var(--cdo-accent);">Cancel</MudButton>
+        <MudButton OnClick="PreviousStep" Variant="Variant.Text" Disabled="@(_activeStep == 0)" Style="color: var(--cdo-accent);">
             Back
         </MudButton>
         @if (_activeStep < 3)
@@ -218,7 +218,7 @@
         else
         {
             <MudButton OnClick="SubmitClaim" Variant="Variant.Filled" Color="Color.Success" 
-                       Disabled="@(!CanSubmit() || _submitting)" Style="color: #000000; font-weight: bold;">
+                       Disabled="@(!CanSubmit() || _submitting)" Style="color: var(--cdo-on-accent); font-weight: bold;">
                 @if (_submitting)
                 {
                     <MudProgressCircular Size="Size.Small" Indeterminate="true" />

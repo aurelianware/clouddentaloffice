@@ -4,8 +4,8 @@
 
 <MudDialog @bind-Visible="IsOpen" Options="@(new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true })">
     <TitleContent>
-        <MudText Typo="Typo.h6" Style="color: #e0e0e0;">
-            <MudIcon Icon="@Icons.Material.Filled.NoteAdd" Class="mr-2" Style="color: #26a69a;" />
+        <MudText Typo="Typo.h6" Style="color: var(--cdo-text);">
+            <MudIcon Icon="@Icons.Material.Filled.NoteAdd" Class="mr-2" Style="color: var(--cdo-accent-2);" />
             New Prescription
         </MudText>
     </TitleContent>
@@ -28,7 +28,7 @@
                                           AdornmentIcon="@Icons.Material.Filled.Search"
                                           Placeholder="Search drug name or RxNorm code..."
                                           Immediate="true"
-                                          Style="color: #e0e0e0;" />
+                                          Style="color: var(--cdo-text);" />
                         </MudItem>
                         <MudItem xs="6">
                             <MudTextField @bind-Value="_request.Strength"
@@ -36,14 +36,14 @@
                                           Required="true"
                                           Variant="Variant.Outlined"
                                           Placeholder="e.g., 500mg"
-                                          Style="color: #e0e0e0;" />
+                                          Style="color: var(--cdo-text);" />
                         </MudItem>
                         <MudItem xs="6">
                             <MudSelect @bind-Value="_request.DoseForm"
                                        Label="Dose Form"
                                        Required="true"
                                        Variant="Variant.Outlined"
-                                       Style="color: #e0e0e0;">
+                                       Style="color: var(--cdo-text);">
                                 <MudSelectItem Value="@("Tablet")">Tablet</MudSelectItem>
                                 <MudSelectItem Value="@("Capsule")">Capsule</MudSelectItem>
                                 <MudSelectItem Value="@("Oral Rinse")">Oral Rinse</MudSelectItem>
@@ -60,13 +60,13 @@
                                           Label="RxNorm Code"
                                           Variant="Variant.Outlined"
                                           Placeholder="Optional"
-                                          Style="color: #e0e0e0;" />
+                                          Style="color: var(--cdo-text);" />
                         </MudItem>
                         <MudItem xs="6">
                             <MudSelect @bind-Value="_request.Schedule"
                                        Label="DEA Schedule"
                                        Variant="Variant.Outlined"
-                                       Style="color: #e0e0e0;">
+                                       Style="color: var(--cdo-text);">
                                 <MudSelectItem Value="DrugSchedule.NonControlled">Non-Controlled</MudSelectItem>
                                 <MudSelectItem Value="DrugSchedule.ScheduleII">Schedule II</MudSelectItem>
                                 <MudSelectItem Value="DrugSchedule.ScheduleIII">Schedule III</MudSelectItem>
@@ -79,7 +79,7 @@
                     @if (_request.Schedule != DrugSchedule.NonControlled)
                     {
                         <MudAlert Severity="Severity.Warning" Class="mt-3" Dense="true"
-                                  Style="background-color: #3e2723; color: #ffcc80; border-color: #e65100;">
+                                  Style="background-color: var(--cdo-warning-soft); color: var(--cdo-warning); border-color: var(--cdo-warning-line);">
                             <MudIcon Icon="@Icons.Material.Filled.Shield" Size="Size.Small" Class="mr-1" />
                             Controlled Substance — EPCS two-factor authentication required at send time
                         </MudAlert>
@@ -97,7 +97,7 @@
                                           Variant="Variant.Outlined"
                                           Lines="3"
                                           Placeholder="e.g., Take 1 capsule by mouth 3 times daily for 7 days"
-                                          Style="color: #e0e0e0;" />
+                                          Style="color: var(--cdo-text);" />
                         </MudItem>
                         <MudItem xs="4">
                             <MudNumericField @bind-Value="_request.Quantity"
@@ -105,13 +105,13 @@
                                              Required="true"
                                              Min="1"
                                              Variant="Variant.Outlined"
-                                             Style="color: #e0e0e0;" />
+                                             Style="color: var(--cdo-text);" />
                         </MudItem>
                         <MudItem xs="2">
                             <MudSelect @bind-Value="_request.QuantityUnit"
                                        Label="Unit"
                                        Variant="Variant.Outlined"
-                                       Style="color: #e0e0e0;">
+                                       Style="color: var(--cdo-text);">
                                 <MudSelectItem Value="@("EA")">EA</MudSelectItem>
                                 <MudSelectItem Value="@("ML")">mL</MudSelectItem>
                                 <MudSelectItem Value="@("GM")">g</MudSelectItem>
@@ -124,7 +124,7 @@
                                              Min="0"
                                              Max="@(_request.Schedule == DrugSchedule.ScheduleII ? 0 : 11)"
                                              Variant="Variant.Outlined"
-                                             Style="color: #e0e0e0;" />
+                                             Style="color: var(--cdo-text);" />
                         </MudItem>
                         <MudItem xs="3">
                             <MudNumericField @bind-Value="_request.DaysSupply"
@@ -132,13 +132,13 @@
                                              Min="1"
                                              Max="365"
                                              Variant="Variant.Outlined"
-                                             Style="color: #e0e0e0;" />
+                                             Style="color: var(--cdo-text);" />
                         </MudItem>
                         <MudItem xs="12">
                             <MudCheckBox @bind-Value="_request.DispenseAsWritten"
                                          Label="Dispense As Written (DAW)"
                                          Color="Color.Tertiary"
-                                         Style="color: #b0bec5;" />
+                                         Style="color: var(--cdo-text-muted);" />
                         </MudItem>
                     </MudGrid>
 
@@ -159,7 +159,7 @@
                                           Variant="Variant.Outlined"
                                           Placeholder="e.g., D7210"
                                           HelperText="Dental procedure that prompted this Rx"
-                                          Style="color: #e0e0e0;" />
+                                          Style="color: var(--cdo-text);" />
                         </MudItem>
                         <MudItem xs="6">
                             <MudTextField @bind-Value="_request.DiagnosisCode"
@@ -167,7 +167,7 @@
                                           Variant="Variant.Outlined"
                                           Placeholder="e.g., K04.7"
                                           HelperText="Periapical abscess, acute infection, etc."
-                                          Style="color: #e0e0e0;" />
+                                          Style="color: var(--cdo-text);" />
                         </MudItem>
                         <MudItem xs="12">
                             <MudTextField @bind-Value="_request.ClinicalNotes"
@@ -175,14 +175,14 @@
                                           Variant="Variant.Outlined"
                                           Lines="2"
                                           Placeholder="Additional notes for the pharmacy..."
-                                          Style="color: #e0e0e0;" />
+                                          Style="color: var(--cdo-text);" />
                         </MudItem>
                     </MudGrid>
 
                     @* Interaction Check Results *@
                     @if (_interactionAlerts.Any())
                     {
-                        <MudText Typo="Typo.subtitle2" Class="mt-4 mb-2" Style="color: #ef5350;">
+                        <MudText Typo="Typo.subtitle2" Class="mt-4 mb-2" Style="color: var(--cdo-error);">
                             <MudIcon Icon="@Icons.Material.Filled.Warning" Size="Size.Small" Class="mr-1" />
                             Drug Interaction Alerts
                         </MudText>
@@ -205,7 +205,7 @@
                     @* Allergy warnings *@
                     @if (Allergies.Any())
                     {
-                        <MudText Typo="Typo.subtitle2" Class="mt-4 mb-2" Style="color: #ffa726;">
+                        <MudText Typo="Typo.subtitle2" Class="mt-4 mb-2" Style="color: var(--cdo-warning);">
                             <MudIcon Icon="@Icons.Material.Filled.HealthAndSafety" Size="Size.Small" Class="mr-1" />
                             Patient Allergies — Verify Before Sending
                         </MudText>
@@ -225,27 +225,27 @@
                     @if (_benefitResult != null)
                     {
                         <MudPaper Class="pa-3 mt-4" Elevation="0"
-                                  Style="background-color: #0d2137; border: 1px solid #1565c0;">
-                            <MudText Typo="Typo.subtitle2" Style="color: #42a5f5;">
+                                  Style="background-color: var(--cdo-raised); border: 1px solid var(--cdo-info-line);">
+                            <MudText Typo="Typo.subtitle2" Style="color: var(--cdo-info);">
                                 <MudIcon Icon="@Icons.Material.Filled.AttachMoney" Size="Size.Small" Class="mr-1" />
                                 Real-Time Prescription Benefit
                             </MudText>
                             <MudGrid Class="mt-2">
                                 <MudItem xs="4">
-                                    <MudText Typo="Typo.caption" Style="color: #78909c;">Patient Copay</MudText>
-                                    <MudText Typo="Typo.h6" Style="color: #66bb6a;">
+                                    <MudText Typo="Typo.caption" Style="color: var(--cdo-text-subtle);">Patient Copay</MudText>
+                                    <MudText Typo="Typo.h6" Style="color: var(--cdo-success);">
                                         $@(_benefitResult.PatientCopay?.ToString("F2") ?? "N/A")
                                     </MudText>
                                 </MudItem>
                                 <MudItem xs="4">
-                                    <MudText Typo="Typo.caption" Style="color: #78909c;">Formulary</MudText>
-                                    <MudText Typo="Typo.body2" Style="color: #e0e0e0;">
+                                    <MudText Typo="Typo.caption" Style="color: var(--cdo-text-subtle);">Formulary</MudText>
+                                    <MudText Typo="Typo.body2" Style="color: var(--cdo-text);">
                                         @(_benefitResult.FormularyStatus ?? "Unknown")
                                     </MudText>
                                 </MudItem>
                                 <MudItem xs="4">
-                                    <MudText Typo="Typo.caption" Style="color: #78909c;">Tier</MudText>
-                                    <MudText Typo="Typo.body2" Style="color: #e0e0e0;">
+                                    <MudText Typo="Typo.caption" Style="color: var(--cdo-text-subtle);">Tier</MudText>
+                                    <MudText Typo="Typo.body2" Style="color: var(--cdo-text);">
                                         @(_benefitResult.TierLevel ?? "N/A")
                                     </MudText>
                                 </MudItem>
@@ -258,12 +258,12 @@
                             }
                             @if (_benefitResult.Alternatives.Any())
                             {
-                                <MudText Typo="Typo.caption" Class="mt-2" Style="color: #78909c;">
+                                <MudText Typo="Typo.caption" Class="mt-2" Style="color: var(--cdo-text-subtle);">
                                     Lower-cost alternatives available
                                 </MudText>
                                 @foreach (var alt in _benefitResult.Alternatives.Take(3))
                                 {
-                                    <MudText Typo="Typo.caption" Style="color: #90caf9;">
+                                    <MudText Typo="Typo.caption" Style="color: var(--cdo-info);">
                                         • @alt.DrugName — est. $@(alt.EstimatedCopay?.ToString("F2") ?? "?")
                                         (@alt.TierLevel)
                                     </MudText>
@@ -275,7 +275,7 @@
                     <MudButton Variant="Variant.Outlined"
                                Size="Size.Small"
                                Class="mt-3"
-                               Style="border-color: #1565c0; color: #42a5f5;"
+                               Style="border-color: var(--cdo-info-line); color: var(--cdo-info);"
                                StartIcon="@Icons.Material.Filled.AttachMoney"
                                OnClick="CheckBenefits"
                                Disabled="_checkingBenefits">
@@ -291,16 +291,15 @@
         </MudForm>
     </DialogContent>
     <DialogActions>
-        <MudButton OnClick="@(() => IsOpen = false)" Style="color: #78909c;">Cancel</MudButton>
+        <MudButton OnClick="@(() => IsOpen = false)" Style="color: var(--cdo-text-subtle);">Cancel</MudButton>
         @if (_activeStep > 0)
         {
-            <MudButton OnClick="@(() => _activeStep--)" Style="color: #b0bec5;">Back</MudButton>
+            <MudButton OnClick="@(() => _activeStep--)" Style="color: var(--cdo-text-muted);">Back</MudButton>
         }
         @if (_activeStep < 2)
         {
             <MudButton Variant="Variant.Filled" Color="Color.Primary"
-                       OnClick="@(() => _activeStep++)"
-                       Style="background-color: #26a69a;">
+                       OnClick="@(() => _activeStep++)">
                 Next
             </MudButton>
         }

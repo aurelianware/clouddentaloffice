@@ -6,46 +6,46 @@
 <PageTitle>Consent Recordings — Cloud Dental Office</PageTitle>
 
 <MudContainer MaxWidth="MaxWidth.Large" Class="mt-4">
-    <MudPaper Class="pa-4 mb-4" Style="background: linear-gradient(135deg, #1a2332 0%, #0d2137 100%); border-left: 4px solid #42a5f5;">
-        <MudText Typo="Typo.h5" Style="color: #e0e0e0;">
-            <MudIcon Icon="@Icons.Material.Filled.Verified" Class="mr-2" Style="color: #42a5f5;" />
+    <MudPaper Class="pa-4 mb-4" Style="background: var(--cdo-surface); border-left: 4px solid var(--cdo-info);">
+        <MudText Typo="Typo.h5" Style="color: var(--cdo-text);">
+            <MudIcon Icon="@Icons.Material.Filled.Verified" Class="mr-2" Style="color: var(--cdo-info);" />
             Consent Recordings
         </MudText>
-        <MudText Typo="Typo.body2" Style="color: #78909c;">
+        <MudText Typo="Typo.body2" Style="color: var(--cdo-text-subtle);">
             Video-verified informed consent · Tamper-evident · Patient chart linked
         </MudText>
     </MudPaper>
 
     <MudTable Items="_recordings" Hover="true" Dense="true"
-              Style="background-color: #1e2a3a; border: 1px solid #2d3e50;"
-              RowStyle="color: #cfd8dc;" T="ConsentRecordingDto">
+              Style="background-color: var(--cdo-raised); border: 1px solid var(--cdo-line);"
+              RowStyle="color: var(--cdo-text);" T="ConsentRecordingDto">
         <ToolBarContent>
-            <MudText Typo="Typo.subtitle1" Style="color: #b0bec5;">Recordings</MudText>
+            <MudText Typo="Typo.subtitle1" Style="color: var(--cdo-text-muted);">Recordings</MudText>
             <MudSpacer />
             <MudButton Variant="Variant.Outlined" Size="Size.Small"
                        StartIcon="@Icons.Material.Filled.FiberManualRecord"
-                       Style="border-color: #ef5350; color: #ef5350;"
+                       Style="border-color: var(--cdo-error-line); color: var(--cdo-error);"
                        OnClick="@(() => _showStartRecording = true)">
                 Start Recording
             </MudButton>
         </ToolBarContent>
         <HeaderContent>
-            <MudTh Style="color: #78909c;">Patient</MudTh>
-            <MudTh Style="color: #78909c;">Type</MudTh>
-            <MudTh Style="color: #78909c;">Date</MudTh>
-            <MudTh Style="color: #78909c;">Duration</MudTh>
-            <MudTh Style="color: #78909c;">Status</MudTh>
-            <MudTh Style="color: #78909c;">Verification</MudTh>
-            <MudTh Style="color: #78909c;">Actions</MudTh>
+            <MudTh Style="color: var(--cdo-text-subtle);">Patient</MudTh>
+            <MudTh Style="color: var(--cdo-text-subtle);">Type</MudTh>
+            <MudTh Style="color: var(--cdo-text-subtle);">Date</MudTh>
+            <MudTh Style="color: var(--cdo-text-subtle);">Duration</MudTh>
+            <MudTh Style="color: var(--cdo-text-subtle);">Status</MudTh>
+            <MudTh Style="color: var(--cdo-text-subtle);">Verification</MudTh>
+            <MudTh Style="color: var(--cdo-text-subtle);">Actions</MudTh>
         </HeaderContent>
         <RowTemplate>
             <MudTd>
-                <MudText Typo="Typo.body2" Style="color: #e0e0e0; font-weight: 500;">@context.PatientName</MudText>
-                <MudText Typo="Typo.caption" Style="color: #78909c;">Dr. @context.ProviderName</MudText>
+                <MudText Typo="Typo.body2" Style="color: var(--cdo-text); font-weight: 500;">@context.PatientName</MudText>
+                <MudText Typo="Typo.caption" Style="color: var(--cdo-text-subtle);">Dr. @context.ProviderName</MudText>
             </MudTd>
             <MudTd>
                 <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined"
-                         Style="border-color: #455a64; color: #b0bec5; font-size: 0.7rem;">
+                         Style="border-color: var(--cdo-line); color: var(--cdo-text-muted); font-size: 0.7rem;">
                     @context.ConsentType
                 </MudChip>
             </MudTd>
@@ -65,19 +65,19 @@
                     <MudTooltip Text="Patient Detected">
                         <MudIcon Icon="@(context.PatientDetected ? Icons.Material.Filled.Person : Icons.Material.Filled.PersonOff)"
                                  Size="Size.Small"
-                                 Style="@($"color: {(context.PatientDetected ? "#66bb6a" : "#ef5350")};")"
+                                 Style="@($"color: {(context.PatientDetected ? "var(--cdo-success)" : "var(--cdo-error)")};")"
                                  />
                     </MudTooltip>
                     <MudTooltip Text="Consent Form Detected">
                         <MudIcon Icon="@(context.ConsentFormDetected ? Icons.Material.Filled.Description : Icons.Material.Filled.FilePresent)"
                                  Size="Size.Small"
-                                 Style="@($"color: {(context.ConsentFormDetected ? "#66bb6a" : "#ffa726")};")"
+                                 Style="@($"color: {(context.ConsentFormDetected ? "var(--cdo-success)" : "var(--cdo-warning)")};")"
                                  />
                     </MudTooltip>
                     <MudTooltip Text="Provider Present">
                         <MudIcon Icon="@(context.ProviderDetected ? Icons.Material.Filled.MedicalServices : Icons.Material.Filled.PersonOff)"
                                  Size="Size.Small"
-                                 Style="@($"color: {(context.ProviderDetected ? "#66bb6a" : "#ffa726")};")"
+                                 Style="@($"color: {(context.ProviderDetected ? "var(--cdo-success)" : "var(--cdo-warning)")};")"
                                  />
                     </MudTooltip>
                 </div>
@@ -86,18 +86,18 @@
                 @if (!string.IsNullOrEmpty(context.VideoUrl))
                 {
                     <MudIconButton Icon="@Icons.Material.Filled.PlayCircle" Size="Size.Small"
-                                   Style="color: #42a5f5;" Title="Play Recording" />
+                                   Style="color: var(--cdo-info);" Title="Play Recording" />
                 }
                 @if (context.Status == ConsentStatus.InProgress)
                 {
                     <MudIconButton Icon="@Icons.Material.Filled.Stop" Size="Size.Small"
-                                   Style="color: #ef5350;" Title="Stop Recording"
+                                   Style="color: var(--cdo-error);" Title="Stop Recording"
                                    OnClick="@(() => CompleteRecording(context.Id))" />
                 }
             </MudTd>
         </RowTemplate>
         <NoRecordsContent>
-            <MudText Typo="Typo.body2" Style="color: #607d8b;" Class="pa-4">
+            <MudText Typo="Typo.body2" Style="color: var(--cdo-text-subtle);" Class="pa-4">
                 No consent recordings yet
             </MudText>
         </NoRecordsContent>
@@ -107,11 +107,11 @@
     <MudDialog @bind-Visible="_showStartRecording"
                Options="@(new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true })">
         <TitleContent>
-            <MudText Typo="Typo.h6" Style="color: #e0e0e0;">Start Consent Recording</MudText>
+            <MudText Typo="Typo.h6" Style="color: var(--cdo-text);">Start Consent Recording</MudText>
         </TitleContent>
         <DialogContent>
             <MudSelect @bind-Value="_newConsentType" Label="Consent Type" Variant="Variant.Outlined"
-                       Style="color: #e0e0e0;" Class="mb-3">
+                       Style="color: var(--cdo-text);" Class="mb-3">
                 <MudSelectItem Value="@("General Treatment")">General Treatment</MudSelectItem>
                 <MudSelectItem Value="@("Extraction")">Extraction</MudSelectItem>
                 <MudSelectItem Value="@("Sedation")">Sedation / Anesthesia</MudSelectItem>
@@ -120,15 +120,15 @@
                 <MudSelectItem Value="@("Root Canal")">Endodontic / Root Canal</MudSelectItem>
             </MudSelect>
             <MudAlert Severity="Severity.Info" Dense="true"
-                      Style="background-color: #0d2137; color: #90caf9;">
+                      Style="background-color: var(--cdo-raised); color: var(--cdo-info);">
                 Recording will capture video from the operatory camera with patient and form detection verification.
                 Non-relevant faces will be automatically blurred.
             </MudAlert>
         </DialogContent>
         <DialogActions>
-            <MudButton OnClick="@(() => _showStartRecording = false)" Style="color: #78909c;">Cancel</MudButton>
-            <MudButton Variant="Variant.Filled" StartIcon="@Icons.Material.Filled.FiberManualRecord"
-                       Style="background-color: #ef5350;" OnClick="StartRecording">
+            <MudButton OnClick="@(() => _showStartRecording = false)" Style="color: var(--cdo-text-subtle);">Cancel</MudButton>
+            <MudButton Variant="Variant.Filled" Color="Color.Error" StartIcon="@Icons.Material.Filled.FiberManualRecord"
+                       OnClick="StartRecording">
                 Start Recording
             </MudButton>
         </DialogActions>

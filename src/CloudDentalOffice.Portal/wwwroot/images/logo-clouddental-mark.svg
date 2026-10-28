@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32" role="img" aria-label="Cloud Dental Office">
+  <rect width="32" height="32" rx="7" fill="#0E7490"/>
+  <path d="M10.2 7.5c-2.4 0-4.2 2-4.2 4.6 0 2.2.9 3.6 1.6 5.4.6 1.6.8 3.6 1.2 5.3.3 1.4.9 2.2 1.8 2.2 1.1 0 1.5-1.1 1.8-2.6.3-1.7.7-3.6 3.6-3.6s3.3 1.9 3.6 3.6c.3 1.5.7 2.6 1.8 2.6.9 0 1.5-.8 1.8-2.2.4-1.7.6-3.7 1.2-5.3.7-1.8 1.6-3.2 1.6-5.4 0-2.6-1.8-4.6-4.2-4.6-1.9 0-3 1-5.8 1s-3.9-1-5.8-1z"
+        fill="none" stroke="#FFFFFF" stroke-width="1.8" stroke-linejoin="round"/>
+</svg>

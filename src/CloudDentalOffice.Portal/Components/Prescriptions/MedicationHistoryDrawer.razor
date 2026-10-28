@@ -2,24 +2,24 @@
 
 <div class="pa-4">
     <div class="d-flex justify-space-between align-center mb-4">
-        <MudText Typo="Typo.h6" Style="color: #e0e0e0;">
-            <MudIcon Icon="@Icons.Material.Filled.History" Class="mr-2" Style="color: #42a5f5;" />
+        <MudText Typo="Typo.h6" Style="color: var(--cdo-text);">
+            <MudIcon Icon="@Icons.Material.Filled.History" Class="mr-2" Style="color: var(--cdo-info);" />
             Medication History
         </MudText>
         <MudIconButton Icon="@Icons.Material.Filled.Close"
                        Size="Size.Small"
                        OnClick="OnClose"
-                       Style="color: #78909c;" />
+                       Style="color: var(--cdo-text-subtle);" />
     </div>
 
-    <MudText Typo="Typo.caption" Class="mb-3" Style="color: #607d8b;">
+    <MudText Typo="Typo.caption" Class="mb-3" Style="color: var(--cdo-text-subtle);">
         Aggregated from pharmacies and PBMs via Surescripts
     </MudText>
 
     @if (!MedicationHistory.Any())
     {
         <MudAlert Severity="Severity.Info" Dense="true"
-                  Style="background-color: #0d2137; color: #90caf9;">
+                  Style="background-color: var(--cdo-raised); color: var(--cdo-info);">
             No medication history available. Patient consent may be required.
         </MudAlert>
     }
@@ -31,7 +31,7 @@
 
         @if (activeMeds.Any())
         {
-            <MudText Typo="Typo.subtitle2" Class="mb-2" Style="color: #66bb6a;">
+            <MudText Typo="Typo.subtitle2" Class="mb-2" Style="color: var(--cdo-success);">
                 <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Size="Size.Small" Class="mr-1" />
                 Active Medications (@activeMeds.Count)
             </MudText>
@@ -39,27 +39,27 @@
             @foreach (var med in activeMeds)
             {
                 <MudPaper Class="pa-3 mb-2" Elevation="0"
-                          Style="background-color: #152238; border: 1px solid #1b5e20; border-radius: 6px;">
-                    <MudText Typo="Typo.body2" Style="color: #e0e0e0; font-weight: 500;">
+                          Style="background-color: var(--cdo-raised); border: 1px solid var(--cdo-success-line); border-radius: 6px;">
+                    <MudText Typo="Typo.body2" Style="color: var(--cdo-text); font-weight: 500;">
                         @med.DrugName
                     </MudText>
-                    <MudText Typo="Typo.caption" Style="color: #b0bec5;">
+                    <MudText Typo="Typo.caption" Style="color: var(--cdo-text-muted);">
                         @med.Strength
                     </MudText>
                     @if (!string.IsNullOrEmpty(med.Directions))
                     {
-                        <MudText Typo="Typo.caption" Style="color: #90a4ae;">
+                        <MudText Typo="Typo.caption" Style="color: var(--cdo-text-muted);">
                             Sig: @med.Directions
                         </MudText>
                     }
                     <div class="d-flex justify-space-between mt-1">
-                        <MudText Typo="Typo.caption" Style="color: #78909c;">
+                        <MudText Typo="Typo.caption" Style="color: var(--cdo-text-subtle);">
                             @if (!string.IsNullOrEmpty(med.Prescriber))
                             {
                                 <text>Rx by @med.Prescriber</text>
                             }
                         </MudText>
-                        <MudText Typo="Typo.caption" Style="color: #78909c;">
+                        <MudText Typo="Typo.caption" Style="color: var(--cdo-text-subtle);">
                             @if (med.LastFillDate.HasValue)
                             {
                                 <text>Filled @med.LastFillDate.Value.ToString("MM/dd/yy")</text>
@@ -69,7 +69,7 @@
                     @if (!string.IsNullOrEmpty(med.Source))
                     {
                         <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined"
-                                 Style="font-size: 0.65rem; border-color: #37474f; color: #78909c; margin-top: 4px;">
+                                 Style="font-size: 0.65rem; border-color: var(--cdo-line); color: var(--cdo-text-subtle); margin-top: 4px;">
                             Source: @med.Source
                         </MudChip>
                     }
@@ -81,9 +81,9 @@
         @if (inactiveMeds.Any())
         {
             <MudExpansionPanels Class="mt-3">
-                <MudExpansionPanel Style="background-color: #152238; color: #b0bec5;">
+                <MudExpansionPanel Style="background-color: var(--cdo-raised); color: var(--cdo-text-muted);">
                     <TitleContent>
-                        <MudText Typo="Typo.subtitle2" Style="color: #78909c;">
+                        <MudText Typo="Typo.subtitle2" Style="color: var(--cdo-text-subtle);">
                             <MudIcon Icon="@Icons.Material.Filled.History" Size="Size.Small" Class="mr-1" />
                             Past Medications (@inactiveMeds.Count)
                         </MudText>
@@ -92,15 +92,15 @@
                         @foreach (var med in inactiveMeds)
                         {
                             <MudPaper Class="pa-3 mb-2" Elevation="0"
-                                      Style="background-color: #0d1b2a; border: 1px solid #2d3e50; border-radius: 6px;">
-                                <MudText Typo="Typo.body2" Style="color: #90a4ae;">
+                                      Style="background-color: var(--cdo-raised); border: 1px solid var(--cdo-line); border-radius: 6px;">
+                                <MudText Typo="Typo.body2" Style="color: var(--cdo-text-muted);">
                                     @med.DrugName @med.Strength
                                 </MudText>
                                 <div class="d-flex justify-space-between mt-1">
-                                    <MudText Typo="Typo.caption" Style="color: #607d8b;">
+                                    <MudText Typo="Typo.caption" Style="color: var(--cdo-text-subtle);">
                                         @med.Prescriber
                                     </MudText>
-                                    <MudText Typo="Typo.caption" Style="color: #607d8b;">
+                                    <MudText Typo="Typo.caption" Style="color: var(--cdo-text-subtle);">
                                         @med.LastFillDate?.ToString("MM/dd/yy")
                                     </MudText>
                                 </div>

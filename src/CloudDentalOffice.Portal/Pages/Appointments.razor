@@ -15,14 +15,14 @@
 <PageTitle>Appointments - Cloud Dental Office</PageTitle>
 
 <MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-4">
-    <MudPaper Class="pa-4" Style="background: #0a0a0a; border: 1px solid #00ffff;">
+    <MudPaper Class="pa-4" Style="background: var(--cdo-surface); border: 1px solid var(--cdo-line);">
         <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center">
             <div>
-                <MudText Typo="Typo.h4" Style="color: #00ffff; font-weight: bold;">
+                <MudText Typo="Typo.h4" Style="color: var(--cdo-ink); font-weight: bold;">
                     <MudIcon Icon="@Icons.Material.Filled.Event" Class="mr-2" />
                     Appointments @(_selectedPatient != null ? $"- {_selectedPatient.FullName}" : "")
                 </MudText>
-                <MudText Typo="Typo.body2" Style="color: #b0b0b0;">
+                <MudText Typo="Typo.body2" Style="color: var(--cdo-text-muted);">
                     @(_selectedPatient != null ? $"Viewing appointments for {_selectedPatient.FullName}" : "Schedule and manage patient appointments")
                 </MudText>
                 @if (_selectedPatient != null)
@@ -59,7 +59,7 @@
         </MudAlert>
     }
 
-    <MudPaper Class="pa-4 mt-4" Style="background: #0a0a0a; border: 1px solid rgba(0, 255, 255, 0.3);">
+    <MudPaper Class="pa-4 mt-4" Style="background: var(--cdo-surface); border: 1px solid var(--cdo-line-strong);">
         @if (_loading)
         {
             <MudProgressLinear Color="Color.Primary" Indeterminate="true" />
@@ -68,26 +68,26 @@
         {
             <MudTable Items="@_appointments" Hover="true" Striped="true" Dense="true">
                 <ToolBarContent>
-                    <MudText Typo="Typo.h6" Style="color: #00ffff;">
+                    <MudText Typo="Typo.h6" Style="color: var(--cdo-ink);">
                         Appointments for @_selectedDate?.ToString("MMMM dd, yyyy")
                     </MudText>
                     <MudSpacer />
                     <MudChip T="string" Color="Color.Info" Size="Size.Small">Total: @_appointments.Count</MudChip>
                 </ToolBarContent>
                 <HeaderContent>
-                    <MudTh Style="color: #00ffff;">Time</MudTh>
-                    <MudTh Style="color: #00ffff;">Patient</MudTh>
-                    <MudTh Style="color: #00ffff;">Coverage</MudTh>
-                    <MudTh Style="color: #00ffff;">Provider</MudTh>
-                    <MudTh Style="color: #00ffff;">Type</MudTh>
-                    <MudTh Style="color: #00ffff;">Duration</MudTh>
-                    <MudTh Style="color: #00ffff;">Reason</MudTh>
-                    <MudTh Style="color: #00ffff;">Status</MudTh>
-                    <MudTh Style="color: #00ffff;">Actions</MudTh>
+                    <MudTh Style="color: var(--cdo-accent);">Time</MudTh>
+                    <MudTh Style="color: var(--cdo-accent);">Patient</MudTh>
+                    <MudTh Style="color: var(--cdo-accent);">Coverage</MudTh>
+                    <MudTh Style="color: var(--cdo-accent);">Provider</MudTh>
+                    <MudTh Style="color: var(--cdo-accent);">Type</MudTh>
+                    <MudTh Style="color: var(--cdo-accent);">Duration</MudTh>
+                    <MudTh Style="color: var(--cdo-accent);">Reason</MudTh>
+                    <MudTh Style="color: var(--cdo-accent);">Status</MudTh>
+                    <MudTh Style="color: var(--cdo-accent);">Actions</MudTh>
                 </HeaderContent>
                 <RowTemplate>
                     <MudTd DataLabel="Time">
-                        <MudText Typo="Typo.body2" Style="color: #00ff88; font-weight: bold;">
+                        <MudText Typo="Typo.body2" Style="color: var(--cdo-success); font-weight: bold;">
                             @context.AppointmentDateTime.ToLocalTime().ToString("hh:mm tt")
                         </MudText>
                     </MudTd>
@@ -133,7 +133,7 @@
                     </MudTd>
                 </RowTemplate>
                 <NoRecordsContent>
-                    <MudText Style="color: #b0b0b0;">No appointments scheduled for this date</MudText>
+                    <MudText Style="color: var(--cdo-text-muted);">No appointments scheduled for this date</MudText>
                 </NoRecordsContent>
             </MudTable>
         }

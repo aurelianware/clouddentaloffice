@@ -7,12 +7,12 @@
 
 <MudContainer MaxWidth="MaxWidth.Large" Class="mt-4">
 
-    <MudPaper Class="pa-4 mb-4" Style="background: linear-gradient(135deg, #1a2332 0%, #0d2137 100%); border-left: 4px solid #66bb6a;">
-        <MudText Typo="Typo.h5" Style="color: #e0e0e0;">
-            <MudIcon Icon="@Icons.Material.Filled.CreditCard" Class="mr-2" Style="color: #66bb6a;" />
+    <MudPaper Class="pa-4 mb-4" Style="background: var(--cdo-surface); border-left: 4px solid var(--cdo-success);">
+        <MudText Typo="Typo.h5" Style="color: var(--cdo-text);">
+            <MudIcon Icon="@Icons.Material.Filled.CreditCard" Class="mr-2" Style="color: var(--cdo-success);" />
             Insurance Card Scanner
         </MudText>
-        <MudText Typo="Typo.body2" Style="color: #78909c;">
+        <MudText Typo="Typo.body2" Style="color: var(--cdo-text-subtle);">
             Capture an insurance card and read its fields
         </MudText>
     </MudPaper>
@@ -20,8 +20,8 @@
     <MudGrid>
         @* ── Scan Interface ── *@
         <MudItem xs="12" md="6">
-            <MudPaper Class="pa-4" Elevation="0" Style="background-color: #1e2a3a; border: 1px solid #2d3e50;">
-                <MudText Typo="Typo.subtitle2" Class="mb-3" Style="color: #78909c;">
+            <MudPaper Class="pa-4" Elevation="0" Style="background-color: var(--cdo-raised); border: 1px solid var(--cdo-line);">
+                <MudText Typo="Typo.subtitle2" Class="mb-3" Style="color: var(--cdo-text-subtle);">
                     Capture Card Image
                 </MudText>
 
@@ -30,12 +30,12 @@
                                Class="mb-3">
                     <ActivatorContent>
                         <MudPaper Class="pa-6 d-flex flex-column align-center cursor-pointer" Elevation="0"
-                                  Style="background-color: #152238; border: 2px dashed #455a64; border-radius: 8px;">
-                            <MudIcon Icon="@Icons.Material.Filled.CameraAlt" Style="color: #42a5f5; font-size: 2.5rem;" />
-                            <MudText Typo="Typo.body2" Class="mt-2" Style="color: #b0bec5;">
+                                  Style="background-color: var(--cdo-raised); border: 2px dashed var(--cdo-line); border-radius: 8px;">
+                            <MudIcon Icon="@Icons.Material.Filled.CameraAlt" Style="color: var(--cdo-info); font-size: 2.5rem;" />
+                            <MudText Typo="Typo.body2" Class="mt-2" Style="color: var(--cdo-text-muted);">
                                 @if (_frontCardFile != null)
                                 {
-                                    <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Size="Size.Small" Style="color: #66bb6a;" />
+                                    <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Size="Size.Small" Style="color: var(--cdo-success);" />
                                     <text> Front: @_frontCardFile.Name</text>
                                 }
                                 else
@@ -52,12 +52,12 @@
                                Class="mb-3">
                     <ActivatorContent>
                         <MudPaper Class="pa-4 d-flex flex-column align-center cursor-pointer" Elevation="0"
-                                  Style="background-color: #152238; border: 2px dashed #37474f; border-radius: 8px;">
-                            <MudIcon Icon="@Icons.Material.Filled.FlipCameraAndroid" Style="color: #78909c; font-size: 1.5rem;" />
-                            <MudText Typo="Typo.caption" Style="color: #78909c;">
+                                  Style="background-color: var(--cdo-raised); border: 2px dashed var(--cdo-line); border-radius: 8px;">
+                            <MudIcon Icon="@Icons.Material.Filled.FlipCameraAndroid" Style="color: var(--cdo-text-subtle); font-size: 1.5rem;" />
+                            <MudText Typo="Typo.caption" Style="color: var(--cdo-text-subtle);">
                                 @if (_backCardFile != null)
                                 {
-                                    <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Size="Size.Small" Style="color: #66bb6a;" />
+                                    <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Size="Size.Small" Style="color: var(--cdo-success);" />
                                     <text> Back: @_backCardFile.Name</text>
                                 }
                                 else
@@ -73,7 +73,7 @@
                            StartIcon="@Icons.Material.Filled.DocumentScanner"
                            OnClick="ScanCard"
                            Disabled="@(_frontCardFile == null || _scanning)"
-                           Style="background-color: #66bb6a; color: #fff;">
+                           Style="background-color: var(--cdo-success); color: var(--cdo-on-accent);">
                     @if (_scanning)
                     {
                         <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
@@ -91,9 +91,9 @@
         <MudItem xs="12" md="6">
             @if (_scanResult != null)
             {
-                <MudPaper Class="pa-4" Elevation="0" Style="background-color: #1e2a3a; border: 1px solid #1b5e20;">
+                <MudPaper Class="pa-4" Elevation="0" Style="background-color: var(--cdo-raised); border: 1px solid var(--cdo-success-line);">
                     <div class="d-flex justify-space-between align-center mb-3">
-                        <MudText Typo="Typo.subtitle2" Style="color: #66bb6a;">
+                        <MudText Typo="Typo.subtitle2" Style="color: var(--cdo-success);">
                             <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Size="Size.Small" Class="mr-1" />
                             Extracted Fields
                         </MudText>
@@ -104,13 +104,13 @@
                     </div>
 
                     <MudSimpleTable Dense="true" Bordered="true"
-                                    Style="background-color: #152238; color: #e0e0e0;">
+                                    Style="background-color: var(--cdo-raised); color: var(--cdo-text);">
                         <tbody>
                             @foreach (var field in GetExtractedFields())
                             {
                                 <tr>
-                                    <td style="color: #78909c; font-weight: 500; width: 140px; padding: 6px 12px;">@field.Label</td>
-                                    <td style="color: @(string.IsNullOrEmpty(field.Value) ? "#455a64" : "#e0e0e0"); padding: 6px 12px;">
+                                    <td style="color: var(--cdo-text-subtle); font-weight: 500; width: 140px; padding: 6px 12px;">@field.Label</td>
+                                    <td style="color: @(string.IsNullOrEmpty(field.Value) ? "var(--cdo-text-subtle)" : "var(--cdo-text)"); padding: 6px 12px;">
                                         @(field.Value ?? "—")
                                     </td>
                                 </tr>
@@ -124,7 +124,7 @@
                             The scanner is simulated: these details are made up, not read from the card.
                         </MudAlert>
                     }
-                    <MudText Typo="Typo.caption" Class="mt-3" Style="color: #90caf9; display:block;">
+                    <MudText Typo="Typo.caption" Class="mt-3" Style="color: var(--cdo-info); display:block;">
                         To use a card for a patient, open the patient's Insurance and choose Scan card: it finds the
                         clearinghouse payer, and the coverage is checked once you add it.
                     </MudText>
@@ -133,9 +133,9 @@
             else
             {
                 <MudPaper Class="pa-6 d-flex flex-column align-center" Elevation="0"
-                          Style="background-color: #1e2a3a; border: 1px solid #2d3e50; min-height: 300px; justify-content: center;">
-                    <MudIcon Icon="@Icons.Material.Filled.CreditCardOff" Style="color: #37474f; font-size: 3rem;" />
-                    <MudText Typo="Typo.body2" Class="mt-2" Style="color: #607d8b;">
+                          Style="background-color: var(--cdo-raised); border: 1px solid var(--cdo-line); min-height: 300px; justify-content: center;">
+                    <MudIcon Icon="@Icons.Material.Filled.CreditCardOff" Style="color: var(--cdo-text-subtle); font-size: 3rem;" />
+                    <MudText Typo="Typo.body2" Class="mt-2" Style="color: var(--cdo-text-subtle);">
                         Scan a card to see extracted fields
                     </MudText>
                 </MudPaper>
@@ -144,24 +144,24 @@
     </MudGrid>
 
     @* ── Recent Scans ── *@
-    <MudPaper Class="pa-4 mt-4" Elevation="0" Style="background-color: #1e2a3a; border: 1px solid #2d3e50;">
-        <MudText Typo="Typo.subtitle2" Class="mb-3" Style="color: #78909c;">
+    <MudPaper Class="pa-4 mt-4" Elevation="0" Style="background-color: var(--cdo-raised); border: 1px solid var(--cdo-line);">
+        <MudText Typo="Typo.subtitle2" Class="mb-3" Style="color: var(--cdo-text-subtle);">
             Recent Scans
         </MudText>
         <MudTable Items="_recentScans" Dense="true" Hover="true"
-                  Style="background-color: transparent;" RowStyle="color: #cfd8dc;"
+                  Style="background-color: transparent;" RowStyle="color: var(--cdo-text);"
                   T="InsuranceCardScanDto">
             <HeaderContent>
-                <MudTh Style="color: #78909c;">Time</MudTh>
-                <MudTh Style="color: #78909c;">Payer</MudTh>
-                <MudTh Style="color: #78909c;">Member ID</MudTh>
-                <MudTh Style="color: #78909c;">Group</MudTh>
-                <MudTh Style="color: #78909c;">Confidence</MudTh>
-                <MudTh Style="color: #78909c;">Eligibility</MudTh>
+                <MudTh Style="color: var(--cdo-text-subtle);">Time</MudTh>
+                <MudTh Style="color: var(--cdo-text-subtle);">Payer</MudTh>
+                <MudTh Style="color: var(--cdo-text-subtle);">Member ID</MudTh>
+                <MudTh Style="color: var(--cdo-text-subtle);">Group</MudTh>
+                <MudTh Style="color: var(--cdo-text-subtle);">Confidence</MudTh>
+                <MudTh Style="color: var(--cdo-text-subtle);">Eligibility</MudTh>
             </HeaderContent>
             <RowTemplate>
                 <MudTd>@context.Timestamp.ToString("MM/dd HH:mm")</MudTd>
-                <MudTd Style="color: #e0e0e0; font-weight: 500;">@context.PayerName</MudTd>
+                <MudTd Style="color: var(--cdo-text); font-weight: 500;">@context.PayerName</MudTd>
                 <MudTd>@context.MemberId</MudTd>
                 <MudTd>@context.GroupNumber</MudTd>
                 <MudTd>
@@ -181,7 +181,7 @@
                     }
                     else
                     {
-                        <MudText Typo="Typo.caption" Style="color: #607d8b;">—</MudText>
+                        <MudText Typo="Typo.caption" Style="color: var(--cdo-text-subtle);">—</MudText>
                     }
                 </MudTd>
             </RowTemplate>

@@ -8,28 +8,28 @@
 <MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-4">
 
     @* ── Header ── *@
-    <MudPaper Class="pa-4 mb-4" Style="background: linear-gradient(135deg, #1a2332 0%, #2d1b1b 100%); border-left: 4px solid #ef5350;">
+    <MudPaper Class="pa-4 mb-4" Style="background: var(--cdo-surface); border-left: 4px solid var(--cdo-error);">
         <MudGrid>
             <MudItem xs="12" sm="6">
-                <MudText Typo="Typo.h5" Style="color: #e0e0e0;">
-                    <MudIcon Icon="@Icons.Material.Filled.MedicalServices" Class="mr-2" Style="color: #ef5350;" />
+                <MudText Typo="Typo.h5" Style="color: var(--cdo-text);">
+                    <MudIcon Icon="@Icons.Material.Filled.MedicalServices" Class="mr-2" Style="color: var(--cdo-error);" />
                     Controlled Substance Access Log
                 </MudText>
-                <MudText Typo="Typo.body2" Style="color: #90a4ae;">
+                <MudText Typo="Typo.body2" Style="color: var(--cdo-text-muted);">
                     DEA Compliance · 21 CFR 1304 · Vision-Verified Access Control
                 </MudText>
             </MudItem>
             <MudItem xs="12" sm="6" Class="d-flex align-center justify-end gap-2">
                 <MudButton Variant="Variant.Outlined" Size="Size.Small"
                            StartIcon="@Icons.Material.Filled.FileDownload"
-                           Style="border-color: #455a64; color: #b0bec5;"
+                           Style="border-color: var(--cdo-line); color: var(--cdo-text-muted);"
                            OnClick="ExportAuditLog">
                     Export for DEA
                 </MudButton>
                 <MudDateRangePicker @bind-DateRange="_dateRange"\n                                    @bind-DateRange:after="OnDateRangeChanged"
                                     Variant="Variant.Outlined"
                                     Dense="true"
-                                    Style="max-width: 280px; color: #e0e0e0;" />
+                                    Style="max-width: 280px; color: var(--cdo-text);" />
             </MudItem>
         </MudGrid>
     </MudPaper>
@@ -37,39 +37,39 @@
     @* ── Summary Cards ── *@
     <MudGrid Class="mb-4">
         <MudItem xs="6" sm="3">
-            <MudPaper Class="pa-3" Elevation="0" Style="background-color: #1e2a3a; border: 1px solid #2d3e50; text-align: center;">
-                <MudText Typo="Typo.h4" Style="color: #66bb6a;">@_totalAccesses</MudText>
-                <MudText Typo="Typo.caption" Style="color: #78909c;">Total Accesses</MudText>
+            <MudPaper Class="pa-3" Elevation="0" Style="background-color: var(--cdo-raised); border: 1px solid var(--cdo-line); text-align: center;">
+                <MudText Typo="Typo.h4" Style="color: var(--cdo-success);">@_totalAccesses</MudText>
+                <MudText Typo="Typo.caption" Style="color: var(--cdo-text-subtle);">Total Accesses</MudText>
             </MudPaper>
         </MudItem>
         <MudItem xs="6" sm="3">
-            <MudPaper Class="pa-3" Elevation="0" Style="background-color: #1e2a3a; border: 1px solid #2d3e50; text-align: center;">
-                <MudText Typo="Typo.h4" Style="color: #42a5f5;">@_verifiedAccesses</MudText>
-                <MudText Typo="Typo.caption" Style="color: #78909c;">Identity Verified</MudText>
+            <MudPaper Class="pa-3" Elevation="0" Style="background-color: var(--cdo-raised); border: 1px solid var(--cdo-line); text-align: center;">
+                <MudText Typo="Typo.h4" Style="color: var(--cdo-info);">@_verifiedAccesses</MudText>
+                <MudText Typo="Typo.caption" Style="color: var(--cdo-text-subtle);">Identity Verified</MudText>
             </MudPaper>
         </MudItem>
         <MudItem xs="6" sm="3">
-            <MudPaper Class="pa-3" Elevation="0" Style="background-color: #1e2a3a; border: 1px solid #2d3e50; text-align: center;">
-                <MudText Typo="Typo.h4" Style="@($"color: {(_alertCount > 0 ? "#ef5350" : "#66bb6a")};")">@_alertCount</MudText>
-                <MudText Typo="Typo.caption" Style="color: #78909c;">Alerts Triggered</MudText>
+            <MudPaper Class="pa-3" Elevation="0" Style="background-color: var(--cdo-raised); border: 1px solid var(--cdo-line); text-align: center;">
+                <MudText Typo="Typo.h4" Style="@($"color: {(_alertCount > 0 ? "var(--cdo-error)" : "var(--cdo-success)")};")">@_alertCount</MudText>
+                <MudText Typo="Typo.caption" Style="color: var(--cdo-text-subtle);">Alerts Triggered</MudText>
             </MudPaper>
         </MudItem>
         <MudItem xs="6" sm="3">
-            <MudPaper Class="pa-3" Elevation="0" Style="background-color: #1e2a3a; border: 1px solid #2d3e50; text-align: center;">
-                <MudText Typo="Typo.h4" Style="@($"color: {(_afterHoursCount > 0 ? "#ffa726" : "#66bb6a")};")">@_afterHoursCount</MudText>
-                <MudText Typo="Typo.caption" Style="color: #78909c;">After-Hours</MudText>
+            <MudPaper Class="pa-3" Elevation="0" Style="background-color: var(--cdo-raised); border: 1px solid var(--cdo-line); text-align: center;">
+                <MudText Typo="Typo.h4" Style="@($"color: {(_afterHoursCount > 0 ? "var(--cdo-warning)" : "var(--cdo-success)")};")">@_afterHoursCount</MudText>
+                <MudText Typo="Typo.caption" Style="color: var(--cdo-text-subtle);">After-Hours</MudText>
             </MudPaper>
         </MudItem>
     </MudGrid>
 
     @* ── Access Log Table ── *@
-    <MudPaper Elevation="0" Style="background-color: #1e2a3a; border: 1px solid #2d3e50;">
-        <MudToolBar Dense="true" Style="background-color: #152238;">
-            <MudText Typo="Typo.subtitle1" Style="color: #b0bec5;">
+    <MudPaper Elevation="0" Style="background-color: var(--cdo-raised); border: 1px solid var(--cdo-line);">
+        <MudToolBar Dense="true" Style="background-color: var(--cdo-raised);">
+            <MudText Typo="Typo.subtitle1" Style="color: var(--cdo-text-muted);">
                 Access Timeline
             </MudText>
             <MudSpacer />
-            <MudToggleGroup T="string" @bind-Value="_severityFilter" Style="border-color: #455a64;">
+            <MudToggleGroup T="string" @bind-Value="_severityFilter" Style="border-color: var(--cdo-line);">
                 <MudToggleItem Value="@("all")" Text="All" />
                 <MudToggleItem Value="@("alerts")" Text="Alerts Only" />
                 <MudToggleItem Value="@("critical")" Text="Critical" />
@@ -82,21 +82,21 @@
         }
 
         <MudTable Items="@FilteredLogs" Hover="true" Dense="true"
-                  Style="background-color: transparent;" RowStyle="color: #cfd8dc;"
+                  Style="background-color: transparent;" RowStyle="color: var(--cdo-text);"
                   T="CabinetAccessLogDto">
             <HeaderContent>
-                <MudTh Style="color: #78909c;">Time</MudTh>
-                <MudTh Style="color: #78909c;">Provider</MudTh>
-                <MudTh Style="color: #78909c;">Badge</MudTh>
-                <MudTh Style="color: #78909c;">Duration</MudTh>
-                <MudTh Style="color: #78909c;">Active Rx</MudTh>
-                <MudTh Style="color: #78909c;">Appointment</MudTh>
-                <MudTh Style="color: #78909c;">Compliance</MudTh>
-                <MudTh Style="color: #78909c;">Severity</MudTh>
+                <MudTh Style="color: var(--cdo-text-subtle);">Time</MudTh>
+                <MudTh Style="color: var(--cdo-text-subtle);">Provider</MudTh>
+                <MudTh Style="color: var(--cdo-text-subtle);">Badge</MudTh>
+                <MudTh Style="color: var(--cdo-text-subtle);">Duration</MudTh>
+                <MudTh Style="color: var(--cdo-text-subtle);">Active Rx</MudTh>
+                <MudTh Style="color: var(--cdo-text-subtle);">Appointment</MudTh>
+                <MudTh Style="color: var(--cdo-text-subtle);">Compliance</MudTh>
+                <MudTh Style="color: var(--cdo-text-subtle);">Severity</MudTh>
             </HeaderContent>
             <RowTemplate>
                 <MudTd DataLabel="Time">
-                    <MudText Typo="Typo.body2" Style="color: #e0e0e0;">
+                    <MudText Typo="Typo.body2" Style="color: var(--cdo-text);">
                         @context.Timestamp.ToString("MM/dd HH:mm")
                     </MudText>
                     @if (context.IsAfterHours)
@@ -108,24 +108,24 @@
                     }
                 </MudTd>
                 <MudTd DataLabel="Provider">
-                    <MudText Typo="Typo.body2" Style="@($"color: {(context.IdentityVerified ? "#e0e0e0" : "#ef5350")};")">
+                    <MudText Typo="Typo.body2" Style="@($"color: {(context.IdentityVerified ? "var(--cdo-text)" : "var(--cdo-error)")};")">
                         @(context.ProviderName ?? "UNIDENTIFIED")
                     </MudText>
                 </MudTd>
                 <MudTd DataLabel="Badge">
                     @if (context.IdentityVerified)
                     {
-                        <MudIcon Icon="@Icons.Material.Filled.Badge" Size="Size.Small" Style="color: #66bb6a;" />
-                        <MudText Typo="Typo.caption" Style="color: #90a4ae;">@context.BadgeId</MudText>
+                        <MudIcon Icon="@Icons.Material.Filled.Badge" Size="Size.Small" Style="color: var(--cdo-success);" />
+                        <MudText Typo="Typo.caption" Style="color: var(--cdo-text-muted);">@context.BadgeId</MudText>
                     }
                     else
                     {
-                        <MudIcon Icon="@Icons.Material.Filled.Warning" Size="Size.Small" Style="color: #ef5350;" />
-                        <MudText Typo="Typo.caption" Style="color: #ef5350;">No badge</MudText>
+                        <MudIcon Icon="@Icons.Material.Filled.Warning" Size="Size.Small" Style="color: var(--cdo-error);" />
+                        <MudText Typo="Typo.caption" Style="color: var(--cdo-error);">No badge</MudText>
                     }
                 </MudTd>
                 <MudTd DataLabel="Duration">
-                    <MudText Typo="Typo.body2" Style="@($"color: {(context.Duration.TotalSeconds > 60 ? "#ffa726" : "#90a4ae")};")">
+                    <MudText Typo="Typo.body2" Style="@($"color: {(context.Duration.TotalSeconds > 60 ? "var(--cdo-warning)" : "var(--cdo-text-muted)")};")">
                         @FormatDuration(context.Duration)
                     </MudText>
                 </MudTd>
@@ -133,24 +133,24 @@
                     @if (context.HasActiveRx)
                     {
                         <MudTooltip Text="@context.PrescriptionDrugName">
-                            <MudIcon Icon="@Icons.Material.Filled.Medication" Size="Size.Small" Style="color: #66bb6a;" />
+                            <MudIcon Icon="@Icons.Material.Filled.Medication" Size="Size.Small" Style="color: var(--cdo-success);" />
                         </MudTooltip>
                     }
                     else
                     {
-                        <MudIcon Icon="@Icons.Material.Filled.Close" Size="Size.Small" Style="color: #607d8b;" />
+                        <MudIcon Icon="@Icons.Material.Filled.Close" Size="Size.Small" Style="color: var(--cdo-text-subtle);" />
                     }
                 </MudTd>
                 <MudTd DataLabel="Appointment">
                     @if (context.HasActiveAppointment)
                     {
                         <MudTooltip Text="@context.AppointmentPatientName">
-                            <MudIcon Icon="@Icons.Material.Filled.EventAvailable" Size="Size.Small" Style="color: #66bb6a;" />
+                            <MudIcon Icon="@Icons.Material.Filled.EventAvailable" Size="Size.Small" Style="color: var(--cdo-success);" />
                         </MudTooltip>
                     }
                     else
                     {
-                        <MudIcon Icon="@Icons.Material.Filled.EventBusy" Size="Size.Small" Style="color: #607d8b;" />
+                        <MudIcon Icon="@Icons.Material.Filled.EventBusy" Size="Size.Small" Style="color: var(--cdo-text-subtle);" />
                     }
                 </MudTd>
                 <MudTd DataLabel="Compliance">
@@ -158,13 +158,13 @@
                         <MudTooltip Text="Identity Verified">
                             <MudIcon Icon="@(context.IdentityVerified ? Icons.Material.Filled.CheckCircle : Icons.Material.Filled.Cancel)"
                                      Size="Size.Small"
-                                     Style="@($"color: {(context.IdentityVerified ? "#66bb6a" : "#ef5350")};")"
+                                     Style="@($"color: {(context.IdentityVerified ? "var(--cdo-success)" : "var(--cdo-error)")};")"
                                      />
                         </MudTooltip>
                         <MudTooltip Text="Two-Person Witness">
                             <MudIcon Icon="@(context.TwoPersonWitnessVerified ? Icons.Material.Filled.Group : Icons.Material.Filled.PersonOff)"
                                      Size="Size.Small"
-                                     Style="@($"color: {(context.TwoPersonWitnessVerified ? "#66bb6a" : "#ffa726")};")"
+                                     Style="@($"color: {(context.TwoPersonWitnessVerified ? "var(--cdo-success)" : "var(--cdo-warning)")};")"
                                      />
                         </MudTooltip>
                     </div>
@@ -174,7 +174,7 @@
                 </MudTd>
             </RowTemplate>
             <NoRecordsContent>
-                <MudText Typo="Typo.body2" Style="color: #607d8b;" Class="pa-4">
+                <MudText Typo="Typo.body2" Style="color: var(--cdo-text-subtle);" Class="pa-4">
                     No cabinet access events in selected date range
                 </MudText>
             </NoRecordsContent>
