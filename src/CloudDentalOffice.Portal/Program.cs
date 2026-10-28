@@ -377,6 +377,7 @@ builder.Services.AddScoped<IEdiService, EdiService>();
 builder.Services.AddScoped<IProviderService, ProviderServiceImpl>();
 builder.Services.AddScoped<IProcedureCodeService, ProcedureCodeServiceImpl>();
 builder.Services.AddScoped<FeeScheduleService>();
+builder.Services.AddScoped<DentrixPatientImportService>();
 builder.Services.AddScoped<IBillingService, BillingService>();
 builder.Services.AddScoped<IPatientAccountService, PatientAccountService>();
 builder.Services.AddScoped<IPatientResponsibilityService, PatientResponsibilityService>();
@@ -542,6 +543,7 @@ using (var scope = app.Services.CreateScope())
         await CoverageVerificationSchemaReconciliation.ApplyAsync(dbContext, databaseProvider, logger);
         await CoverageIntakeSchemaReconciliation.ApplyAsync(dbContext, databaseProvider, logger);
         await FeeScheduleSchemaReconciliation.ApplyAsync(dbContext, databaseProvider, logger);
+        await ImportedRecordLinkSchemaReconciliation.ApplyAsync(dbContext, databaseProvider, logger);
 
         await InitialTenantBootstrap.ApplyAsync(dbContext, builder.Configuration);
 

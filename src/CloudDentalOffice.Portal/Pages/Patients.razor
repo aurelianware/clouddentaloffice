@@ -20,10 +20,16 @@
                     Manage patient demographics and insurance information
                 </MudText>
             </div>
-            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="OpenAddPatientDialog"
-                       StartIcon="@Icons.Material.Filled.Add">
-                Add Patient
-            </MudButton>
+            <div>
+                <MudButton Href="/dentrix-import" Variant="Variant.Outlined" Class="mr-2"
+                           StartIcon="@Icons.Material.Filled.UploadFile">
+                    Import from Dentrix
+                </MudButton>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="OpenAddPatientDialog"
+                           StartIcon="@Icons.Material.Filled.Add">
+                    Add Patient
+                </MudButton>
+            </div>
         </MudStack>
     </MudPaper>
 
