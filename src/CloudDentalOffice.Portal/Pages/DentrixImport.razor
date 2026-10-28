@@ -11,7 +11,7 @@
         <li><b>Patient list</b>: a Dentrix or Dentrix Ascend patient report with First Name, Last Name and Birth Date
             (Chart Number when you have it). It may also include primary and secondary insurance columns.</li>
         <li><b>Insurance</b>: the Ascend Patient Insurance report, one row per plan, with Patient, Birth Date, Insurance Carrier,
-            Payer ID and Subscriber ID #. Add Coverage Order, Relationship, Group Number and Subscriber Birth Date when Ascend offers them.</li>
+            Payer ID and Subscriber ID #. Include Insurance Plan Order and the plan order dates so primary, secondary and ended plans are known.</li>
     </ol>
     <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Class="mb-3">
         A repeat import updates the same patients, by chart number or, for patients without one, by name and birth date, so you can import again until you switch over.
@@ -47,6 +47,7 @@
                 <tbody>
                     <tr><td>Insurance plans to match to patients</td><td>@_insurance.Rows.Count</td></tr>
                     <tr><td>Patients in the report</td><td>@_insurance.Rows.Select(r => (r.PatientLastName.ToLowerInvariant(), r.PatientFirstName.ToLowerInvariant(), r.PatientDateOfBirth)).Distinct().Count()</td></tr>
+                    <tr><td>Ended plans (not imported)</td><td>@_insurance.EndedRows</td></tr>
                     <tr><td>Rows skipped</td><td>@Skipped(_insurance.Issues)</td></tr>
                 </tbody>
             </MudSimpleTable>

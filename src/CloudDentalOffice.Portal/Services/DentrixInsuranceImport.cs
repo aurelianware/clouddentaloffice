@@ -7,8 +7,9 @@ namespace CloudDentalOffice.Portal.Services;
 public sealed record ImportedPatientCoverage(int Row, string? ChartNumber, string PatientLastName, string PatientFirstName,
     DateTime PatientDateOfBirth, ImportedCoverage Coverage);
 
+/// <param name="EndedRows">Plans whose coverage or plan order ended before today; history, not imported.</param>
 public sealed record InsuranceImportPreview(IReadOnlyList<ImportedPatientCoverage> Rows, IReadOnlyList<ImportIssue> Issues,
-    IReadOnlyList<string> RecognizedColumns, IReadOnlyList<string> IgnoredColumns);
+    IReadOnlyList<string> RecognizedColumns, IReadOnlyList<string> IgnoredColumns, int EndedRows = 0);
 
 /// <summary>
 /// Reads a Dentrix Ascend "Patient Insurance" report (one row per patient plan) exported as CSV.
@@ -19,7 +20,7 @@ public static partial class DentrixInsuranceCsv
 {
     public const int MaxRows = 40000;
 
-    private enum Field { Chart, Patient, PatientFirst, PatientLast, Birth, Carrier, PayerId, MemberId, Group, Subscriber, SubscriberBirth, Relation, Order }
+    private enum Field { Chart, Patient, PatientFirst, PatientLast, Birth, Carrier, PayerId, MemberId, Group, Subscriber, SubscriberBirth, Relation, Order, Start, End, CoverageEnd }
 
     private static readonly Dictionary<Field, string[]> Aliases = new()
     {
@@ -35,7 +36,11 @@ public static partial class DentrixInsuranceCsv
         [Field.Subscriber] = ["subscriber", "subscribername", "policyholder", "insured"],
         [Field.SubscriberBirth] = ["subscriberbirthdate", "subscriberdob", "subscriberdateofbirth", "insuredbirthdate"],
         [Field.Relation] = ["relationship", "relation", "relationtosubscriber", "relationshiptosubscriber", "patientrelationship", "subscriberrelationship"],
-        [Field.Order] = ["coverageorder", "priority", "rank", "insurancerank", "insuranceorder", "order", "coveragetype", "sequence", "insurancepriority"]
+        [Field.Order] = ["insuranceplanorder", "coverageorder", "planorder", "priority", "rank", "insurancerank", "insuranceorder", "order", "coveragetype", "sequence", "insurancepriority"],
+        [Field.Start] = ["planorderstartdate", "effectivedate", "coveragestartdate", "datecovstart"],
+        // Ascend ends a plan order when the order changes and a coverage when the plan ends; either retires the row.
+        [Field.End] = ["planorderenddate", "terminationdate", "coverageenddate"],
+        [Field.CoverageEnd] = ["datecovend"]
     };
 
     [GeneratedRegex("^[A-Za-z0-9]{2,10}$")]
@@ -63,6 +68,7 @@ public static partial class DentrixInsuranceCsv
         parser.SetDelimiters(",");
         var rows = new List<ImportedPatientCoverage>();
         var issues = new List<ImportIssue>();
+        var ended = 0;
         Dictionary<Field, int>? columns = null;
         string[] header = [];
         try
@@ -85,17 +91,18 @@ public static partial class DentrixInsuranceCsv
                 }
                 if (rows.Count + issues.Count >= MaxRows)
                     throw new FormatException($"An insurance report can contain at most {MaxRows:N0} rows.");
-                ReadRow(row, rowNumber, columns, rows, issues, today);
+                if (!ReadRow(row, rowNumber, columns, rows, issues, today)) ended++;
             }
         }
         catch (MalformedLineException) { throw new FormatException("The CSV contains an invalid quoted row."); }
         if (columns is null)
             throw new FormatException("Expected an insurance report with Patient, Birth Date, Subscriber ID and Payer ID columns.");
-        if (rows.Count == 0 && issues.Count == 0)
+        if (rows.Count == 0 && issues.Count == 0 && ended == 0)
             throw new FormatException("The report has a header row but no insurance rows.");
         var used = columns.Values.ToHashSet();
         return new(rows, issues, used.Order().Select(i => header[i]).ToList(),
-            Enumerable.Range(0, header.Length).Where(i => !used.Contains(i) && !string.IsNullOrWhiteSpace(header[i])).Select(i => header[i]).ToList());
+            Enumerable.Range(0, header.Length).Where(i => !used.Contains(i) && !string.IsNullOrWhiteSpace(header[i])).Select(i => header[i]).ToList(),
+            ended);
     }
 
     private static Dictionary<Field, int> Map(string[] row)
@@ -110,7 +117,8 @@ public static partial class DentrixInsuranceCsv
         return map;
     }
 
-    private static void ReadRow(string[] row, int rowNumber, Dictionary<Field, int> columns,
+    /// <returns>False when the row is a plan that has already ended.</returns>
+    private static bool ReadRow(string[] row, int rowNumber, Dictionary<Field, int> columns,
         List<ImportedPatientCoverage> rows, List<ImportIssue> issues, DateTime today)
     {
         string? Value(Field field) =>
@@ -120,8 +128,10 @@ public static partial class DentrixInsuranceCsv
 
         string? last = Value(Field.PatientLast), first = Value(Field.PatientFirst);
         if (Value(Field.Patient) is { } name) (last, first) = DentrixPatientCsv.SplitName(name);
-        if (last is null || first is null) { Skip("the patient name isn't in \"Last, First\" form."); return; }
-        if (DentrixPatientCsv.ParseDate(Value(Field.Birth)) is not { } dob || dob > today || dob.Year < 1900) { Skip("missing or invalid patient birth date."); return; }
+        if (last is null || first is null) { Skip("the patient name isn't in \"Last, First\" form."); return true; }
+        if (DentrixPatientCsv.ParseDate(Value(Field.Birth)) is not { } dob || dob > today || dob.Year < 1900) { Skip("missing or invalid patient birth date."); return true; }
+        if (DentrixPatientCsv.ParseDate(Value(Field.End)) is { } end && end < today ||
+            DentrixPatientCsv.ParseDate(Value(Field.CoverageEnd)) is { } coverageEnd && coverageEnd < today) return false;
 
         var payerId = Value(Field.PayerId);
         if (payerId is not null && !IsPayerId(payerId)) payerId = null;
@@ -141,7 +151,8 @@ public static partial class DentrixInsuranceCsv
         var carrier = Value(Field.Carrier) ?? payerId ?? "Unknown carrier";
         rows.Add(new(rowNumber, chart, last, first, dob, new ImportedCoverage(MapOrder(Value(Field.Order)),
             carrier.Length <= 255 ? carrier : carrier[..255], payerId?.ToUpperInvariant(), Value(Field.MemberId), group, relationship,
-            subscriberFirst, subscriberLast, subscriberDob, null)));
+            subscriberFirst, subscriberLast, subscriberDob, DentrixPatientCsv.ParseDate(Value(Field.Start)))));
+        return true;
     }
 
     internal static int MapOrder(string? value) => value?.Trim().ToLowerInvariant() switch

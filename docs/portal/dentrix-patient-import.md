@@ -30,6 +30,15 @@ afterwards from the Ascend **Patient Insurance** report (Power Reporting),
 exported as CSV. The page recognizes it by its `Subscriber ID #` and
 `Payer ID` columns.
 
+Insurance columns, prefixed with `Prim`/`Primary` or `Sec`/`Secondary`
+(for example `Prim Ins Carrier Name`): `Carrier Name`, `Payor ID`,
+`Subscriber ID`, `Group Number`, `Relation`, `Subscriber Name`
+(`Last, First`) or `Subscriber First Name`/`Subscriber Last Name`,
+`Subscriber Birth Date`, `Effective Date`.
+
+The preview lists the recognized columns and the ignored ones, so a misnamed
+column is visible before anything is saved. **SSN columns are never read.**
+
 ## Ascend Patient Insurance report
 
 One row per patient plan: `Insurance Carrier`, `Payer ID`, `Insurance Plan`,
@@ -40,27 +49,23 @@ One row per patient plan: `Insurance Carrier`, `Payer ID`, `Insurance Plan`,
   one, otherwise by last name, first word of the first name (the report adds
   middle names) and birth date. Unmatched or ambiguous rows are listed.
 - A patient whose subscriber is someone else is treated as `Other`. The
-  coverage is imported only when the report also gives the subscriber's
-  birth date (`Subscriber Birth Date`).
+  coverage needs the subscriber's birth date, from `Subscriber Birth Date`
+  or from the subscriber's own patient record when exactly one patient has
+  that name.
 - With no order column, a patient with one plan gets it as primary. A
   patient with several plans is listed for review until the report includes
-  `Coverage Order` (`Primary`/`Secondary`).
+  `Insurance Plan Order` or `Coverage Order` (`1`/`2`, `Primary`/`Secondary`).
 - Optional columns used when present: `Chart Number`, `Coverage Order`,
   `Relationship`, `Group Number`, `Subscriber Birth Date`.
+- `Insurance Plan Order` (1/2) sets primary and secondary, and
+  `Plan Order Start Date` the coverage's effective date. Rows whose
+  `Plan Order End Date` or `Date (Cov. End)` is before today are old plans
+  and are not imported. The preview counts them.
 
-Against the 3rd Set Smiles export (376 rows) this imports 311 coverages. The
-remaining rows break down as 50 rows for 25 patients with two plans and no order,
-8 dependents without the subscriber's birth date, 3 carriers with no payer ID,
-and 4 patients not in the patient list.
-
-Insurance columns, prefixed with `Prim`/`Primary` or `Sec`/`Secondary`
-(for example `Prim Ins Carrier Name`): `Carrier Name`, `Payor ID`,
-`Subscriber ID`, `Group Number`, `Relation`, `Subscriber Name`
-(`Last, First`) or `Subscriber First Name`/`Subscriber Last Name`,
-`Subscriber Birth Date`, `Effective Date`.
-
-The preview lists the recognized columns and the ignored ones, so a misnamed
-column is visible before anything is saved. **SSN columns are never read.**
+Against the 3rd Set Smiles export with plan order (383 rows, 35 of them
+ended plans), this imports 340 coverages for 334 patients. The 8 rows left
+for review are 3 carriers with no payer ID, 2 patients not in the patient
+list, and 3 dependents whose subscriber isn't a patient.
 
 ## Behaviour
 
