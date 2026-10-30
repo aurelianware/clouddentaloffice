@@ -7,9 +7,11 @@ namespace CloudDentalOffice.Messaging;
 public static class MessagingServiceCollectionExtensions
 {
     /// <summary>
-    /// Registers <see cref="ServiceBusOptions"/> and an <see cref="IEventPublisher"/>.
-    /// When a Service Bus connection string is configured, a real publisher is
-    /// registered; otherwise a logging no-op is used so the app still runs.
+    /// Registers <see cref="ServiceBusOptions"/>, an <see cref="IEventPublisher"/>
+    /// and an <see cref="IMessageSubscriber"/> for the configured provider
+    /// (ServiceBus:Provider = ServiceBus or PubSub). When the provider has no
+    /// connection settings, a logging no-op publisher is used so the app still
+    /// runs, and consumers stay idle.
     /// </summary>
     public static IServiceCollection AddEventPublishing(this IServiceCollection services, IConfiguration configuration)
     {
@@ -17,15 +19,24 @@ public static class MessagingServiceCollectionExtensions
         configuration.GetSection(ServiceBusOptions.SectionName).Bind(options);
         services.AddSingleton(options);
 
-        if (options.IsConfigured)
+        if (!options.IsConfigured)
+        {
+            services.AddSingleton<IEventPublisher, NullEventPublisher>();
+            services.AddSingleton<IMessageSubscriber, NullMessageSubscriber>();
+        }
+        else if (options.IsPubSub)
+        {
+            services.AddSingleton<PubSubEventPublisher>();
+            services.AddSingleton<IEventPublisher>(sp => sp.GetRequiredService<PubSubEventPublisher>());
+            services.AddSingleton<IMessageSubscriber, PubSubMessageSubscriber>();
+        }
+        else
         {
             services.AddSingleton<IEventPublisher>(sp => new ServiceBusEventPublisher(
                 sp.GetRequiredService<ServiceBusOptions>(),
                 sp.GetRequiredService<ILogger<ServiceBusEventPublisher>>()));
-        }
-        else
-        {
-            services.AddSingleton<IEventPublisher, NullEventPublisher>();
+            services.AddSingleton<IMessageSubscriber>(sp => new ServiceBusMessageSubscriber(
+                options.ConnectionString!, sp.GetRequiredService<ILogger<ServiceBusMessageSubscriber>>()));
         }
 
         return services;

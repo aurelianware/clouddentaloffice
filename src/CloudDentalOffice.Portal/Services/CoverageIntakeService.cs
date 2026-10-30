@@ -2,7 +2,6 @@ using System.ComponentModel.DataAnnotations;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
-using Azure.Messaging.ServiceBus;
 using CloudDentalOffice.Contracts.Eligibility;
 using CloudDentalOffice.Contracts.Events;
 using CloudDentalOffice.Messaging;
@@ -493,85 +492,73 @@ public sealed class CoverageIntakeProcessor(
 }
 
 public sealed class CoverageIntakeConsumer(IServiceProvider services, ServiceBusOptions options,
-    IOptions<CoverageIntakeOptions> intakeOptions, ILogger<CoverageIntakeConsumer> logger) : BackgroundService
+    IMessageSubscriber subscriber, IOptions<CoverageIntakeOptions> intakeOptions, ILoggerFactory loggers,
+    ILogger<CoverageIntakeConsumer> logger) : BackgroundService
 {
-    private ServiceBusClient? _client;
-    private ServiceBusProcessor? _processor;
-
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         // Off: answers wait on the subscription (up to its 14-day TTL, then dead-letter)
         // and are applied if intake is switched back on in time.
         if (!intakeOptions.Value.Enabled) return;
-        var connection = !string.IsNullOrWhiteSpace(intakeOptions.Value.ServiceBusConnectionString)
-            ? intakeOptions.Value.ServiceBusConnectionString
-            : options.ConnectionString;
-        if (string.IsNullOrWhiteSpace(connection))
+        // On Service Bus the Portal may listen with its own listen-only connection.
+        var listenOnly = intakeOptions.Value.ServiceBusConnectionString;
+        var listener = !options.IsPubSub && !string.IsNullOrWhiteSpace(listenOnly)
+            ? new ServiceBusMessageSubscriber(listenOnly, loggers.CreateLogger<ServiceBusMessageSubscriber>())
+            : options.IsConfigured ? subscriber : null;
+        if (listener is null)
         {
-            logger.LogWarning("Coverage intake is on but has no Service Bus connection; patient answers won't be applied.");
+            logger.LogWarning("Coverage intake is on but no message broker is configured; patient answers won't be applied.");
             return;
         }
-        _client = new ServiceBusClient(connection);
-        _processor = _client.CreateProcessor(options.CoverageIntakeTopic, options.CoverageIntakeSubscription,
-            new ServiceBusProcessorOptions { AutoCompleteMessages = false, MaxConcurrentCalls = 1 });
-        _processor.ProcessMessageAsync += ProcessAsync;
-        _processor.ProcessErrorAsync += args =>
-        {
-            logger.LogError("Coverage intake broker processing error ({Source}, {FailureKind}).",
-                args.ErrorSource, args.Exception.GetType().Name);
-            return Task.CompletedTask;
-        };
-        await _processor.StartProcessingAsync(stoppingToken);
-        try { await Task.Delay(Timeout.Infinite, stoppingToken); }
-        catch (OperationCanceledException) { }
+        await listener.RunAsync(options.CoverageIntakeTopic, options.CoverageIntakeSubscription, ProcessAsync, stoppingToken);
     }
 
-    private async Task ProcessAsync(ProcessMessageEventArgs args)
+    private async Task ProcessAsync(IReceivedMessage message)
     {
-        if (args.Message.Subject == nameof(WebsiteInsuranceCheckEvent))
+        if (message.Subject == nameof(WebsiteInsuranceCheckEvent))
         {
-            await RecordWebsiteCheckAsync(args);
+            await RecordWebsiteCheckAsync(message);
             return;
         }
 
         CoverageIntakeSubmittedEvent? answer = null;
-        if (args.Message.Subject == nameof(CoverageIntakeSubmittedEvent))
+        if (message.Subject == nameof(CoverageIntakeSubmittedEvent))
         {
-            try { answer = JsonSerializer.Deserialize<CoverageIntakeSubmittedEvent>(args.Message.Body.ToString()); }
+            try { answer = JsonSerializer.Deserialize<CoverageIntakeSubmittedEvent>(message.Body); }
             catch (JsonException) { }
         }
         if (answer is null)
         {
-            await args.DeadLetterMessageAsync(args.Message, "InvalidEvent");
+            await message.DeadLetterAsync("InvalidEvent");
             return;
         }
 
         await using var scope = services.CreateAsyncScope();
         try
         {
-            await scope.ServiceProvider.GetRequiredService<ICoverageIntakeProcessor>().ProcessAsync(answer, args.CancellationToken);
-            await args.CompleteMessageAsync(args.Message, args.CancellationToken);
+            await scope.ServiceProvider.GetRequiredService<ICoverageIntakeProcessor>().ProcessAsync(answer, message.CancellationToken);
+            await message.CompleteAsync();
         }
         catch (CoverageIntakeRejectedException ex)
         {
             logger.LogWarning("Coverage intake answer {RequestId} rejected ({Reason}).", answer.RequestId, ex.Message);
-            await args.DeadLetterMessageAsync(args.Message, "Rejected", ex.Message, args.CancellationToken);
+            await message.DeadLetterAsync("Rejected", ex.Message);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             logger.LogWarning("Coverage intake answer {RequestId} will retry ({FailureKind}).", answer.RequestId, ex.GetType().Name);
-            await args.AbandonMessageAsync(args.Message, cancellationToken: args.CancellationToken);
+            await message.RetryAsync();
         }
     }
 
-    private async Task RecordWebsiteCheckAsync(ProcessMessageEventArgs args)
+    private async Task RecordWebsiteCheckAsync(IReceivedMessage message)
     {
         WebsiteInsuranceCheckEvent? check = null;
-        try { check = JsonSerializer.Deserialize<WebsiteInsuranceCheckEvent>(args.Message.Body.ToString()); }
+        try { check = JsonSerializer.Deserialize<WebsiteInsuranceCheckEvent>(message.Body); }
         catch (JsonException) { }
         if (check is null)
         {
-            await args.DeadLetterMessageAsync(args.Message, "InvalidEvent");
+            await message.DeadLetterAsync("InvalidEvent");
             return;
         }
 
@@ -579,25 +566,18 @@ public sealed class CoverageIntakeConsumer(IServiceProvider services, ServiceBus
         try
         {
             await WebsiteInsuranceCheckService.RecordAsync(scope.ServiceProvider.GetRequiredService<CloudDentalDbContext>(),
-                check, scope.ServiceProvider.GetRequiredService<TimeProvider>().GetUtcNow().UtcDateTime, args.CancellationToken);
-            await args.CompleteMessageAsync(args.Message, args.CancellationToken);
+                check, scope.ServiceProvider.GetRequiredService<TimeProvider>().GetUtcNow().UtcDateTime, message.CancellationToken);
+            await message.CompleteAsync();
         }
         catch (CoverageIntakeRejectedException ex)
         {
             logger.LogWarning("Website insurance check {EventId} rejected ({Reason}).", check.EventId, ex.Message);
-            await args.DeadLetterMessageAsync(args.Message, "Rejected", ex.Message, args.CancellationToken);
+            await message.DeadLetterAsync("Rejected", ex.Message);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             logger.LogWarning("Website insurance check {EventId} will retry ({FailureKind}).", check.EventId, ex.GetType().Name);
-            await args.AbandonMessageAsync(args.Message, cancellationToken: args.CancellationToken);
+            await message.RetryAsync();
         }
-    }
-
-    public override async Task StopAsync(CancellationToken cancellationToken)
-    {
-        if (_processor is not null) await _processor.DisposeAsync();
-        if (_client is not null) await _client.DisposeAsync();
-        await base.StopAsync(cancellationToken);
     }
 }

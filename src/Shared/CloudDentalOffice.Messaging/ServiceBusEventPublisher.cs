@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Text.Json;
 using Azure.Messaging.ServiceBus;
 using CloudDentalOffice.Contracts.Events;
@@ -13,12 +14,8 @@ namespace CloudDentalOffice.Messaging;
 public sealed class ServiceBusEventPublisher : IEventPublisher, IAsyncDisposable
 {
     private readonly ServiceBusClient _client;
-    private readonly ServiceBusSender _bookingSender;
-    private readonly ServiceBusSender _availabilitySender;
-    private readonly ServiceBusSender _zocdocWebhookSender;
-    private readonly ServiceBusSender _appointmentLifecycleSender;
-    private readonly ServiceBusSender _stripeWebhookSender;
-    private readonly ServiceBusSender _coverageIntakeSender;
+    private readonly ServiceBusOptions _options;
+    private readonly ConcurrentDictionary<string, ServiceBusSender> _senders = new();
     private readonly ILogger<ServiceBusEventPublisher> _logger;
 
     public ServiceBusEventPublisher(ServiceBusOptions options, ILogger<ServiceBusEventPublisher> logger)
@@ -26,12 +23,7 @@ public sealed class ServiceBusEventPublisher : IEventPublisher, IAsyncDisposable
         // Only constructed when a connection string is configured (see
         // AddEventPublishing), so the null-forgiving operator is safe here.
         _client = new ServiceBusClient(options.ConnectionString!);
-        _bookingSender = _client.CreateSender(options.BookingTopic);
-        _availabilitySender = _client.CreateSender(options.SchedulingAvailabilityTopic);
-        _zocdocWebhookSender = _client.CreateSender(options.ZocdocWebhookTopic);
-        _appointmentLifecycleSender = _client.CreateSender(options.AppointmentLifecycleTopic);
-        _stripeWebhookSender = _client.CreateSender(options.StripeWebhookTopic);
-        _coverageIntakeSender = _client.CreateSender(options.CoverageIntakeTopic);
+        _options = options;
         _logger = logger;
     }
 
@@ -47,27 +39,15 @@ public sealed class ServiceBusEventPublisher : IEventPublisher, IAsyncDisposable
             CorrelationId = @event.CorrelationId
         };
 
-        var sender = @event switch
-        {
-            SchedulingAvailabilityChangedEvent => _availabilitySender,
-            ZocdocAppointmentWebhookEvent => _zocdocWebhookSender,
-            AppointmentLifecycleChangedEvent => _appointmentLifecycleSender,
-            StripePaymentWebhookEvent or StripeRefundWebhookEvent or StripeDisputeWebhookEvent => _stripeWebhookSender,
-            CoverageIntakeSubmittedEvent or WebsiteInsuranceCheckEvent => _coverageIntakeSender,
-            _ => _bookingSender
-        };
+        var sender = _senders.GetOrAdd(_options.TopicFor(@event), _client.CreateSender);
         await sender.SendMessageAsync(message, cancellationToken);
         _logger.LogInformation("Published {EventType} {EventId} to Service Bus.", typeName, @event.EventId);
     }
 
     public async ValueTask DisposeAsync()
     {
-        await _bookingSender.DisposeAsync();
-        await _availabilitySender.DisposeAsync();
-        await _zocdocWebhookSender.DisposeAsync();
-        await _appointmentLifecycleSender.DisposeAsync();
-        await _stripeWebhookSender.DisposeAsync();
-        await _coverageIntakeSender.DisposeAsync();
+        foreach (var sender in _senders.Values)
+            await sender.DisposeAsync();
         await _client.DisposeAsync();
     }
 }

@@ -452,12 +452,16 @@ builder.Services.AddHttpClient<ICloudHealthOfficeEligibilityClient, CloudHealthO
 });
 builder.Services.AddScoped<IClaimLifecycleService, ClaimLifecycleService>();
 builder.Services.Configure<PayerConnectivityOptions>(builder.Configuration.GetSection("PayerConnectivity"));
-// Per-practice clearinghouse credentials. Keys live only in Key Vault
-// (stedi-apikey-{tenantId}); the handler attaches the key for the tenant stamped
-// on each request and refuses requests that carry no tenant.
+// Per-practice clearinghouse credentials. Keys live only in Key Vault, or in
+// Secret Manager on Google Cloud (stedi-apikey-{tenantId}); the handler attaches
+// the key for the tenant stamped on each request and refuses requests that carry
+// no tenant.
 builder.Services.Configure<StediOptions>(builder.Configuration.GetSection(StediOptions.SectionName));
 builder.Services.AddMemoryCache();
-builder.Services.AddSingleton<IStediSecretReader, KeyVaultStediSecretReader>();
+if (builder.Configuration.GetSection(StediOptions.SectionName).Get<StediOptions>()?.UsesSecretManager == true)
+    builder.Services.AddSingleton<IStediSecretReader, SecretManagerStediSecretReader>();
+else
+    builder.Services.AddSingleton<IStediSecretReader, KeyVaultStediSecretReader>();
 builder.Services.AddSingleton<IStediCredentialProvider, StediCredentialProvider>();
 builder.Services.AddSingleton<IClearinghouseConnectionStore, ClearinghouseConnectionStore>();
 builder.Services.AddTransient<StediCredentialHandler>();
