@@ -37,7 +37,9 @@ jobs:
   tests:
     name: Tests
     needs: [build]
-    runs-on: ubuntu-latest
+    # Pinned: ubuntu-latest moved to 26.04, where Playwright 1.56 cannot install
+    # browsers. Move back once Playwright supports it.
+    runs-on: ubuntu-24.04
 
     # PostgreSQL is the provider IntakeService runs on in production. Exposing it
     # here lets the IntakeService migration lifecycle tests validate the real
