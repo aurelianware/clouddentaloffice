@@ -1,55 +1,39 @@
 using System.Text.Json;
-using Azure.Messaging.ServiceBus;
 using CloudDentalOffice.Contracts.Events;
 using CloudDentalOffice.Messaging;
 
 namespace SchedulingService.Integrations.Zocdoc;
 
 public sealed class ZocdocAppointmentWebhookConsumer(
-    IServiceProvider services, ServiceBusOptions options,
+    IServiceProvider services, ServiceBusOptions options, IMessageSubscriber subscriber,
     ILogger<ZocdocAppointmentWebhookConsumer> logger) : BackgroundService
 {
-    private ServiceBusClient? _client;
-    private ServiceBusProcessor? _processor;
-
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         if (!options.IsConfigured) return;
-        _client = new ServiceBusClient(options.ConnectionString!);
-        _processor = _client.CreateProcessor(options.ZocdocWebhookTopic,
-            options.ZocdocWebhookSubscription, new ServiceBusProcessorOptions
-            { AutoCompleteMessages = false, MaxConcurrentCalls = 1 });
-        _processor.ProcessMessageAsync += ProcessAsync;
-        _processor.ProcessErrorAsync += args =>
-        {
-            logger.LogError(args.Exception, "Zocdoc webhook Service Bus processing error ({Source})", args.ErrorSource);
-            return Task.CompletedTask;
-        };
-        await _processor.StartProcessingAsync(stoppingToken);
-        try { await Task.Delay(Timeout.Infinite, stoppingToken); }
-        catch (OperationCanceledException) { }
+        await subscriber.RunAsync(options.ZocdocWebhookTopic, options.ZocdocWebhookSubscription, ProcessAsync, stoppingToken);
     }
 
-    private async Task ProcessAsync(ProcessMessageEventArgs args)
+    private async Task ProcessAsync(IReceivedMessage message)
     {
-        if (!string.Equals(args.Message.Subject, nameof(ZocdocAppointmentWebhookEvent), StringComparison.Ordinal))
+        if (!string.Equals(message.Subject, nameof(ZocdocAppointmentWebhookEvent), StringComparison.Ordinal))
         {
-            await args.DeadLetterMessageAsync(args.Message, "UnexpectedSubject");
+            await message.DeadLetterAsync("UnexpectedSubject");
             return;
         }
 
         ZocdocAppointmentWebhookEvent? evt;
-        try { evt = JsonSerializer.Deserialize<ZocdocAppointmentWebhookEvent>(args.Message.Body.ToString()); }
+        try { evt = JsonSerializer.Deserialize<ZocdocAppointmentWebhookEvent>(message.Body); }
         catch (JsonException)
         {
-            await args.DeadLetterMessageAsync(args.Message, "DeserializationError");
+            await message.DeadLetterAsync("DeserializationError");
             return;
         }
         if (evt is null || string.IsNullOrWhiteSpace(evt.TenantId) ||
             string.IsNullOrWhiteSpace(evt.ExternalEventId) || string.IsNullOrWhiteSpace(evt.AppointmentId) ||
             evt.UpdateType is not ("created" or "updated" or "cancelled"))
         {
-            await args.DeadLetterMessageAsync(args.Message, "InvalidEvent");
+            await message.DeadLetterAsync("InvalidEvent");
             return;
         }
 
@@ -57,25 +41,18 @@ public sealed class ZocdocAppointmentWebhookConsumer(
         try
         {
             await scope.ServiceProvider.GetRequiredService<IZocdocAppointmentWebhookProcessor>()
-                .ProcessAsync(evt, args.CancellationToken);
-            await args.CompleteMessageAsync(args.Message, args.CancellationToken);
+                .ProcessAsync(evt, message.CancellationToken);
+            await message.CompleteAsync();
         }
         catch (SchedulingIntegrationDisabledException)
         {
-            await args.DeadLetterMessageAsync(args.Message, "DisabledIntegration", cancellationToken: args.CancellationToken);
+            await message.DeadLetterAsync("DisabledIntegration");
         }
         catch (Exception ex)
         {
             logger.LogWarning(ex, "Zocdoc appointment event processing failed for tenant {TenantId}, event {ExternalEventId}",
                 evt.TenantId, evt.ExternalEventId);
-            await args.AbandonMessageAsync(args.Message, cancellationToken: args.CancellationToken);
+            await message.RetryAsync();
         }
-    }
-
-    public override async Task StopAsync(CancellationToken cancellationToken)
-    {
-        if (_processor is not null) { await _processor.StopProcessingAsync(cancellationToken); await _processor.DisposeAsync(); }
-        if (_client is not null) await _client.DisposeAsync();
-        await base.StopAsync(cancellationToken);
     }
 }

@@ -1,7 +1,6 @@
 using System.Data;
 using System.Diagnostics.Metrics;
 using System.Text.Json;
-using Azure.Messaging.ServiceBus;
 using CloudDentalOffice.Contracts.Events;
 using CloudDentalOffice.Messaging;
 using CloudDentalOffice.Portal.Data;
@@ -314,53 +313,38 @@ public sealed class StripePaymentWebhookProcessor(CloudDentalDbContext db, TimeP
 }
 
 public sealed class StripePaymentWebhookConsumer(IServiceProvider services, ServiceBusOptions options,
-    StripePaymentMetrics metrics, ILogger<StripePaymentWebhookConsumer> logger) : BackgroundService
+    IMessageSubscriber subscriber, StripePaymentMetrics metrics, ILogger<StripePaymentWebhookConsumer> logger) : BackgroundService
 {
-    private ServiceBusClient? _client;
-    private ServiceBusProcessor? _processor;
-
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         if (!options.IsConfigured) return;
-        _client = new ServiceBusClient(options.ConnectionString!);
-        _processor = _client.CreateProcessor(options.StripeWebhookTopic, options.StripeWebhookSubscription,
-            new ServiceBusProcessorOptions { AutoCompleteMessages = false, MaxConcurrentCalls = 1 });
-        _processor.ProcessMessageAsync += ProcessAsync;
-        _processor.ProcessErrorAsync += args =>
-        {
-            logger.LogError("Stripe webhook broker processing error ({Source}, {FailureKind}).",
-                args.ErrorSource, args.Exception.GetType().Name);
-            return Task.CompletedTask;
-        };
-        await _processor.StartProcessingAsync(stoppingToken);
-        try { await Task.Delay(Timeout.Infinite, stoppingToken); }
-        catch (OperationCanceledException) { }
+        await subscriber.RunAsync(options.StripeWebhookTopic, options.StripeWebhookSubscription, ProcessAsync, stoppingToken);
     }
 
-    private async Task ProcessAsync(ProcessMessageEventArgs args)
+    private async Task ProcessAsync(IReceivedMessage message)
     {
-        if (args.Message.Subject is not (nameof(StripePaymentWebhookEvent) or nameof(StripeRefundWebhookEvent) or
+        if (message.Subject is not (nameof(StripePaymentWebhookEvent) or nameof(StripeRefundWebhookEvent) or
                 nameof(StripeDisputeWebhookEvent)))
         {
             metrics.DeadLetters.Add(1);
-            await args.DeadLetterMessageAsync(args.Message, "UnexpectedSubject");
+            await message.DeadLetterAsync("UnexpectedSubject");
             return;
         }
         object? webhook;
         try
         {
-            webhook = args.Message.Subject switch
+            webhook = message.Subject switch
             {
-                nameof(StripeRefundWebhookEvent) => JsonSerializer.Deserialize<StripeRefundWebhookEvent>(args.Message.Body.ToString()),
-                nameof(StripeDisputeWebhookEvent) => JsonSerializer.Deserialize<StripeDisputeWebhookEvent>(args.Message.Body.ToString()),
-                _ => JsonSerializer.Deserialize<StripePaymentWebhookEvent>(args.Message.Body.ToString())
+                nameof(StripeRefundWebhookEvent) => JsonSerializer.Deserialize<StripeRefundWebhookEvent>(message.Body),
+                nameof(StripeDisputeWebhookEvent) => JsonSerializer.Deserialize<StripeDisputeWebhookEvent>(message.Body),
+                _ => JsonSerializer.Deserialize<StripePaymentWebhookEvent>(message.Body)
             };
         }
         catch (JsonException) { webhook = null; }
         if (webhook is null)
         {
             metrics.DeadLetters.Add(1);
-            await args.DeadLetterMessageAsync(args.Message, "InvalidEvent");
+            await message.DeadLetterAsync("InvalidEvent");
             return;
         }
         await using var scope = services.CreateAsyncScope();
@@ -368,28 +352,27 @@ public sealed class StripePaymentWebhookConsumer(IServiceProvider services, Serv
         {
             if (webhook is StripeRefundWebhookEvent refund)
                 await scope.ServiceProvider.GetRequiredService<IStripeRefundWebhookProcessor>()
-                    .ProcessAsync(refund, args.CancellationToken);
+                    .ProcessAsync(refund, message.CancellationToken);
             else if (webhook is StripeDisputeWebhookEvent dispute)
                 await scope.ServiceProvider.GetRequiredService<IStripeDisputeWebhookProcessor>()
-                    .ProcessAsync(dispute, args.CancellationToken);
+                    .ProcessAsync(dispute, message.CancellationToken);
             else
                 await scope.ServiceProvider.GetRequiredService<IStripePaymentWebhookProcessor>()
-                    .ProcessAsync((StripePaymentWebhookEvent)webhook, args.CancellationToken);
-            await args.CompleteMessageAsync(args.Message, args.CancellationToken);
+                    .ProcessAsync((StripePaymentWebhookEvent)webhook, message.CancellationToken);
+            await message.CompleteAsync();
         }
         catch (StripeWebhookPermanentException ex)
         {
             metrics.DeadLetters.Add(1);
             logger.LogWarning("Stripe event {ExternalEventId} was rejected ({FailureKind}).",
                 ExternalEventId(webhook), ex.GetType().Name);
-            await args.DeadLetterMessageAsync(args.Message, "PermanentValidationFailure",
-                cancellationToken: args.CancellationToken);
+            await message.DeadLetterAsync("PermanentValidationFailure");
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             logger.LogWarning("Stripe event {ExternalEventId} processing will retry ({FailureKind}).",
                 ExternalEventId(webhook), ex.GetType().Name);
-            await args.AbandonMessageAsync(args.Message, cancellationToken: args.CancellationToken);
+            await message.RetryAsync();
         }
     }
 
@@ -400,11 +383,4 @@ public sealed class StripePaymentWebhookConsumer(IServiceProvider services, Serv
         StripeDisputeWebhookEvent dispute => dispute.ExternalEventId,
         _ => "unknown"
     };
-
-    public override async Task StopAsync(CancellationToken cancellationToken)
-    {
-        if (_processor is not null) { await _processor.StopProcessingAsync(cancellationToken); await _processor.DisposeAsync(); }
-        if (_client is not null) await _client.DisposeAsync();
-        await base.StopAsync(cancellationToken);
-    }
 }

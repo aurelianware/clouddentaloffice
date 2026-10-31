@@ -3,6 +3,7 @@ using System.Text.RegularExpressions;
 using Azure;
 using Azure.Identity;
 using Azure.Security.KeyVault.Secrets;
+using Google.Cloud.SecretManager.V1;
 using CloudDentalOffice.Portal.Data;
 using CloudDentalOffice.Portal.Models;
 using Microsoft.EntityFrameworkCore;
@@ -25,6 +26,16 @@ public sealed class StediOptions
 
     /// <summary>Key Vault holding per-practice keys (stedi-apikey-{tenantId}). No keys live in configuration.</summary>
     public string? KeyVaultUri { get; set; }
+
+    /// <summary>
+    /// Google Cloud project whose Secret Manager holds the same secrets. When set it
+    /// is used instead of <see cref="KeyVaultUri"/>.
+    /// </summary>
+    public string? SecretManagerProjectId { get; set; }
+
+    public bool UsesSecretManager => !string.IsNullOrWhiteSpace(SecretManagerProjectId);
+
+    public bool HasSecretStore => UsesSecretManager || !string.IsNullOrWhiteSpace(KeyVaultUri);
 
     public int CredentialCacheMinutes { get; set; } = 5;
 
@@ -157,6 +168,34 @@ public sealed class KeyVaultStediSecretReader : IStediSecretReader
             return secret.Value.Value;
         }
         catch (RequestFailedException ex) when (ex.Status == 404)
+        {
+            return null;
+        }
+    }
+}
+
+/// <summary>
+/// Reads secrets from Google Cloud Secret Manager (latest version) as the
+/// service's own Google identity. The identity has only Secret Accessor on the
+/// stedi-* secrets; the app never writes secrets.
+/// </summary>
+public sealed class SecretManagerStediSecretReader(IOptions<StediOptions> options) : IStediSecretReader
+{
+    private readonly Lazy<Task<SecretManagerServiceClient>> _client = new(() => SecretManagerServiceClient.CreateAsync());
+
+    public async Task<string?> GetSecretAsync(string name, CancellationToken cancellationToken)
+    {
+        var project = options.Value.SecretManagerProjectId;
+        if (string.IsNullOrWhiteSpace(project))
+            throw new InvalidOperationException("Stedi:SecretManagerProjectId is not configured.");
+        var client = await _client.Value;
+        try
+        {
+            var version = await client.AccessSecretVersionAsync(
+                SecretVersionName.FromProjectSecretSecretVersion(project, name, "latest"), cancellationToken);
+            return version.Payload.Data.ToStringUtf8();
+        }
+        catch (Grpc.Core.RpcException ex) when (ex.StatusCode == Grpc.Core.StatusCode.NotFound)
         {
             return null;
         }
@@ -299,7 +338,7 @@ public sealed class StediCredentialProvider : IStediCredentialProvider
         if (_cache.TryGetValue(cacheKey, out string? cachedKey) && !string.IsNullOrEmpty(cachedKey))
             return new StediCredential(tenantId, connection.Mode, cachedKey);
 
-        if (string.IsNullOrWhiteSpace(options.KeyVaultUri))
+        if (!options.HasSecretStore)
             throw Fail(tenantId, StediCredentialFailure.KeyVaultNotConfigured, "Stedi credentials are not configured for this environment.");
 
         string? apiKey;
@@ -309,7 +348,7 @@ public sealed class StediCredentialProvider : IStediCredentialProvider
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            _logger.LogError("Key Vault lookup for tenant {TenantId} Stedi credential failed ({ErrorType})",
+            _logger.LogError("Secret store lookup for tenant {TenantId} Stedi credential failed ({ErrorType})",
                 ClaimLifecycleMapper.SanitizeForLog(tenantId), ex.GetType().Name);
             throw new StediCredentialUnavailableException(tenantId, StediCredentialFailure.KeyVaultUnavailable,
                 "Stedi credentials could not be read. Try again shortly.", ex);
